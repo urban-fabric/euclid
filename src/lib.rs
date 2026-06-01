@@ -1,6 +1,7 @@
+#![doc = include_str!("../README.md")]
+
 pub mod algebra;
 pub mod angle;
-pub mod bridge;
 pub mod bytes;
 pub mod count;
 pub mod factor;
@@ -12,6 +13,7 @@ pub mod time;
 pub mod timestamp;
 pub mod weights;
 
+mod conversions;
 mod ops;
 
 pub use angle::{AngleDegrees, AngleRadians};

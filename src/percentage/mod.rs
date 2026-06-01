@@ -16,7 +16,7 @@ use super::{Dimension, Factor, Quantity};
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct Percentage(pub f64);
+pub struct Percentage(f64);
 
 impl Percentage {
     pub const ZERO: Self = Self(0.0);

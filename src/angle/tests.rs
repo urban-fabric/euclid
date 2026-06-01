@@ -3,10 +3,10 @@ use super::*;
 
 #[test]
 fn angle_round_trip() {
-    let r = AngleRadians(std::f64::consts::PI);
+    let r = AngleRadians::new(std::f64::consts::PI);
     let d = r.to_degrees();
-    assert!((d.0 - 180.0).abs() < 1e-12);
-    assert!((d.to_radians().0 - std::f64::consts::PI).abs() < 1e-12);
+    assert!((d.as_degrees() - 180.0).abs() < 1e-12);
+    assert!((d.to_radians().as_radians() - std::f64::consts::PI).abs() < 1e-12);
 }
 
 #[test]

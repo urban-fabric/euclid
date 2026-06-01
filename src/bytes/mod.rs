@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
     Deserialize,
 )]
 #[serde(transparent)]
-pub struct Bytes(pub u64);
+pub struct Bytes(u64);
 
 impl Bytes {
     pub const ZERO: Self = Self(0);

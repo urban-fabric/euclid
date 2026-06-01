@@ -1,12 +1,21 @@
+//! Route-cost weight types.
+//!
+//! These wrappers store compact integer costs for routing-style algorithms.
+//! They reserve `u32::MAX` as an infinity sentinel, so they are semantically
+//! different from the raw persisted unit wrappers in `crate::storage`.
+
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
+use crate::{Dimension, Quantity};
+
+/// Route time cost stored in centiseconds with `u32::MAX` reserved as infinity.
 #[derive(
     Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Pod, Zeroable, Serialize, Deserialize,
 )]
 #[serde(transparent)]
 #[repr(transparent)]
-pub struct TimeWeight(pub u32);
+pub struct TimeWeight(u32);
 
 impl TimeWeight {
     pub const INF: Self = Self(u32::MAX);
@@ -60,12 +69,28 @@ impl TimeWeight {
     }
 }
 
+impl Quantity for TimeWeight {
+    type Repr = u32;
+
+    const DIMENSION: Dimension = Dimension::Time;
+    const UNIT_NAME: &'static str = "cs";
+
+    fn raw(self) -> u32 {
+        self.0
+    }
+
+    fn from_raw(v: u32) -> Self {
+        Self(v)
+    }
+}
+
+/// Route distance cost stored in decimeters with `u32::MAX` reserved as infinity.
 #[derive(
     Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Pod, Zeroable, Serialize, Deserialize,
 )]
 #[serde(transparent)]
 #[repr(transparent)]
-pub struct DistanceWeight(pub u32);
+pub struct DistanceWeight(u32);
 
 impl DistanceWeight {
     pub const INF: Self = Self(u32::MAX);
@@ -111,6 +136,21 @@ impl DistanceWeight {
 
     pub const fn is_positive(self) -> bool {
         self.0 > 0 && self.0 < u32::MAX
+    }
+}
+
+impl Quantity for DistanceWeight {
+    type Repr = u32;
+
+    const DIMENSION: Dimension = Dimension::Length;
+    const UNIT_NAME: &'static str = "dm";
+
+    fn raw(self) -> u32 {
+        self.0
+    }
+
+    fn from_raw(v: u32) -> Self {
+        Self(v)
     }
 }
 

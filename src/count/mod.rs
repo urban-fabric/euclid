@@ -1,6 +1,4 @@
-//! Dimensionless count newtypes (`Count`, `ThreadCount`). Relocated from
-//! kolmogorov-primitives (`ResettableCounter` stays behind in kolmogorov — it's
-//! a control-flow helper, not a metric).
+//! Dimensionless count newtypes.
 
 use std::fmt;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
@@ -25,7 +23,7 @@ use serde::{Deserialize, Serialize};
     Deserialize,
 )]
 #[serde(transparent)]
-pub struct Count(pub u64);
+pub struct Count(u64);
 
 impl Count {
     pub const ZERO: Self = Self(0);
@@ -59,6 +57,7 @@ impl fmt::Display for Count {
 
 impl Add for Count {
     type Output = Self;
+
     fn add(self, rhs: Self) -> Self {
         Self(self.0 + rhs.0)
     }
@@ -72,6 +71,7 @@ impl AddAssign for Count {
 
 impl Sub for Count {
     type Output = Self;
+
     fn sub(self, rhs: Self) -> Self {
         Self(self.0 - rhs.0)
     }
@@ -97,6 +97,7 @@ impl From<u64> for Count {
 
 impl std::str::FromStr for Count {
     type Err = std::num::ParseIntError;
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<u64>().map(Self)
     }
@@ -143,7 +144,7 @@ impl PartialOrd<u64> for Count {
     Deserialize,
 )]
 #[serde(transparent)]
-pub struct ThreadCount(pub u32);
+pub struct ThreadCount(u32);
 
 impl ThreadCount {
     pub const fn new(value: u32) -> Self {
@@ -182,46 +183,4 @@ impl From<ThreadCount> for u32 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod tests {
-    use super::{Count, ThreadCount};
-
-    #[test]
-    fn count_display_is_bare_number() {
-        assert_eq!(Count(42).to_string(), "42");
-    }
-
-    #[test]
-    fn count_serde_is_bare_u64() {
-        let c = Count(42);
-        let json = serde_json::to_string(&c).unwrap();
-        assert_eq!(json, "42");
-        let back: Count = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, c);
-    }
-
-    #[test]
-    fn count_arithmetic_round_trips() {
-        let mut c = Count::ZERO;
-        c += Count(5);
-        c += Count(3);
-        assert_eq!(c, Count(8));
-        c -= Count(1);
-        assert_eq!(c, Count(7));
-    }
-
-    #[test]
-    fn thread_count_display_pluralizes() {
-        assert_eq!(ThreadCount(1).to_string(), "1 thread");
-        assert_eq!(ThreadCount(8).to_string(), "8 threads");
-    }
-
-    #[test]
-    fn thread_count_serde_is_bare_u32() {
-        let t = ThreadCount(8);
-        let json = serde_json::to_string(&t).unwrap();
-        assert_eq!(json, "8");
-        let back: ThreadCount = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, t);
-    }
-}
+mod tests;

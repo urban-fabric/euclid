@@ -1,4 +1,77 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use super::*;
+use crate::{Dimension, Quantity};
+
+#[test]
+fn time_weight_implements_quantity() {
+    assert_eq!(TimeWeight::DIMENSION, Dimension::Time);
+    assert_eq!(TimeWeight::UNIT_NAME, "cs");
+    let t = TimeWeight::from_centiseconds(6000);
+    assert_eq!(t.raw(), 6000u32);
+    assert_eq!(TimeWeight::from_raw(6000), t);
+}
+
+#[test]
+fn distance_weight_implements_quantity() {
+    assert_eq!(DistanceWeight::DIMENSION, Dimension::Length);
+    assert_eq!(DistanceWeight::UNIT_NAME, "dm");
+    let d = DistanceWeight::from_decimeters(500);
+    assert_eq!(d.raw(), 500u32);
+    assert_eq!(DistanceWeight::from_raw(500), d);
+}
+
+#[test]
+fn route_weights_serde_as_bare_u32_contract() {
+    let time = TimeWeight::from_centiseconds(12_345);
+    let time_json = serde_json::to_string(&time).unwrap();
+    assert_eq!(time_json, "12345");
+    assert_eq!(
+        serde_json::from_str::<TimeWeight>(&time_json).unwrap(),
+        time
+    );
+
+    let distance = DistanceWeight::from_decimeters(678);
+    let distance_json = serde_json::to_string(&distance).unwrap();
+    assert_eq!(distance_json, "678");
+    assert_eq!(
+        serde_json::from_str::<DistanceWeight>(&distance_json).unwrap(),
+        distance,
+    );
+}
+
+#[test]
+fn route_weights_order_by_storage_repr() {
+    let mut times = [
+        TimeWeight::from_centiseconds(30),
+        TimeWeight::ZERO,
+        TimeWeight::from_centiseconds(10),
+    ];
+    times.sort();
+    assert_eq!(
+        times,
+        [
+            TimeWeight::ZERO,
+            TimeWeight::from_centiseconds(10),
+            TimeWeight::from_centiseconds(30),
+        ],
+    );
+
+    let mut distances = [
+        DistanceWeight::from_decimeters(9),
+        DistanceWeight::from_decimeters(1),
+        DistanceWeight::from_decimeters(5),
+    ];
+    distances.sort();
+    assert_eq!(
+        distances,
+        [
+            DistanceWeight::from_decimeters(1),
+            DistanceWeight::from_decimeters(5),
+            DistanceWeight::from_decimeters(9),
+        ],
+    );
+}
 
 #[test]
 fn time_weight_quantizes_seconds_to_centiseconds() {

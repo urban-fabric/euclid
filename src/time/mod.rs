@@ -20,7 +20,7 @@ const MS_PER_S: f64 = 1_000.0;
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct TimeSeconds(pub f64);
+pub struct TimeSeconds(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -36,7 +36,7 @@ pub struct TimeSeconds(pub f64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct TimeMinutes(pub f64);
+pub struct TimeMinutes(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -52,7 +52,7 @@ pub struct TimeMinutes(pub f64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct TimeHours(pub f64);
+pub struct TimeHours(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -68,26 +68,7 @@ pub struct TimeHours(pub f64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct TimeMillis(pub f64);
-
-#[repr(transparent)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Pod,
-    Zeroable,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[serde(transparent)]
-pub struct TimeMicros(pub u64);
+pub struct TimeMillis(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -106,7 +87,26 @@ pub struct TimeMicros(pub u64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct TimeMicrosDelta(pub i64);
+pub struct TimeMicros(u64);
+
+#[repr(transparent)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Pod,
+    Zeroable,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct TimeMicrosDelta(i64);
 
 impl TimeSeconds {
     pub const ZERO: Self = Self(0.0);
@@ -172,6 +172,10 @@ impl TimeMinutes {
         Self(v)
     }
 
+    pub const fn as_minutes(self) -> f64 {
+        self.0
+    }
+
     pub fn to_seconds(self) -> TimeSeconds {
         TimeSeconds(self.0 * S_PER_MIN)
     }
@@ -183,6 +187,10 @@ impl TimeHours {
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
+    }
+
+    pub const fn as_hours(self) -> f64 {
+        self.0
     }
 
     pub fn to_seconds(self) -> TimeSeconds {

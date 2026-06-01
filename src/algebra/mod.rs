@@ -5,106 +5,106 @@ use super::{Factor, LengthMeters, SpeedKph, SpeedMph, SpeedMs, TimeSeconds};
 impl Div<TimeSeconds> for LengthMeters {
     type Output = SpeedMs;
     fn div(self, t: TimeSeconds) -> SpeedMs {
-        SpeedMs(self.0 / t.0)
+        SpeedMs::new(self.as_meters() / t.as_seconds())
     }
 }
 
 impl Div<SpeedMs> for LengthMeters {
     type Output = TimeSeconds;
     fn div(self, v: SpeedMs) -> TimeSeconds {
-        TimeSeconds(self.0 / v.0)
+        TimeSeconds::new(self.as_meters() / v.as_ms())
     }
 }
 
 impl Div<SpeedKph> for SpeedKph {
     type Output = f64;
     fn div(self, rhs: SpeedKph) -> f64 {
-        self.0 / rhs.0
+        self.as_kph() / rhs.as_kph()
     }
 }
 
 impl Div<SpeedMs> for SpeedMs {
     type Output = f64;
     fn div(self, rhs: SpeedMs) -> f64 {
-        self.0 / rhs.0
+        self.as_ms() / rhs.as_ms()
     }
 }
 
 impl Mul<TimeSeconds> for SpeedMs {
     type Output = LengthMeters;
     fn mul(self, t: TimeSeconds) -> LengthMeters {
-        LengthMeters(self.0 * t.0)
+        LengthMeters::new(self.as_ms() * t.as_seconds())
     }
 }
 impl Mul<SpeedMs> for TimeSeconds {
     type Output = LengthMeters;
     fn mul(self, v: SpeedMs) -> LengthMeters {
-        LengthMeters(self.0 * v.0)
+        LengthMeters::new(self.as_seconds() * v.as_ms())
     }
 }
 
 impl Mul<LengthMeters> for Factor {
     type Output = LengthMeters;
     fn mul(self, x: LengthMeters) -> LengthMeters {
-        LengthMeters(self.0 * x.0)
+        LengthMeters::new(self.as_f64() * x.as_meters())
     }
 }
 impl Mul<Factor> for LengthMeters {
     type Output = LengthMeters;
     fn mul(self, f: Factor) -> LengthMeters {
-        LengthMeters(self.0 * f.0)
+        LengthMeters::new(self.as_meters() * f.as_f64())
     }
 }
 
 impl Mul<TimeSeconds> for Factor {
     type Output = TimeSeconds;
     fn mul(self, x: TimeSeconds) -> TimeSeconds {
-        TimeSeconds(self.0 * x.0)
+        TimeSeconds::new(self.as_f64() * x.as_seconds())
     }
 }
 impl Mul<Factor> for TimeSeconds {
     type Output = TimeSeconds;
     fn mul(self, f: Factor) -> TimeSeconds {
-        TimeSeconds(self.0 * f.0)
+        TimeSeconds::new(self.as_seconds() * f.as_f64())
     }
 }
 
 impl Mul<SpeedMs> for Factor {
     type Output = SpeedMs;
     fn mul(self, x: SpeedMs) -> SpeedMs {
-        SpeedMs(self.0 * x.0)
+        SpeedMs::new(self.as_f64() * x.as_ms())
     }
 }
 impl Mul<Factor> for SpeedMs {
     type Output = SpeedMs;
     fn mul(self, f: Factor) -> SpeedMs {
-        SpeedMs(self.0 * f.0)
+        SpeedMs::new(self.as_ms() * f.as_f64())
     }
 }
 
 impl Mul<SpeedKph> for Factor {
     type Output = SpeedKph;
     fn mul(self, x: SpeedKph) -> SpeedKph {
-        SpeedKph(self.0 * x.0)
+        SpeedKph::new(self.as_f64() * x.as_kph())
     }
 }
 impl Mul<Factor> for SpeedKph {
     type Output = SpeedKph;
     fn mul(self, f: Factor) -> SpeedKph {
-        SpeedKph(self.0 * f.0)
+        SpeedKph::new(self.as_kph() * f.as_f64())
     }
 }
 
 impl Mul<SpeedMph> for Factor {
     type Output = SpeedMph;
     fn mul(self, x: SpeedMph) -> SpeedMph {
-        SpeedMph(self.0 * x.0)
+        SpeedMph::new(self.as_f64() * x.as_mph())
     }
 }
 impl Mul<Factor> for SpeedMph {
     type Output = SpeedMph;
     fn mul(self, f: Factor) -> SpeedMph {
-        SpeedMph(self.0 * f.0)
+        SpeedMph::new(self.as_mph() * f.as_f64())
     }
 }
 #[cfg(test)]

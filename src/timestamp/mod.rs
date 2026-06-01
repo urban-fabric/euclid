@@ -1,3 +1,5 @@
+//! Unix epoch timestamp wrappers.
+
 use bytemuck::{Pod, Zeroable};
 
 use super::{Dimension, Quantity};
@@ -19,7 +21,7 @@ use super::{Dimension, Quantity};
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct UnixSeconds(pub i64);
+pub struct UnixSeconds(i64);
 
 #[repr(transparent)]
 #[derive(
@@ -38,7 +40,7 @@ pub struct UnixSeconds(pub i64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct UnixMillis(pub i64);
+pub struct UnixMillis(i64);
 
 impl UnixSeconds {
     pub const EPOCH: Self = Self(0);
@@ -80,11 +82,14 @@ impl UnixMillis {
 
 impl Quantity for UnixSeconds {
     type Repr = i64;
+
     const DIMENSION: Dimension = Dimension::Time;
     const UNIT_NAME: &'static str = "s (since epoch)";
+
     fn raw(self) -> i64 {
         self.0
     }
+
     fn from_raw(v: i64) -> Self {
         Self(v)
     }
@@ -92,12 +97,18 @@ impl Quantity for UnixSeconds {
 
 impl Quantity for UnixMillis {
     type Repr = i64;
+
     const DIMENSION: Dimension = Dimension::Time;
     const UNIT_NAME: &'static str = "ms (since epoch)";
+
     fn raw(self) -> i64 {
         self.0
     }
+
     fn from_raw(v: i64) -> Self {
         Self(v)
     }
 }
+
+#[cfg(test)]
+mod tests;

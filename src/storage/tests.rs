@@ -3,12 +3,12 @@ use super::*;
 
 #[test]
 fn time_cs_display_carries_unit() {
-    assert_eq!(TimeCentiseconds(150).to_string(), "150 cs");
+    assert_eq!(TimeCentiseconds::new(150).to_string(), "150 cs");
 }
 
 #[test]
 fn time_cs_serde_is_bare_u32() {
-    let t = TimeCentiseconds(150);
+    let t = TimeCentiseconds::new(150);
     let json = serde_json::to_string(&t).unwrap();
     assert_eq!(json, "150");
     let back: TimeCentiseconds = serde_json::from_str(&json).unwrap();
@@ -17,19 +17,19 @@ fn time_cs_serde_is_bare_u32() {
 
 #[test]
 fn time_cs_to_weight_preserves_repr() {
-    let t = TimeCentiseconds(150);
+    let t = TimeCentiseconds::new(150);
     let w: TimeWeight = t.into();
-    assert_eq!(w.0, 150);
+    assert_eq!(w.as_centiseconds(), 150);
 }
 
 #[test]
 fn distance_dm_display_carries_unit() {
-    assert_eq!(DistanceDecimeters(420).to_string(), "420 dm");
+    assert_eq!(DistanceDecimeters::new(420).to_string(), "420 dm");
 }
 
 #[test]
 fn distance_dm_serde_is_bare_u32() {
-    let d = DistanceDecimeters(420);
+    let d = DistanceDecimeters::new(420);
     let json = serde_json::to_string(&d).unwrap();
     assert_eq!(json, "420");
     let back: DistanceDecimeters = serde_json::from_str(&json).unwrap();
@@ -38,7 +38,7 @@ fn distance_dm_serde_is_bare_u32() {
 
 #[test]
 fn distance_dm_to_weight_preserves_repr() {
-    let d = DistanceDecimeters(420);
+    let d = DistanceDecimeters::new(420);
     let w: DistanceWeight = d.into();
-    assert_eq!(w.0, 420);
+    assert_eq!(w.as_decimeters(), 420);
 }

@@ -16,7 +16,7 @@ use super::{Dimension, Quantity};
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct LengthMeters(pub f64);
+pub struct LengthMeters(f64);
 
 impl LengthMeters {
     pub const ZERO: Self = Self(0.0);
@@ -100,7 +100,7 @@ const M_PER_FOOT: f64 = 0.304_8;
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct LengthKm(pub f64);
+pub struct LengthKm(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -116,7 +116,7 @@ pub struct LengthKm(pub f64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct LengthFeet(pub f64);
+pub struct LengthFeet(f64);
 
 impl LengthKm {
     pub const ZERO: Self = Self(0.0);
@@ -124,6 +124,10 @@ impl LengthKm {
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
+    }
+
+    pub const fn as_km(self) -> f64 {
+        self.0
     }
 
     pub fn to_meters(self) -> LengthMeters {
@@ -137,6 +141,10 @@ impl LengthFeet {
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
+    }
+
+    pub const fn as_feet(self) -> f64 {
+        self.0
     }
 
     pub fn to_meters(self) -> LengthMeters {

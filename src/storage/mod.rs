@@ -1,3 +1,10 @@
+//! Raw persisted unit wrappers.
+//!
+//! These types name compact storage fields such as centiseconds and decimeters.
+//! They do not carry route-cost sentinel semantics themselves. Convert to
+//! `crate::weights` when a value should participate in route-cost ordering or
+//! treat `u32::MAX` as infinity.
+
 use std::fmt;
 
 use bytemuck::{Pod, Zeroable};
@@ -5,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DistanceWeight, TimeWeight};
 
+/// Raw centisecond storage value.
 #[derive(
     Clone,
     Copy,
@@ -22,7 +30,7 @@ use crate::{DistanceWeight, TimeWeight};
 )]
 #[serde(transparent)]
 #[repr(transparent)]
-pub struct TimeCentiseconds(pub u32);
+pub struct TimeCentiseconds(u32);
 
 impl TimeCentiseconds {
     pub const ZERO: Self = Self(0);
@@ -35,8 +43,12 @@ impl TimeCentiseconds {
         self.0
     }
 
+    pub const fn as_centiseconds(self) -> u32 {
+        self.0
+    }
+
     pub const fn to_weight(self) -> TimeWeight {
-        TimeWeight(self.0)
+        TimeWeight::from_centiseconds(self.0)
     }
 }
 
@@ -60,10 +72,11 @@ impl From<TimeCentiseconds> for u32 {
 
 impl From<TimeCentiseconds> for TimeWeight {
     fn from(value: TimeCentiseconds) -> Self {
-        TimeWeight(value.0)
+        TimeWeight::from_centiseconds(value.0)
     }
 }
 
+/// Raw decimeter storage value.
 #[derive(
     Clone,
     Copy,
@@ -81,7 +94,7 @@ impl From<TimeCentiseconds> for TimeWeight {
 )]
 #[serde(transparent)]
 #[repr(transparent)]
-pub struct DistanceDecimeters(pub u32);
+pub struct DistanceDecimeters(u32);
 
 impl DistanceDecimeters {
     pub const ZERO: Self = Self(0);
@@ -94,8 +107,12 @@ impl DistanceDecimeters {
         self.0
     }
 
+    pub const fn as_decimeters(self) -> u32 {
+        self.0
+    }
+
     pub const fn to_weight(self) -> DistanceWeight {
-        DistanceWeight(self.0)
+        DistanceWeight::from_decimeters(self.0)
     }
 }
 
@@ -119,7 +136,7 @@ impl From<DistanceDecimeters> for u32 {
 
 impl From<DistanceDecimeters> for DistanceWeight {
     fn from(value: DistanceDecimeters) -> Self {
-        DistanceWeight(value.0)
+        DistanceWeight::from_decimeters(value.0)
     }
 }
 #[cfg(test)]

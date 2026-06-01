@@ -9,7 +9,7 @@ use super::{Dimension, Quantity};
     Copy, Clone, Debug, PartialEq, PartialOrd, Pod, Zeroable, serde::Serialize, serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct Factor(pub f64);
+pub struct Factor(f64);
 
 impl Default for Factor {
     fn default() -> Self {

@@ -16,7 +16,7 @@ use super::{Dimension, Quantity};
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct AngleRadians(pub f64);
+pub struct AngleRadians(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -32,7 +32,7 @@ pub struct AngleRadians(pub f64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct AngleDegrees(pub f64);
+pub struct AngleDegrees(f64);
 
 impl AngleRadians {
     pub const ZERO: Self = Self(0.0);

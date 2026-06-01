@@ -21,7 +21,7 @@ const MPH_PER_KPH: f64 = 1.0 / KPH_PER_MPH;
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct SpeedMs(pub f64);
+pub struct SpeedMs(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -37,7 +37,7 @@ pub struct SpeedMs(pub f64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct SpeedKph(pub f64);
+pub struct SpeedKph(f64);
 
 #[repr(transparent)]
 #[derive(
@@ -53,7 +53,7 @@ pub struct SpeedKph(pub f64);
     serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct SpeedMph(pub f64);
+pub struct SpeedMph(f64);
 
 impl SpeedMs {
     pub const ZERO: Self = Self(0.0);
@@ -63,6 +63,10 @@ impl SpeedMs {
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
+    }
+
+    pub const fn as_ms(self) -> f64 {
+        self.0
     }
 
     pub fn to_kph(self) -> SpeedKph {
@@ -144,6 +148,10 @@ impl SpeedMph {
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
+    }
+
+    pub const fn as_mph(self) -> f64 {
+        self.0
     }
 
     pub fn to_ms(self) -> SpeedMs {
