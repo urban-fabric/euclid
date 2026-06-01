@@ -181,65 +181,10 @@ impl From<ThreadCount> for u32 {
     }
 }
 
-#[repr(transparent)]
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Pod,
-    Zeroable,
-    Serialize,
-    Deserialize,
-)]
-#[serde(transparent)]
-pub struct PixelCount(pub u32);
-
-impl PixelCount {
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-
-    pub fn as_usize(self) -> usize {
-        self.0 as usize
-    }
-
-    pub fn as_f32(self) -> f32 {
-        self.0 as f32
-    }
-}
-
-impl fmt::Display for PixelCount {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} px", self.0)
-    }
-}
-
-impl From<u32> for PixelCount {
-    fn from(value: u32) -> Self {
-        Self(value)
-    }
-}
-
-impl From<PixelCount> for u32 {
-    fn from(value: PixelCount) -> Self {
-        value.0
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use super::{Count, PixelCount, ThreadCount};
+    use super::{Count, ThreadCount};
 
     #[test]
     fn count_display_is_bare_number() {
@@ -278,19 +223,5 @@ mod tests {
         assert_eq!(json, "8");
         let back: ThreadCount = serde_json::from_str(&json).unwrap();
         assert_eq!(back, t);
-    }
-
-    #[test]
-    fn pixel_count_display_carries_unit() {
-        assert_eq!(PixelCount(1024).to_string(), "1024 px");
-    }
-
-    #[test]
-    fn pixel_count_serde_is_bare_u32() {
-        let p = PixelCount(1024);
-        let json = serde_json::to_string(&p).unwrap();
-        assert_eq!(json, "1024");
-        let back: PixelCount = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, p);
     }
 }

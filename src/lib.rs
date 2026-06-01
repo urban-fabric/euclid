@@ -16,7 +16,7 @@ mod ops;
 
 pub use angle::{AngleDegrees, AngleRadians};
 pub use bytes::{ByteRange, Bytes};
-pub use count::{Count, PixelCount, ThreadCount};
+pub use count::{Count, ThreadCount};
 pub use factor::Factor;
 pub use length::{LengthFeet, LengthKm, LengthMeters};
 pub use percentage::Percentage;
