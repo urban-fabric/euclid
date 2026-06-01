@@ -1,6 +1,6 @@
-//! A dimensionless count newtype. Relocated from kolmogorov-primitives
-//! (`ResettableCounter` stays behind in kolmogorov — it's a control-flow helper,
-//! not a metric).
+//! Dimensionless count newtypes (`Count`, `ThreadCount`). Relocated from
+//! kolmogorov-primitives (`ResettableCounter` stays behind in kolmogorov — it's
+//! a control-flow helper, not a metric).
 
 use std::fmt;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
@@ -123,5 +123,60 @@ impl PartialEq<Count> for u64 {
 impl PartialOrd<u64> for Count {
     fn partial_cmp(&self, other: &u64) -> Option<std::cmp::Ordering> {
         self.0.partial_cmp(other)
+    }
+}
+
+#[repr(transparent)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Pod,
+    Zeroable,
+    Serialize,
+    Deserialize,
+)]
+#[serde(transparent)]
+pub struct ThreadCount(pub u32);
+
+impl ThreadCount {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl fmt::Display for ThreadCount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0 == 1 {
+            write!(f, "1 thread")
+        } else {
+            write!(f, "{} threads", self.0)
+        }
+    }
+}
+
+impl From<u32> for ThreadCount {
+    fn from(value: u32) -> Self {
+        Self(value)
+    }
+}
+
+impl From<ThreadCount> for u32 {
+    fn from(value: ThreadCount) -> Self {
+        value.0
     }
 }
