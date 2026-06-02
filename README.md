@@ -23,9 +23,11 @@ re-exported at the crate root for ergonomic imports.
   `timestamp`, raw persisted `storage`, route-cost `weights`, and checked
   lossy `quantize` helpers.
 
-Compatibility module re-exports keep paths such as `euclid::length::LengthMeters`,
-`euclid::weights::TimeWeight`, and `euclid::convert` available even though the
-implementation lives under the layered tree.
+Compatibility module re-exports keep pre-reorg paths such as
+`euclid::length::LengthMeters` and `euclid::weights::TimeWeight` available even
+though the implementation now lives under the layered tree. The crate-root
+re-exports (`euclid::LengthMeters`, `euclid::TimeWeight`, ...) are the
+recommended import path.
 
 ## Scalar API
 

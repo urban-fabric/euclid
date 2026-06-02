@@ -1,4 +1,9 @@
-//! Cross-unit conversions that are implemented as inherent methods.
+//! Cross-quantity bridges implemented as inherent methods and `From` impls.
+//!
+//! These convert between distinct euclid quantity types (length/time to route
+//! weights, length to travel time at a speed, and so on). They are separate from
+//! the same-dimension [`UnitOfMeasure::convert`](crate::UnitOfMeasure::convert)
+//! protocol and from the fallible [`quantize`](crate::quantize) helpers.
 
 use crate::{DistanceWeight, LengthMeters, SpeedKph, TimeSeconds, TimeWeight};
 

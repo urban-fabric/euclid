@@ -16,7 +16,7 @@ pub use data::{
     ByteRange, Bytes, ConversionError, Count, DistanceDecimeters, DistanceWeight, ThreadCount,
     TimeCentiseconds, TimeWeight, UnixMillis, UnixSeconds,
 };
-pub use data::{bytes, convert, count, quantize, storage, timestamp, weights};
+pub use data::{bytes, count, quantize, storage, timestamp, weights};
 
 pub use derived::{
     AccelerationCentimetersPerSecondSquared, AccelerationMetersPerSecondSquared,
