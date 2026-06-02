@@ -27,6 +27,6 @@ fn fahrenheit_conversions_use_offset_and_scale() {
 fn temperature_quantity_impls() {
     assert_eq!(TemperatureKelvin::DIMENSION, crate::Dimension::Temperature);
     assert_eq!(TemperatureKelvin::UNIT_NAME, "K");
-    assert_eq!(TemperatureCelsius::UNIT_NAME, "C");
-    assert_eq!(TemperatureFahrenheit::UNIT_NAME, "F");
+    assert_eq!(TemperatureCelsius::UNIT_NAME, "°C");
+    assert_eq!(TemperatureFahrenheit::UNIT_NAME, "°F");
 }

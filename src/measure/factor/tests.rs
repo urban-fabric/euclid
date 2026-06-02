@@ -6,7 +6,7 @@ fn factor_constants() {
     assert_eq!(Factor::IDENTITY.as_f64(), 1.0);
     assert_eq!(Factor::ZERO.as_f64(), 0.0);
     assert_eq!(Factor::DIMENSION, Dimension::Dimensionless);
-    assert_eq!(Factor::UNIT_NAME, "(unitless)");
+    assert_eq!(Factor::UNIT_NAME, "");
 }
 
 #[test]

@@ -79,7 +79,7 @@ impl Factor {
 impl Quantity for Factor {
     type Repr = f64;
     const DIMENSION: Dimension = Dimension::Dimensionless;
-    const UNIT_NAME: &'static str = "(unitless)";
+    const UNIT_NAME: &'static str = "";
     fn raw(self) -> f64 {
         self.0
     }

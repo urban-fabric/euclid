@@ -11,7 +11,11 @@ use crate::{
 use super::{DimMarker, UnitOfMeasure, dim};
 
 fn fmt_quantity<Q: Quantity<Repr = f64>>(value: Q, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "{} {}", value.raw(), Q::UNIT_NAME)
+    if Q::UNIT_NAME.is_empty() {
+        write!(f, "{}", value.raw())
+    } else {
+        write!(f, "{} {}", value.raw(), Q::UNIT_NAME)
+    }
 }
 
 /// Implement [`UnitOfMeasure`] and a unit-suffixed [`Display`](fmt::Display) for a

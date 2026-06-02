@@ -184,8 +184,8 @@ fn display_prints_value_with_unit_symbol() {
         AccelerationMetersPerSecondSquared::new(9.81).to_string(),
         "9.81 m/s^2"
     );
-    assert_eq!(TemperatureCelsius::new(20.0).to_string(), "20 C");
+    assert_eq!(TemperatureCelsius::new(20.0).to_string(), "20 °C");
     assert_eq!(TemperatureKelvin::new(273.15).to_string(), "273.15 K");
     assert_eq!(Percentage::new(50.0).to_string(), "50 %");
-    assert_eq!(Factor::new(1.5).to_string(), "1.5 (unitless)");
+    assert_eq!(Factor::new(1.5).to_string(), "1.5");
 }

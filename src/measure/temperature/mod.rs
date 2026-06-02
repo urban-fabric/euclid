@@ -132,7 +132,7 @@ impl Quantity for TemperatureKelvin {
 impl Quantity for TemperatureCelsius {
     type Repr = f64;
     const DIMENSION: Dimension = Dimension::Temperature;
-    const UNIT_NAME: &'static str = "C";
+    const UNIT_NAME: &'static str = "°C";
     fn raw(self) -> f64 {
         self.0
     }
@@ -144,7 +144,7 @@ impl Quantity for TemperatureCelsius {
 impl Quantity for TemperatureFahrenheit {
     type Repr = f64;
     const DIMENSION: Dimension = Dimension::Temperature;
-    const UNIT_NAME: &'static str = "F";
+    const UNIT_NAME: &'static str = "°F";
     fn raw(self) -> f64 {
         self.0
     }
