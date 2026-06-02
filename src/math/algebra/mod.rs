@@ -1,3 +1,25 @@
+//! Dimensional cross-products between quantities: a length over a time is a
+//! speed, a speed over a time is an acceleration, two lengths make an area, and a
+//! [`Factor`](crate::Factor) scales any of them.
+//!
+//! These operators are defined only between each dimension's **primary** unit
+//! ([`LengthMeters`](crate::LengthMeters), [`TimeSeconds`](crate::TimeSeconds),
+//! [`SpeedMs`](crate::SpeedMs), [`AreaSquareMeters`](crate::AreaSquareMeters),
+//! [`AccelerationMetersPerSecondSquared`](crate::AccelerationMetersPerSecondSquared)).
+//! That keeps the impls linear in the number of dimensions instead of
+//! combinatorial in the number of units, and keeps every result in a canonical
+//! unit. To combine non-primary units, convert to the primary unit first with
+//! [`UnitOfMeasure::convert`](crate::UnitOfMeasure::convert):
+//!
+//! ```
+//! use euclid::{LengthKm, LengthMeters, SpeedMs, TimeHours, TimeSeconds, UnitOfMeasure};
+//!
+//! let distance: LengthMeters = LengthKm::new(5.0).convert();
+//! let elapsed: TimeSeconds = TimeHours::new(0.5).convert();
+//! let speed: SpeedMs = distance / elapsed; // 5 km over half an hour
+//! assert!((speed.as_ms() - 5000.0 / 1800.0).abs() < 1e-9);
+//! ```
+
 use std::ops::{Div, Mul};
 
 use super::{
