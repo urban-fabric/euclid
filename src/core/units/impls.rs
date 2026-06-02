@@ -8,7 +8,7 @@ use crate::{
     TimeMillis, TimeMinutes, TimeSeconds,
 };
 
-use super::{UnitOfMeasure, dim};
+use super::{DimMarker, UnitOfMeasure, dim};
 
 fn fmt_quantity<Q: Quantity<Repr = f64>>(value: Q, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "{} {}", value.raw(), Q::UNIT_NAME)
@@ -24,6 +24,12 @@ macro_rules! impl_unit {
             const TO_PRIMARY: f64 = $to_primary;
             $(const PRIMARY_OFFSET: f64 = $offset;)?
         }
+
+        // The unit's runtime `Quantity::DIMENSION` must match its type-level `Dim`.
+        const _: () = assert!(
+            <$ty as Quantity>::DIMENSION.same(<$dim as DimMarker>::RUNTIME),
+            concat!("dimension mismatch for ", stringify!($ty)),
+        );
 
         impl fmt::Display for $ty {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

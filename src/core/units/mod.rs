@@ -70,6 +70,39 @@ pub mod dim {
     pub struct Dimensionless;
 }
 
+/// Maps a type-level [`dim`] marker to its runtime [`Dimension`](crate::Dimension).
+///
+/// Each unit declares its dimension twice — as [`UnitOfMeasure::Dim`] (a `dim::*`
+/// marker) and as [`Quantity::DIMENSION`](crate::Quantity::DIMENSION) (a runtime
+/// enum). This trait is the single canonical bridge between the two, and
+/// `impl_unit!` uses it to assert at compile time that a unit's two declarations
+/// agree, so they cannot silently drift.
+pub(crate) trait DimMarker {
+    const RUNTIME: crate::Dimension;
+}
+
+macro_rules! impl_dim_marker {
+    ($($marker:ident => $variant:ident),+ $(,)?) => {
+        $(
+            impl DimMarker for dim::$marker {
+                const RUNTIME: crate::Dimension = crate::Dimension::$variant;
+            }
+        )+
+    };
+}
+
+impl_dim_marker!(
+    Acceleration => Acceleration,
+    Angle => Angle,
+    Area => Area,
+    Length => Length,
+    Mass => Mass,
+    Time => Time,
+    Speed => Speed,
+    Temperature => Temperature,
+    Dimensionless => Dimensionless,
+);
+
 /// A scalar unit of measure that belongs to a dimension and has a known
 /// scale and offset to that dimension's primary unit.
 ///

@@ -11,6 +11,15 @@ pub enum Dimension {
     Dimensionless,
 }
 
+impl Dimension {
+    /// Const-evaluable equality. The derived `PartialEq` cannot run in `const`
+    /// context, where the [`UnitOfMeasure`](crate::UnitOfMeasure) impls assert
+    /// that a unit's runtime dimension matches its type-level marker.
+    pub(crate) const fn same(self, other: Self) -> bool {
+        self as u8 == other as u8
+    }
+}
+
 pub trait Quantity: Copy + PartialOrd {
     type Repr: Copy;
     const DIMENSION: Dimension;
