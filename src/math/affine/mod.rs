@@ -16,9 +16,14 @@
 //! - `Point<Q, Space> - Q = Point<Q, Space>`
 //! - `Point<Q, Space> + Point<Q, Space>` is intentionally not implemented
 //!
-//! [`TimeMicros`](crate::TimeMicros) / [`TimeMicrosDelta`](crate::TimeMicrosDelta)
-//! is the hand-written integer specialisation of exactly this pattern;
-//! `Point<Q>` is the reusable floating-point form for any [`LinearQuantity`].
+//! `Point<Q>` is the reusable floating-point form of this affine pattern for any
+//! [`LinearQuantity`]. It is *not* the same thing as the integer time newtypes
+//! [`TimeMicros`](crate::TimeMicros) / [`TimeMicrosDelta`](crate::TimeMicrosDelta):
+//! `TimeMicros` is a summable magnitude (it implements `Add` and `Sum`), and
+//! `TimeMicrosDelta` is its signed difference, produced with
+//! [`TimeMicrosDelta::between`](crate::TimeMicrosDelta::between) — not an affine
+//! position-versus-displacement split. Reach for `Point<Q>` specifically when you
+//! need positions that must not be added together.
 //!
 //! ```compile_fail
 //! use euclid::{LengthMeters, Point};
