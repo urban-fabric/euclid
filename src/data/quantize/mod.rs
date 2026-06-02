@@ -10,12 +10,18 @@
 //! and never silently saturate; instead they report exactly which contract was
 //! broken via [`ConversionError`], so callers handling untrusted or derived
 //! values can decide what to do.
+//!
+//! "Checked" means they validate finiteness, sign, and target range — *not* that
+//! the value lands on an exact sub-unit boundary. A fractional centisecond or
+//! decimeter is still rounded to the nearest whole storage unit, exactly as the
+//! infallible path does, and that ordinary rounding is not reported as an error.
 
 use core::fmt;
 
 use crate::{DistanceWeight, LengthMeters, QuantityError, TimeSeconds, TimeWeight};
 
-/// Why a checked quantity conversion could not be represented losslessly.
+/// Why a checked quantity conversion was rejected: the value failed the
+/// finiteness, sign, or range contract. Sub-unit rounding is not an error.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ConversionError {
     /// The source value was `NaN` or infinite, so it has no finite encoding.
