@@ -4,19 +4,38 @@
 Urban Fabric code. It keeps unit conversions and wire/storage representations in
 one place without depending on application crates.
 
-## Public Modules
+## Public Layers
 
-- `length`, `time`, `speed`, and `angle` define floating-point physical units
-  such as `LengthMeters`, `TimeSeconds`, `SpeedKph`, and `AngleRadians`.
-- `factor` and `percentage` define dimensionless scalar quantities.
-- `bytes` and `count` define integer newtypes for byte sizes, byte ranges,
-  generic counts, and thread counts.
-- `timestamp` defines Unix epoch timestamp wrappers.
-- `weights` defines route-cost values with explicit infinity sentinels:
-  `TimeWeight` stores centiseconds and `DistanceWeight` stores decimeters.
-- `storage` defines raw persisted unit wrappers, such as `TimeCentiseconds` and
-  `DistanceDecimeters`, without route-cost semantics.
-- `algebra` provides dimensional arithmetic between units.
+`euclid` is organized by responsibility, while the most common types are also
+re-exported at the crate root for ergonomic imports.
+
+- `core` defines the shared contracts: `Dimension`, `Quantity`,
+  `ScalarQuantity`, and `UnitOfMeasure`. `core::units` provides the
+  dimension-checked `convert` / `value_in` protocol, including offset-aware
+  temperature conversion.
+- `measure` defines base scalar measurements: `length`, `time`, `angle`,
+  `mass`, `temperature`, plus dimensionless `factor` and `percentage`.
+- `derived` defines measurements derived from base dimensions: `speed`, `area`,
+  and `acceleration`.
+- `math` defines operations over quantities: same-unit scalar operators,
+  dimensional `algebra`, affine `Point<Q>`, and uncertainty `Interval<Q>`.
+- `data` defines storage and boundary-oriented wrappers: `bytes`, `count`,
+  `timestamp`, raw persisted `storage`, route-cost `weights`, and checked
+  lossy `quantize` helpers.
+
+Compatibility module re-exports keep paths such as `euclid::length::LengthMeters`,
+`euclid::weights::TimeWeight`, and `euclid::convert` available even though the
+implementation lives under the layered tree.
+
+## Scalar API
+
+Every `f64`-backed quantity implements `ScalarQuantity`, which provides finite
+construction, ordering helpers, rounding, finiteness checks, and typed
+approximate equality. Vector-like quantities also implement `LinearQuantity`,
+which adds displacement operations such as `abs`, `signum`, `ratio`, `lerp`, and
+`map`; absolute temperatures intentionally do not implement `LinearQuantity`.
+`Interval<Q>` and affine `Point<Q>` are restricted to `LinearQuantity` so they
+cannot accidentally perform vector arithmetic on absolute temperatures.
 
 ## Boundary
 
