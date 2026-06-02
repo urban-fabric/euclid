@@ -5,7 +5,7 @@ edition = "2024"
 license = "Proprietary"
 authors = ["Raymond Mead"]
 rust-version = "1.95"
-description = "Standard metric/unit primitives — speeds, lengths, times, angles, percentages, route weights, epoch timestamps, plus byte-size and count newtypes. Domain-agnostic; no kolmogorov coupling."
+description = "Standard metric/unit primitives - speeds, lengths, times, angles, mass, temperature, area, acceleration, percentages, route weights, epoch timestamps, plus byte-size and count newtypes, with uncertainty intervals and affine positions. Domain-agnostic; no kolmogorov coupling."
 repository = "https://github.com/urban-fabric/euclid"
 
 [dependencies]
