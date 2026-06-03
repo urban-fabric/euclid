@@ -30,7 +30,7 @@ pub use math::{affine, algebra, interval};
 pub use measure::{
     AngleDegrees, AngleRadians, Factor, LengthFeet, LengthKm, LengthMeters, MassGrams,
     MassKilograms, MassMilligrams, Percentage, TemperatureCelsius, TemperatureFahrenheit,
-    TemperatureKelvin, TimeHours, TimeMicros, TimeMicrosDelta, TimeMillis, TimeMinutes,
-    TimeSeconds,
+    TemperatureKelvin, TimeHours, TimeMicros, TimeMicrosDelta, TimeMillis, TimeMinutes, TimeNanos,
+    TimeNanosDelta, TimePicos, TimePicosDelta, TimeSeconds,
 };
 pub use measure::{angle, factor, length, mass, percentage, temperature, time};
