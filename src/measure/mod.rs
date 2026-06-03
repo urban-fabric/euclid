@@ -12,6 +12,9 @@ pub use length::{LengthFeet, LengthKm, LengthMeters};
 pub use mass::{MassGrams, MassKilograms, MassMilligrams};
 pub use percentage::Percentage;
 pub use temperature::{TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin};
-pub use time::{TimeHours, TimeMicros, TimeMicrosDelta, TimeMillis, TimeMinutes, TimeSeconds};
+pub use time::{
+    TimeHours, TimeMicros, TimeMicrosDelta, TimeMillis, TimeMinutes, TimeNanos, TimeNanosDelta,
+    TimePicos, TimePicosDelta, TimeSeconds,
+};
 
 pub(crate) use crate::{Dimension, LinearQuantity, Quantity};
