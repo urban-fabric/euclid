@@ -16,5 +16,34 @@ pub use nanos::{TimeNanos, TimeNanosDelta};
 pub use picos::{TimePicos, TimePicosDelta};
 pub use scalar::{TimeHours, TimeMillis, TimeMinutes, TimeSeconds};
 
+// The f64 scalar units (`TimeSeconds`, `TimeMillis`, ...) get `Display` from the
+// `impl_unit!` macro in `core::units`; the integer-repr sub-second units do not,
+// so give them the same unit-suffixed `Display` here (e.g. `"100 ns"`).
+macro_rules! impl_time_display {
+    ($($ty:ty),+ $(,)?) => {
+        $(
+            impl core::fmt::Display for $ty {
+                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                    write!(
+                        f,
+                        "{} {}",
+                        <$ty as $crate::Quantity>::raw(*self),
+                        <$ty as $crate::Quantity>::UNIT_NAME,
+                    )
+                }
+            }
+        )+
+    };
+}
+
+impl_time_display!(
+    TimeNanos,
+    TimeNanosDelta,
+    TimePicos,
+    TimePicosDelta,
+    TimeMicros,
+    TimeMicrosDelta,
+);
+
 #[cfg(test)]
 mod tests;

@@ -38,6 +38,16 @@ fn time_nanos_constants() {
 }
 
 #[test]
+fn sub_second_units_display_with_unit_suffix() {
+    assert_eq!(format!("{}", TimeNanos::new(100)), "100 ns");
+    assert_eq!(format!("{}", TimeNanosDelta::new(-5)), "-5 ns (signed)");
+    assert_eq!(format!("{}", TimePicos::new(7)), "7 ps");
+    assert_eq!(format!("{}", TimePicosDelta::new(-7)), "-7 ps (signed)");
+    assert_eq!(format!("{}", TimeMicros::new(3)), "3 µs");
+    assert_eq!(format!("{}", TimeMicrosDelta::new(-3)), "-3 µs (signed)");
+}
+
+#[test]
 fn time_nanos_arithmetic() {
     let a = TimeNanos::new(100);
     let b = TimeNanos::new(250);
