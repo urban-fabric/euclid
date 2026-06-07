@@ -53,8 +53,9 @@ impl std::error::Error for QuantityError {}
 pub trait ScalarQuantity: Quantity<Repr = f64> {
     /// Construct from a raw value, rejecting non-finite inputs.
     ///
-    /// The plain `new` / `from_raw` constructors only `debug_assert!` finiteness,
-    /// so a `NaN` or infinity slips through silently in release builds. This is
+    /// The plain [`from_raw`](Quantity::from_raw) constructor validates nothing
+    /// and the inherent `new` constructors only `debug_assert!` against `NaN`, so
+    /// a `NaN` or infinity can slip through silently in release builds. This is
     /// the checked counterpart for untrusted or computed inputs.
     fn from_raw_finite(value: f64) -> Result<Self, QuantityError> {
         if value.is_finite() {
@@ -158,7 +159,9 @@ pub trait LinearQuantity: ScalarQuantity {
         Self::from_raw(self.raw().abs())
     }
 
-    /// `-1.0`, `+1.0`, or the value itself when zero or `NaN`, following its sign.
+    /// The sign of the raw value, following [`f64::signum`]: `1.0` for positive
+    /// values and `+0.0`, `-1.0` for negative values and `-0.0`, and `NaN` for
+    /// `NaN`.
     fn signum(self) -> f64 {
         self.raw().signum()
     }

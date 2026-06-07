@@ -47,7 +47,6 @@ fn ordering_follows_the_coordinate() {
 fn serde_round_trips_transparently() {
     let p = Point::new(LengthMeters::new(42.5));
     let json = serde_json::to_string(&p).unwrap();
-    // `#[serde(transparent)]` means the wrapper is invisible on the wire.
     assert_eq!(json, "42.5");
     let back: Point<LengthMeters> = serde_json::from_str(&json).unwrap();
     assert_eq!(back, p);

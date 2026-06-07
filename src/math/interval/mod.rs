@@ -182,7 +182,6 @@ impl<Q: LinearQuantity> Add for Interval<Q> {
 impl<Q: LinearQuantity> Sub for Interval<Q> {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        // Crossed endpoints: smallest difference is lo - their hi, largest is hi - their lo.
         Self::from_raw_bounds(self.lo.raw() - rhs.hi.raw(), self.hi.raw() - rhs.lo.raw())
     }
 }
@@ -224,8 +223,6 @@ impl<Q: LinearQuantity> Div<f64> for Interval<Q> {
         }
     }
 }
-
-// Dimensional cross-products, mirroring `crate::algebra` at the interval level.
 
 impl Div<Interval<TimeSeconds>> for Interval<LengthMeters> {
     type Output = Interval<SpeedMs>;

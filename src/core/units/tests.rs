@@ -16,7 +16,6 @@ fn convert_within_a_dimension() {
         LengthMeters::new(1000.0).convert::<LengthKm>(),
         LengthKm::new(1.0)
     );
-    // One km is ~3280.84 feet (routed through the primary unit, meters).
     let feet = LengthKm::new(1.0).convert::<LengthFeet>();
     assert!(feet.approx_eq(LengthFeet::new(3280.839895), LengthFeet::new(1e-3)));
 
@@ -65,8 +64,6 @@ fn in_primary_uses_the_dimension_primary_unit() {
 
 #[test]
 fn convert_agrees_with_the_bespoke_conversions() {
-    // The protocol must never drift from the hand-written `to_*` methods: both are
-    // anchored to the same crate-internal constants.
     let km = LengthKm::new(2.5);
     assert!(
         km.convert::<LengthMeters>()

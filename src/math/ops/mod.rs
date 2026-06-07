@@ -81,7 +81,6 @@ macro_rules! impl_linear_ops {
 }
 
 impl_linear_ops!(
-    // measure
     LengthMeters,
     LengthKm,
     LengthFeet,
@@ -96,7 +95,6 @@ impl_linear_ops!(
     MassMilligrams,
     Factor,
     Percentage,
-    // derived
     SpeedMs,
     SpeedKph,
     SpeedMph,

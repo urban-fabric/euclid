@@ -27,9 +27,7 @@ fn from_raw_finite_accepts_finite_and_rejects_the_rest() {
 
 #[test]
 fn abs_is_available_uniformly_even_without_an_inherent_method() {
-    // `SpeedMs` has no inherent `abs`; it comes from the trait.
     assert_eq!(SpeedMs::new(-4.0).abs(), SpeedMs::new(4.0));
-    // `Factor` likewise.
     assert_eq!(Factor::new(-2.0).abs(), Factor::new(2.0));
 }
 
@@ -62,8 +60,6 @@ fn rounding_family_stays_in_unit() {
 #[test]
 fn finiteness_predicates() {
     assert!(Percentage::new(50.0).is_finite());
-    // Non-finite values are built with `from_raw`, since `new` debug-asserts
-    // finiteness — which is exactly the contract `from_raw_finite` enforces.
     let inf = Percentage::from_raw(f64::INFINITY);
     let nan = Percentage::from_raw(f64::NAN);
     assert!(!inf.is_finite());
@@ -90,6 +86,5 @@ fn approx_eq_uses_a_typed_tolerance() {
     let b = LengthMeters::new(1.000_2);
     assert!(a.approx_eq(b, LengthMeters::new(0.001)));
     assert!(!a.approx_eq(b, LengthMeters::new(0.000_01)));
-    // A negative tolerance is treated by magnitude.
     assert!(a.approx_eq(b, LengthMeters::new(-0.001)));
 }

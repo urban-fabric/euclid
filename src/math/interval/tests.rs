@@ -38,14 +38,12 @@ fn addition_adds_endpoints() {
 
 #[test]
 fn subtraction_crosses_endpoints() {
-    // [1,2] - [10,20] = [1-20, 2-10] = [-19, -8]
     let diff = meters(1.0, 2.0) - meters(10.0, 20.0);
     assert_eq!(diff, meters(-19.0, -8.0));
 }
 
 #[test]
 fn point_minus_itself_is_not_necessarily_zero_width() {
-    // Interval subtraction is not the inverse of addition: x - x has width 2*width(x).
     let x = meters(1.0, 2.0);
     assert_eq!(x - x, meters(-1.0, 1.0));
 }
@@ -59,7 +57,6 @@ fn scalar_multiplication_handles_sign() {
 
 #[test]
 fn speed_band_from_distance_and_time_bands() {
-    // 100..110 m over 9..10 s -> 10..12.222 m/s
     let distance = meters(100.0, 110.0);
     let time = Interval::new(TimeSeconds::new(9.0), TimeSeconds::new(10.0));
     let speed = distance / time;
@@ -71,7 +68,6 @@ fn speed_band_from_distance_and_time_bands() {
 fn distance_band_from_speed_and_time_bands() {
     let speed = Interval::new(SpeedMs::new(10.0), SpeedMs::new(12.0));
     let time = Interval::new(TimeSeconds::new(2.0), TimeSeconds::new(3.0));
-    // 10..12 m/s for 2..3 s -> 20..36 m
     assert_eq!(speed * time, meters(20.0, 36.0));
     assert_eq!(time * speed, meters(20.0, 36.0));
 }
@@ -80,7 +76,6 @@ fn distance_band_from_speed_and_time_bands() {
 fn time_band_from_distance_over_speed() {
     let distance = meters(100.0, 120.0);
     let speed = Interval::new(SpeedMs::new(10.0), SpeedMs::new(12.0));
-    // 100..120 m at 10..12 m/s -> 8.333..12 s
     let time = distance / speed;
     assert_eq!(time.hi(), TimeSeconds::new(12.0));
     assert!((time.lo().as_seconds() - (100.0 / 12.0)).abs() < 1e-9);
@@ -115,8 +110,6 @@ fn set_relations_between_intervals() {
 
 #[test]
 fn divisor_straddling_zero_is_fully_unbounded() {
-    // The divisor band [-1, 1] contains zero, so the speed is unbounded: sampling
-    // only the endpoints (which would give [-2, 2]) would be unsound.
     let distance = meters(1.0, 2.0);
     let time = Interval::new(TimeSeconds::new(-1.0), TimeSeconds::new(1.0));
     let speed = distance / time;
