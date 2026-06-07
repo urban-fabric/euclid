@@ -29,7 +29,6 @@ macro_rules! impl_unit {
             $(const PRIMARY_OFFSET: f64 = $offset;)?
         }
 
-        // The unit's runtime `Quantity::DIMENSION` must match its type-level `Dim`.
         const _: () = assert!(
             <$ty as Quantity>::DIMENSION.same(<$dim as DimMarker>::RUNTIME),
             concat!("dimension mismatch for ", stringify!($ty)),

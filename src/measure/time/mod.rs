@@ -16,9 +16,6 @@ pub use nanos::{TimeNanos, TimeNanosDelta};
 pub use picos::{TimePicos, TimePicosDelta};
 pub use scalar::{TimeHours, TimeMillis, TimeMinutes, TimeSeconds};
 
-// The f64 scalar units (`TimeSeconds`, `TimeMillis`, ...) get `Display` from the
-// `impl_unit!` macro in `core::units`; the integer-repr sub-second units do not,
-// so give them the same unit-suffixed `Display` here (e.g. `"100 ns"`).
 macro_rules! impl_time_display {
     ($($ty:ty),+ $(,)?) => {
         $(

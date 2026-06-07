@@ -10,8 +10,8 @@ one place without depending on application crates.
 re-exported at the crate root for ergonomic imports.
 
 - `core` defines the shared contracts: `Dimension`, `Quantity`,
-  `ScalarQuantity`, and `UnitOfMeasure`. `core::units` provides the
-  dimension-checked `convert` / `value_in` protocol, including offset-aware
+  `ScalarQuantity`, `LinearQuantity`, and `UnitOfMeasure`. `core::units` provides
+  the dimension-checked `convert` / `value_in` protocol, including offset-aware
   temperature conversion.
 - `measure` defines base scalar measurements: `length`, `time`, `angle`,
   `mass`, `temperature`, plus dimensionless `factor` and `percentage`.
@@ -20,14 +20,13 @@ re-exported at the crate root for ergonomic imports.
 - `math` defines operations over quantities: same-unit scalar operators,
   dimensional `algebra`, affine `Point<Q>`, and uncertainty `Interval<Q>`.
 - `data` defines storage and boundary-oriented wrappers: `bytes`, `count`,
-  `timestamp`, raw persisted `storage`, route-cost `weights`, and checked
-  lossy `quantize` helpers.
+  `timestamp`, raw persisted `storage`, route-cost `weights`, and checked lossy
+  `quantize` helpers.
 
-Compatibility module re-exports keep pre-reorg paths such as
-`euclid::length::LengthMeters` and `euclid::weights::TimeWeight` available even
-though the implementation now lives under the layered tree. The crate-root
-re-exports (`euclid::LengthMeters`, `euclid::TimeWeight`, ...) are the
-recommended import path.
+Every leaf module is also re-exported at the crate root, so `euclid::length` and
+`euclid::weights` resolve as well as the layered `euclid::measure::length` and
+`euclid::data::weights`. The crate-root type re-exports (`euclid::LengthMeters`,
+`euclid::TimeWeight`, ...) are the recommended import path.
 
 ## Scalar API
 
@@ -46,10 +45,10 @@ lossy quantization rules, serialization contracts, and basic dimensional
 arithmetic. It should not contain application workflow helpers, graph-specific
 state machines, or project-specific control-flow types.
 
-`weights` and `storage` intentionally use some of the same raw units. Use
-`weights` when a value participates in route-cost ordering or may use the
-`u32::MAX` infinity sentinel. Use `storage` when the type represents a raw
-centisecond or decimeter field in persisted data.
+`weights` and `storage` intentionally share some raw units. Use `weights` when a
+value participates in route-cost ordering or may use the `u32::MAX` infinity
+sentinel. Use `storage` when the type represents a raw centisecond or decimeter
+field in persisted data.
 
 Quantity payloads are private. Construct values with `new`, `from_*`, or
 conversion methods, and read values with named accessors such as `as_meters`,

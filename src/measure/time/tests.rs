@@ -71,7 +71,7 @@ fn time_nanos_arithmetic() {
 
 #[test]
 fn time_nanos_conversions() {
-    assert_eq!(TimeNanos::new(2_500).to_micros().as_micros(), 2); // truncating
+    assert_eq!(TimeNanos::new(2_500).to_micros().as_micros(), 2);
     assert_eq!(
         TimeNanos::from_duration(std::time::Duration::from_micros(5)).as_nanos(),
         5_000
@@ -109,7 +109,6 @@ fn time_picos_arithmetic() {
 
 #[test]
 fn time_picos_conversions() {
-    // 1_500 ps -> 1 ns (truncating), the picosecond->nanosecond step huygens needs.
     assert_eq!(TimePicos::new(1_500).to_nanos().as_nanos(), 1);
     assert_eq!(TimePicos::new(2_500_000).to_micros().as_micros(), 2);
     assert!((TimePicos::new(1_000_000_000_000).to_seconds().as_seconds() - 1.0).abs() < 1e-12);

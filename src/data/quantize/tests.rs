@@ -23,8 +23,6 @@ fn try_from_seconds_rejects_non_finite() {
 
 #[test]
 fn try_from_seconds_rejects_negative_instead_of_panicking() {
-    // The infallible `from_seconds` only `debug_assert!`s on negatives; the
-    // checked path turns that into a recoverable error.
     assert_eq!(
         TimeWeight::try_from_seconds(-0.5),
         Err(ConversionError::Negative)

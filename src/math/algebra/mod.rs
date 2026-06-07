@@ -1,14 +1,13 @@
 //! Dimensional cross-products between quantities: a length over a time is a
 //! speed, a speed over a time is an acceleration, two lengths make an area, and a
-//! [`Factor`](crate::Factor) scales any of them.
+//! [`Factor`] scales any of them.
 //!
 //! These operators are defined only between each dimension's **primary** unit
-//! ([`LengthMeters`](crate::LengthMeters), [`TimeSeconds`](crate::TimeSeconds),
-//! [`SpeedMs`](crate::SpeedMs), [`AreaSquareMeters`](crate::AreaSquareMeters),
-//! [`AccelerationMetersPerSecondSquared`](crate::AccelerationMetersPerSecondSquared)).
-//! That keeps the impls linear in the number of dimensions instead of
-//! combinatorial in the number of units, and keeps every result in a canonical
-//! unit. To combine non-primary units, convert to the primary unit first with
+//! ([`LengthMeters`], [`TimeSeconds`], [`SpeedMs`], [`AreaSquareMeters`],
+//! [`AccelerationMetersPerSecondSquared`]). That keeps the impls linear in the
+//! number of dimensions instead of combinatorial in the number of units, and
+//! keeps every result in a canonical unit. To combine non-primary units, convert
+//! to the primary unit first with
 //! [`UnitOfMeasure::convert`](crate::UnitOfMeasure::convert):
 //!
 //! ```
