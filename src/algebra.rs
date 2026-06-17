@@ -101,7 +101,10 @@ impl<T: MultiplicativeMagma + AssociativeMultiplication> MultiplicativeSemigroup
 pub trait MultiplicativeMonoid: MultiplicativeSemigroup + HasOne {}
 impl<T: MultiplicativeSemigroup + HasOne> MultiplicativeMonoid for T {}
 
-pub trait CommutativeMultiplicativeMonoid: MultiplicativeMonoid + CommutativeMultiplication {}
+pub trait CommutativeMultiplicativeMonoid:
+    MultiplicativeMonoid + CommutativeMultiplication
+{
+}
 impl<T: MultiplicativeMonoid + CommutativeMultiplication> CommutativeMultiplicativeMonoid for T {}
 
 /// A **semiring**: a commutative additive monoid and a multiplicative monoid with

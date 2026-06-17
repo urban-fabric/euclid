@@ -1,8 +1,8 @@
 pub mod affine;
-pub mod algebra;
+pub mod dimensional;
 pub mod interval;
 
-pub(crate) mod ops;
+pub(crate) mod linear;
 
 pub use affine::Point;
 pub use interval::Interval;
