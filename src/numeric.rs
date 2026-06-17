@@ -33,17 +33,10 @@ pub trait Scalar:
     + Neg<Output = Self>
 {
     /// Lift a real constant into the type (`f64` identity; `x + 0i` for complex; a
-    /// scalar tensor for `Tensor`).
+    /// scalar tensor for `Tensor`). This is the only primitive the substrate needs:
+    /// `0`/`1` are `from_f64(0.0)`/`from_f64(1.0)` for lazy-generic code, and the
+    /// concrete tier reads them off the `HasZero`/`HasOne` consts.
     fn from_f64(x: f64) -> Self;
-
-    /// The additive identity.
-    fn zero() -> Self {
-        Self::from_f64(0.0)
-    }
-    /// The multiplicative identity.
-    fn one() -> Self {
-        Self::from_f64(1.0)
-    }
 }
 
 /// A real-valued numeric scalar: a [`Scalar`] plus the real transcendentals that
@@ -615,7 +608,7 @@ mod tests {
 
     /// A formula written once over the real scalars.
     fn quadratic<T: LazyReal>(x: T) -> T {
-        x.clone() * x.clone() + x + T::one()
+        x.clone() * x.clone() + x + T::from_f64(1.0)
     }
 
     #[test]
