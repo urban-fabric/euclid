@@ -1,16 +1,14 @@
 //! Raw persisted unit wrappers.
 //!
 //! These types name compact storage fields such as centiseconds and decimeters.
-//! They do not carry route-cost sentinel semantics themselves. Convert to
-//! `crate::weights` when a value should participate in route-cost ordering or
-//! treat `u32::MAX` as infinity.
+//! They do not carry route-cost sentinel semantics themselves; the graph crate's
+//! route-weight types convert from these when a value should treat `u32::MAX` as
+//! infinity.
 
 use std::fmt;
 
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
-
-use crate::{DistanceWeight, TimeWeight};
 
 /// Raw centisecond storage value.
 #[derive(
@@ -46,10 +44,6 @@ impl TimeCentiseconds {
     pub const fn as_centiseconds(self) -> u32 {
         self.0
     }
-
-    pub const fn to_weight(self) -> TimeWeight {
-        TimeWeight::from_centiseconds(self.0)
-    }
 }
 
 impl fmt::Display for TimeCentiseconds {
@@ -67,12 +61,6 @@ impl From<u32> for TimeCentiseconds {
 impl From<TimeCentiseconds> for u32 {
     fn from(value: TimeCentiseconds) -> Self {
         value.0
-    }
-}
-
-impl From<TimeCentiseconds> for TimeWeight {
-    fn from(value: TimeCentiseconds) -> Self {
-        TimeWeight::from_centiseconds(value.0)
     }
 }
 
@@ -110,10 +98,6 @@ impl DistanceDecimeters {
     pub const fn as_decimeters(self) -> u32 {
         self.0
     }
-
-    pub const fn to_weight(self) -> DistanceWeight {
-        DistanceWeight::from_decimeters(self.0)
-    }
 }
 
 impl fmt::Display for DistanceDecimeters {
@@ -134,10 +118,5 @@ impl From<DistanceDecimeters> for u32 {
     }
 }
 
-impl From<DistanceDecimeters> for DistanceWeight {
-    fn from(value: DistanceDecimeters) -> Self {
-        DistanceWeight::from_decimeters(value.0)
-    }
-}
 #[cfg(test)]
 mod tests;

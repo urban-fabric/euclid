@@ -1,17 +1,14 @@
-//! Cross-quantity bridges implemented as inherent methods and `From` impls.
+//! Cross-quantity bridges between distinct euclid quantity types (e.g. length to
+//! travel time at a speed). Separate from the same-dimension
+//! [`UnitOfMeasure::convert`](crate::UnitOfMeasure::convert) protocol.
 //!
-//! These convert between distinct euclid quantity types (length/time to route
-//! weights, length to travel time at a speed, and so on). They are separate from
-//! the same-dimension [`UnitOfMeasure::convert`](crate::UnitOfMeasure::convert)
-//! protocol and from the fallible [`quantize`](crate::quantize) helpers.
+//! Route-weight bridges (length/time → `TimeWeight`/`DistanceWeight`) live with
+//! the weight types in the graph crate, not here — euclid owns only fundamental
+//! units.
 
-use crate::{DistanceWeight, LengthMeters, SpeedKph, TimeSeconds, TimeWeight};
+use crate::{LengthMeters, SpeedKph, TimeSeconds};
 
 impl LengthMeters {
-    pub fn to_distance_weight(self) -> DistanceWeight {
-        DistanceWeight::from_meters(self.as_meters())
-    }
-
     pub fn travel_time_at(self, speed: SpeedKph) -> TimeSeconds {
         if !speed.is_finite() || !speed.is_positive() {
             return TimeSeconds::INFINITY;
@@ -21,24 +18,8 @@ impl LengthMeters {
 }
 
 impl TimeSeconds {
-    pub fn to_time_weight(self) -> TimeWeight {
-        TimeWeight::from_seconds(self.as_seconds())
-    }
-
     pub fn distance_at(self, speed: SpeedKph) -> LengthMeters {
         LengthMeters::new(speed.as_kph() * self.as_seconds() / 3.6)
-    }
-}
-
-impl From<DistanceWeight> for LengthMeters {
-    fn from(d: DistanceWeight) -> Self {
-        Self::new(d.as_meters())
-    }
-}
-
-impl From<TimeWeight> for TimeSeconds {
-    fn from(t: TimeWeight) -> Self {
-        Self::new(t.as_seconds())
     }
 }
 

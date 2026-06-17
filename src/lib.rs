@@ -15,10 +15,10 @@ pub use core::{
 };
 
 pub use data::{
-    ByteRange, Bytes, ConversionError, Count, DistanceDecimeters, DistanceWeight, ThreadCount,
-    TimeCentiseconds, TimeWeight, UnixMillis, UnixSeconds,
+    ByteRange, Bytes, Count, DistanceDecimeters, ThreadCount, TimeCentiseconds, UnixMillis,
+    UnixSeconds,
 };
-pub use data::{bytes, count, quantize, storage, timestamp, weights};
+pub use data::{bytes, count, storage, timestamp};
 
 pub use derived::{
     AccelerationCentimetersPerSecondSquared, AccelerationMetersPerSecondSquared,
