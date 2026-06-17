@@ -349,6 +349,107 @@ impl Field for f32 {
     }
 }
 
+// ===== i64 / i128: the canonical non-field rings (ℤ) =======================
+//
+// Integers climb Semiring -> Ring -> CommutativeRing -> ... -> EuclideanDomain
+// but stop short of Field: there is no multiplicative inverse. `div_rem` is the
+// usual integer division and modulus (the exact-division primitive the
+// fraction-free algorithms build on). The magma `add`/`mul` ARE `+`/`*` (the
+// trunk<->numeric-branch bridge). They are ordered, but euclid's OrderedField
+// marker is field-only, so order lives on the consumer (`Ord`) rather than here.
+
+impl AdditiveMagma for i64 {
+    #[inline]
+    fn add(self, rhs: Self) -> Self {
+        self + rhs
+    }
+}
+impl MultiplicativeMagma for i64 {
+    #[inline]
+    fn mul(self, rhs: Self) -> Self {
+        self * rhs
+    }
+}
+impl RefAdditiveMagma for i64 {
+    #[inline]
+    fn add_ref(&self, rhs: &Self) -> Self {
+        *self + *rhs
+    }
+}
+impl RefMultiplicativeMagma for i64 {
+    #[inline]
+    fn mul_ref(&self, rhs: &Self) -> Self {
+        *self * *rhs
+    }
+}
+impl HasZero for i64 {
+    const ZERO: Self = 0;
+}
+impl HasOne for i64 {
+    const ONE: Self = 1;
+}
+impl AssociativeAddition for i64 {}
+impl CommutativeAddition for i64 {}
+impl AssociativeMultiplication for i64 {}
+impl CommutativeMultiplication for i64 {}
+impl Distributive for i64 {}
+impl ZeroAnnihilatesMultiplication for i64 {}
+impl IntegralDomain for i64 {}
+impl Ufd for i64 {}
+impl Pid for i64 {}
+impl EuclideanDomain for i64 {
+    #[inline]
+    fn div_rem(self, rhs: Self) -> (Self, Self) {
+        (self / rhs, self % rhs)
+    }
+}
+
+impl AdditiveMagma for i128 {
+    #[inline]
+    fn add(self, rhs: Self) -> Self {
+        self + rhs
+    }
+}
+impl MultiplicativeMagma for i128 {
+    #[inline]
+    fn mul(self, rhs: Self) -> Self {
+        self * rhs
+    }
+}
+impl RefAdditiveMagma for i128 {
+    #[inline]
+    fn add_ref(&self, rhs: &Self) -> Self {
+        *self + *rhs
+    }
+}
+impl RefMultiplicativeMagma for i128 {
+    #[inline]
+    fn mul_ref(&self, rhs: &Self) -> Self {
+        *self * *rhs
+    }
+}
+impl HasZero for i128 {
+    const ZERO: Self = 0;
+}
+impl HasOne for i128 {
+    const ONE: Self = 1;
+}
+impl AssociativeAddition for i128 {}
+impl CommutativeAddition for i128 {}
+impl AssociativeMultiplication for i128 {}
+impl CommutativeMultiplication for i128 {}
+impl Distributive for i128 {}
+impl ZeroAnnihilatesMultiplication for i128 {}
+impl IntegralDomain for i128 {}
+impl Ufd for i128 {}
+impl Pid for i128 {}
+impl EuclideanDomain for i128 {
+    #[inline]
+    fn div_rem(self, rhs: Self) -> (Self, Self) {
+        (self / rhs, self % rhs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +467,19 @@ mod tests {
         assert_eq!(7.0_f64.div_rem(2.0), (3.5, 0.0));
         // The trunk's magma `add` bridges to `+`.
         assert_eq!(AdditiveMagma::add(2.0_f64, 3.0), 5.0);
+    }
+
+    #[test]
+    fn integers_are_euclidean_domains_not_fields() {
+        // ℤ climbs Semiring -> Ring -> EuclideanDomain but is not a Field.
+        fn assert_euclidean<T: EuclideanDomain>(_: T) {}
+        assert_euclidean(7_i64);
+        assert_euclidean(7_i128);
+        assert_eq!(7_i64.div_rem(3), (2, 1));
+        assert_eq!((-7_i128).div_rem(3), (-2, -1));
+        assert_eq!(AdditiveMagma::add(2_i64, 3), 5);
+        assert_eq!(<i64 as HasZero>::ZERO, 0);
+        assert_eq!(<i128 as HasOne>::ONE, 1);
     }
 
     /// A minimal idempotent dioid (boolean reachability) to exercise the trunk's
