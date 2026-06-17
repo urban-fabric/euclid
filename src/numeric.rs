@@ -1,17 +1,19 @@
 //! The scalar traits, in two tiers.
 //!
 //! **Lazy tier** ([`Scalar`] → [`LazyReal`]/[`LazyComplex`]) — the minimal
-//! *analysis* surface (`from_f64`, `exp`/`ln`/`sqrt`, `conj`, magnitude), `Clone`
-//! not `Copy`, so a formula written **once** over it runs on every backend: scalar
-//! `f64`/`f32` *and* the deferred ones — a differentiable `Tensor`, a columnar
-//! `Expr`. This is the "write it once, run it eager or lazy" seam.
+//! *analysis* surface (`exp`/`ln`/`sqrt`, `conj`, magnitude) over the four
+//! operators, `Clone` not `Copy`, and crucially **construction-free**: no way to
+//! lift a scalar literal, so a lazy backend (a differentiable `Tensor`, a columnar
+//! `Expr`) implements it without pretending a single `f64` is a tensor. A formula
+//! written purely in analysis + operators runs on every backend.
 //!
 //! **Concrete tier** ([`Real`]/[`Complex`]) — a `Copy` real / complex *number* with
 //! the full API, formed by **fusing** the lazy analysis with the algebraic field
 //! ([`OrderedField`](crate::algebra::OrderedField) /
 //! [`AlgebraicallyClosedField`](crate::algebra::AlgebraicallyClosedField)): one
 //! bound gives operators, `ZERO`/`ONE`, `÷`, `conjugate`, ordering, *and*
-//! trig/`hypot`/rounding/constants. `Real: LazyReal` and `Complex: LazyComplex`, so
+//! `from_f64` (lift a literal) plus trig/`hypot`/rounding/constants. `Real: LazyReal`
+//! and `Complex: LazyComplex`, so
 //! a concrete number also satisfies a lazy formula — but a `Tensor` (no `Copy`, no
 //! `PI`) is *only* lazy. Implemented by `f64`/`f32` (and `jacobi::Complex{32,64}`);
 //! the geometry / matrix / physics kernels bound on the concrete tier.
@@ -21,9 +23,11 @@
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-/// The arithmetic substrate: `Clone` plus the four operations and negation, with a
-/// constructor from a real literal. The bound behind `+ - * /` in a generic
-/// formula; implemented by `f64`/`f32`, complex scalars, `Tensor`, and `Expr`.
+/// The arithmetic substrate: `Clone` plus the four operations and negation — the
+/// bound behind `+ - * /` in a generic formula. Pure operators, no construction:
+/// implemented by `f64`/`f32`, complex scalars, `Tensor`, and `Expr` alike.
+/// Lifting a scalar *constant* into the type ([`Real::from_f64`]/[`Complex::from_f64`])
+/// is a concrete-tier concern, not part of the lazy analysis surface.
 pub trait Scalar:
     Clone
     + Add<Output = Self>
@@ -32,11 +36,6 @@ pub trait Scalar:
     + Div<Output = Self>
     + Neg<Output = Self>
 {
-    /// Lift a real constant into the type (`f64` identity; `x + 0i` for complex; a
-    /// scalar tensor for `Tensor`). This is the only primitive the substrate needs:
-    /// `0`/`1` are `from_f64(0.0)`/`from_f64(1.0)` for lazy-generic code, and the
-    /// concrete tier reads them off the `HasZero`/`HasOne` consts.
-    fn from_f64(x: f64) -> Self;
 }
 
 /// A real-valued numeric scalar: a [`Scalar`] plus the real transcendentals that
@@ -115,6 +114,12 @@ pub trait Real:
     + core::ops::Rem<Output = Self>
     + core::iter::Sum
 {
+    /// Lift a real literal into the type (`f64` identity, `x as f32` for `f32`, the
+    /// nearest representable for a decimal) — the concrete-tier constructor, needed
+    /// wherever a generic formula carries an arbitrary literal or tolerance. (Named
+    /// constants — `0`/`1`/`π`/… — use the consts below rather than this.)
+    fn from_f64(x: f64) -> Self;
+
     /// `2`.
     const TWO: Self;
     /// `0.5`.
@@ -208,6 +213,9 @@ pub trait Real:
 pub trait Complex:
     crate::algebra::AlgebraicallyClosedField + LazyComplex<RealPart: Real> + Copy
 {
+    /// Lift a real literal into the complex plane (`x + 0i`).
+    fn from_f64(x: f64) -> Self;
+
     /// The phase angle `arg(z) ∈ (−π, π]`.
     fn argument(self) -> Self::RealPart;
     /// The principal square root.
@@ -224,12 +232,7 @@ pub trait Complex:
 
 // --- f64 / f32: the real reference (also degenerate complex) ---------------
 
-impl Scalar for f64 {
-    #[inline]
-    fn from_f64(x: f64) -> Self {
-        x
-    }
-}
+impl Scalar for f64 {}
 
 impl LazyReal for f64 {
     #[inline]
@@ -265,12 +268,7 @@ impl LazyReal for f64 {
     }
 }
 
-impl Scalar for f32 {
-    #[inline]
-    fn from_f64(x: f64) -> Self {
-        x as f32
-    }
-}
+impl Scalar for f32 {}
 
 impl LazyReal for f32 {
     #[inline]
@@ -309,6 +307,10 @@ impl LazyReal for f32 {
 // `exp`/`ln`/`powf` from `LazyReal`; only the remaining real API is written here.
 
 impl Real for f64 {
+    #[inline]
+    fn from_f64(x: f64) -> Self {
+        x
+    }
     const TWO: Self = 2.0;
     const HALF: Self = 0.5;
     const PI: Self = core::f64::consts::PI;
@@ -456,6 +458,10 @@ impl Real for f64 {
 }
 
 impl Real for f32 {
+    #[inline]
+    fn from_f64(x: f64) -> Self {
+        x as f32
+    }
     const TWO: Self = 2.0;
     const HALF: Self = 0.5;
     const PI: Self = core::f32::consts::PI;
@@ -606,15 +612,16 @@ impl Real for f32 {
 mod tests {
     use super::*;
 
-    /// A formula written once over the real scalars.
+    /// A formula written once over the lazy analysis base — pure analysis, no
+    /// scalar construction (that lives on the concrete tier's `from_f64`).
     fn quadratic<T: LazyReal>(x: T) -> T {
-        x.clone() * x.clone() + x + T::from_f64(1.0)
+        x.clone() * x.clone() + x
     }
 
     #[test]
     fn real_formula_runs_on_f64_and_f32() {
-        assert!((quadratic(2.5_f64) - 9.75).abs() < 1e-12);
-        assert!((quadratic(2.5_f32) - 9.75).abs() < 1e-5);
+        assert!((quadratic(2.5_f64) - 8.75).abs() < 1e-12);
+        assert!((quadratic(2.5_f32) - 8.75).abs() < 1e-5);
     }
 
     #[test]
@@ -641,6 +648,6 @@ mod tests {
         assert!((3.0_f32.hypot(4.0) - 5.0).abs() < 1e-5);
         assert_eq!(<f32 as crate::algebra::HasOne>::ONE, 1.0);
         // A concrete `Real` also satisfies a write-once `LazyReal` formula.
-        assert!((quadratic(2.0_f64) - 7.0).abs() < 1e-12);
+        assert!((quadratic(2.0_f64) - 6.0).abs() < 1e-12);
     }
 }
