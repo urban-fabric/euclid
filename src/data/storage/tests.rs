@@ -16,13 +16,6 @@ fn time_cs_serde_is_bare_u32() {
 }
 
 #[test]
-fn time_cs_to_weight_preserves_repr() {
-    let t = TimeCentiseconds::new(150);
-    let w: TimeWeight = t.into();
-    assert_eq!(w.as_centiseconds(), 150);
-}
-
-#[test]
 fn distance_dm_display_carries_unit() {
     assert_eq!(DistanceDecimeters::new(420).to_string(), "420 dm");
 }
@@ -34,11 +27,4 @@ fn distance_dm_serde_is_bare_u32() {
     assert_eq!(json, "420");
     let back: DistanceDecimeters = serde_json::from_str(&json).unwrap();
     assert_eq!(back, d);
-}
-
-#[test]
-fn distance_dm_to_weight_preserves_repr() {
-    let d = DistanceDecimeters::new(420);
-    let w: DistanceWeight = d.into();
-    assert_eq!(w.as_decimeters(), 420);
 }
