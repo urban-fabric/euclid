@@ -4,9 +4,9 @@ pub mod algebra;
 pub mod core;
 pub mod data;
 pub mod derived;
-pub mod field;
 pub mod math;
 pub mod measure;
+pub mod numeric;
 
 pub use core::units;
 pub use core::{
@@ -26,7 +26,7 @@ pub use derived::{
 };
 pub use derived::{acceleration, area, speed};
 
-pub use field::{ComplexField, RealField, Scalar};
+pub use numeric::{ComplexScalar, RealScalar, Scalar};
 
 pub use math::{Interval, Point};
 // NB: `algebra` at the crate root is now the abstract-algebra tower (`crate::algebra`);

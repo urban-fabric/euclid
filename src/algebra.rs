@@ -2,7 +2,7 @@
 //! types** (`f64`, `f32`, complex scalars, and finite/exact types like ℤ, ℚ,
 //! GF(p)). This is the "*what algebraic structure is this*" layer.
 //!
-//! It is the companion of [`crate::field`]: where `field` is the **element-wise,
+//! It is the companion of [`crate::numeric`]: where `numeric` is the **element-wise,
 //! `Clone`-based** numeric interface that a lazy `Tensor` or a columnar `Expr` can
 //! also implement, `algebra` is the **`Copy`, `const`-bearing** scalar interface —
 //! the properties only an individual number can have (`const ZERO`/`ONE`, a total
@@ -141,10 +141,10 @@ mod tests {
     #[test]
     fn f64_is_both_an_algebra_field_and_a_euclid_field() {
         // The same primitive type implements the scalar-algebra tower (here) and
-        // the element-wise analytic interface (crate::field) -- the two euclid
+        // the element-wise analysis interface (crate::numeric) -- the two euclid
         // families meet on the concrete scalars.
         fn needs_algebra<T: Field>(_: T) {}
-        fn needs_analysis<T: crate::field::RealField>(_: T) {}
+        fn needs_analysis<T: crate::numeric::RealScalar>(_: T) {}
         needs_algebra(1.0_f64);
         needs_analysis(1.0_f64);
     }
