@@ -185,27 +185,27 @@ pub trait LinearQuantity: ScalarQuantity {
 #[cfg(test)]
 mod tests;
 
-pub fn scalar_add<T: LinearQuantity>(lhs: T, rhs: T) -> T {
+pub(crate) fn scalar_add<T: LinearQuantity>(lhs: T, rhs: T) -> T {
     T::from_raw(lhs.raw() + rhs.raw())
 }
 
-pub fn scalar_sub<T: LinearQuantity>(lhs: T, rhs: T) -> T {
+pub(crate) fn scalar_sub<T: LinearQuantity>(lhs: T, rhs: T) -> T {
     T::from_raw(lhs.raw() - rhs.raw())
 }
 
-pub fn scalar_neg<T: LinearQuantity>(value: T) -> T {
+pub(crate) fn scalar_neg<T: LinearQuantity>(value: T) -> T {
     T::from_raw(-value.raw())
 }
 
-pub fn scalar_mul<T: LinearQuantity>(value: T, factor: f64) -> T {
+pub(crate) fn scalar_mul<T: LinearQuantity>(value: T, factor: f64) -> T {
     T::from_raw(value.raw() * factor)
 }
 
-pub fn scalar_div<T: LinearQuantity>(value: T, divisor: f64) -> T {
+pub(crate) fn scalar_div<T: LinearQuantity>(value: T, divisor: f64) -> T {
     T::from_raw(value.raw() / divisor)
 }
 
-pub fn scalar_sum<T, I>(iter: I) -> T
+pub(crate) fn scalar_sum<T, I>(iter: I) -> T
 where
     T: LinearQuantity,
     I: Iterator<Item = T>,

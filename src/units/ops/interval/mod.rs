@@ -3,7 +3,7 @@
 //! A measured length is rarely an exact `f64`; it is a value with a tolerance. An
 //! [`Interval<Q>`] carries the `[lo, hi]` bounds of a scalar quantity and threads
 //! them through arithmetic so that error propagates automatically. The dimensional
-//! cross-products mirror [`crate::algebra`]: dividing an `Interval<LengthMeters>`
+//! cross-products mirror [`crate::units::ops::dimensional`]: dividing an `Interval<LengthMeters>`
 //! by an `Interval<TimeSeconds>` yields an `Interval<SpeedMs>`, the band of speeds
 //! consistent with the distance and time bands.
 //!
