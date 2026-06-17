@@ -26,7 +26,7 @@ pub use derived::{
 };
 pub use derived::{acceleration, area, speed};
 
-pub use numeric::{ComplexScalar, RealScalar, Scalar};
+pub use numeric::{Complex, LazyComplex, LazyReal, Real, Scalar};
 
 pub use math::{Interval, Point};
 // NB: `algebra` at the crate root is now the abstract-algebra tower (`crate::algebra`);
