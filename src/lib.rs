@@ -3,6 +3,7 @@
 pub mod core;
 pub mod data;
 pub mod derived;
+pub mod field;
 pub mod math;
 pub mod measure;
 
@@ -23,6 +24,8 @@ pub use derived::{
     AreaSquareKilometers, AreaSquareMeters, SpeedKph, SpeedMph, SpeedMs,
 };
 pub use derived::{acceleration, area, speed};
+
+pub use field::{ComplexField, RealField, Scalar};
 
 pub use math::{Interval, Point};
 pub use math::{affine, algebra, interval};
