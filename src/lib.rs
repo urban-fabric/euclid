@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
 
+pub mod algebra;
 pub mod core;
 pub mod data;
 pub mod derived;
@@ -28,7 +29,9 @@ pub use derived::{acceleration, area, speed};
 pub use field::{ComplexField, RealField, Scalar};
 
 pub use math::{Interval, Point};
-pub use math::{affine, algebra, interval};
+// NB: `algebra` at the crate root is now the abstract-algebra tower (`crate::algebra`);
+// the unit-quantity operator module is reached as `crate::math::algebra`.
+pub use math::{affine, interval};
 
 pub use measure::{
     AngleDegrees, AngleRadians, Factor, LengthFeet, LengthKm, LengthMeters, MassGrams,
