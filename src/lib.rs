@@ -12,7 +12,7 @@ pub use units::{
     Percentage, Quantity, QuantityError, ScalarQuantity, TemperatureCelsius, TemperatureFahrenheit,
     TemperatureKelvin, ThreadCount, TimeCentiseconds, TimeHours, TimeMicros, TimeMicrosDelta,
     TimeMillis, TimeMinutes, TimeNanos, TimeNanosDelta, TimePicos, TimePicosDelta, TimeSeconds,
-    UnitOfMeasure, UnixMillis, UnixSeconds,
+    UnitOfMeasure, UnixMillis, UnixSeconds, scalar_mul,
 };
 
 pub use units::{

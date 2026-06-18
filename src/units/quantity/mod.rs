@@ -197,7 +197,9 @@ pub(crate) fn scalar_neg<T: LinearQuantity>(value: T) -> T {
     T::from_raw(-value.raw())
 }
 
-pub(crate) fn scalar_mul<T: LinearQuantity>(value: T, factor: f64) -> T {
+/// Scale a linear quantity by a dimensionless scalar while preserving its unit
+/// type.
+pub fn scalar_mul<T: LinearQuantity>(value: T, factor: f64) -> T {
     T::from_raw(value.raw() * factor)
 }
 

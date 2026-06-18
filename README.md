@@ -16,6 +16,12 @@ The public API has three top-level modules:
 - `euclid::units` for quantities, unit conversion, data wrappers, and typed
   quantity operations.
 
+`LazyReal` is the formula substrate for scalar-valued lazy backends. It includes
+`scalar(f64)` plus helpers such as `half()`, `pi()`, and `half_ln_tau()`, so pure
+algebraic formulas can lift scalar constants without depending on the concrete
+`Real` tier. Vector, tensor, and shaped construction stays in the backend that
+owns those containers.
+
 Common quantity types and traits are also re-exported from the crate root:
 
 ```rust
