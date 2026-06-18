@@ -1,9 +1,12 @@
 #![doc = include_str!("../README.md")]
 
 pub mod algebra;
+pub mod array;
 pub mod numeric;
+pub mod special;
 pub mod units;
 
+pub use array::{LazyMatrix, LazyTensor, LazyVector};
 pub use numeric::{Complex, LazyComplex, LazyReal, Real, Scalar};
 
 pub use units::{
