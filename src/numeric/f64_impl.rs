@@ -1,0 +1,275 @@
+//! `f64` implementations of the numeric traits.
+
+use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra, Real};
+
+impl Arithmetic for f64 {}
+
+impl LazyReal for f64 {
+    #[inline]
+    fn scalar(x: f64) -> Self {
+        x
+    }
+    #[inline]
+    fn exp(&self) -> Self {
+        f64::exp(*self)
+    }
+    #[inline]
+    fn ln(&self) -> Self {
+        f64::ln(*self)
+    }
+    #[inline]
+    fn sqrt(&self) -> Self {
+        f64::sqrt(*self)
+    }
+    #[inline]
+    fn abs(&self) -> Self {
+        f64::abs(*self)
+    }
+    #[inline]
+    fn powf(&self, p: f64) -> Self {
+        f64::powf(*self, p)
+    }
+    #[inline]
+    fn ln_1p_exp(&self) -> Self {
+        // Stable softplus: for x > 0 factor out x to avoid overflow in e^x; for
+        // x <= 0 evaluate ln(1 + e^x) directly.
+        let x = *self;
+        if x > 0.0 {
+            x + f64::ln_1p((-x).exp())
+        } else {
+            f64::ln_1p(x.exp())
+        }
+    }
+    #[inline]
+    fn sin(self) -> Self {
+        f64::sin(self)
+    }
+    #[inline]
+    fn cos(self) -> Self {
+        f64::cos(self)
+    }
+    #[inline]
+    fn tan(self) -> Self {
+        f64::tan(self)
+    }
+    #[inline]
+    fn asin(self) -> Self {
+        f64::asin(self)
+    }
+    #[inline]
+    fn acos(self) -> Self {
+        f64::acos(self)
+    }
+    #[inline]
+    fn atan(self) -> Self {
+        f64::atan(self)
+    }
+    #[inline]
+    fn atan2(self, x: Self) -> Self {
+        f64::atan2(self, x)
+    }
+    #[inline]
+    fn sinh(self) -> Self {
+        f64::sinh(self)
+    }
+    #[inline]
+    fn cosh(self) -> Self {
+        f64::cosh(self)
+    }
+    #[inline]
+    fn tanh(self) -> Self {
+        f64::tanh(self)
+    }
+    #[inline]
+    fn hypot(self, other: Self) -> Self {
+        f64::hypot(self, other)
+    }
+    #[inline]
+    fn cbrt(self) -> Self {
+        f64::cbrt(self)
+    }
+    #[inline]
+    fn powi(self, n: i32) -> Self {
+        f64::powi(self, n)
+    }
+    #[inline]
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        f64::mul_add(self, a, b)
+    }
+    #[inline]
+    fn recip(self) -> Self {
+        f64::recip(self)
+    }
+    #[inline]
+    fn log2(self) -> Self {
+        f64::log2(self)
+    }
+    #[inline]
+    fn floor(self) -> Self {
+        f64::floor(self)
+    }
+    #[inline]
+    fn ceil(self) -> Self {
+        f64::ceil(self)
+    }
+    #[inline]
+    fn round(self) -> Self {
+        f64::round(self)
+    }
+    #[inline]
+    fn trunc(self) -> Self {
+        f64::trunc(self)
+    }
+    #[inline]
+    fn fract(self) -> Self {
+        f64::fract(self)
+    }
+    #[inline]
+    fn signum(self) -> Self {
+        f64::signum(self)
+    }
+    #[inline]
+    fn copysign(self, sign: Self) -> Self {
+        f64::copysign(self, sign)
+    }
+    #[inline]
+    fn rem_euclid(self, m: Self) -> Self {
+        f64::rem_euclid(self, m)
+    }
+    #[inline]
+    fn to_radians(self) -> Self {
+        f64::to_radians(self)
+    }
+    #[inline]
+    fn to_degrees(self) -> Self {
+        f64::to_degrees(self)
+    }
+    #[inline]
+    fn min(self, other: Self) -> Self {
+        f64::min(self, other)
+    }
+    #[inline]
+    fn max(self, other: Self) -> Self {
+        f64::max(self, other)
+    }
+    #[inline]
+    fn clamp(self, lo: Self, hi: Self) -> Self {
+        f64::clamp(self, lo, hi)
+    }
+    #[inline]
+    fn erf(self) -> Self {
+        crate::special::erf::erf(self)
+    }
+    #[inline]
+    fn erfc(self) -> Self {
+        crate::special::erf::erfc(self)
+    }
+    #[inline]
+    fn erf_inv(self) -> Self {
+        crate::special::erf::erf_inv(self)
+    }
+    #[inline]
+    fn ln_gamma(self) -> Self {
+        crate::special::gamma::ln_gamma(self)
+    }
+    #[inline]
+    fn digamma(self) -> Self {
+        crate::special::gamma::digamma(self)
+    }
+    #[inline]
+    fn trigamma(self) -> Self {
+        crate::special::gamma::trigamma(self)
+    }
+    #[inline]
+    fn gamma_lr(self, shape: Self) -> Self {
+        crate::special::gamma::gamma_lr(shape, self)
+    }
+    #[inline]
+    fn gamma_ur(self, shape: Self) -> Self {
+        crate::special::gamma::gamma_ur(shape, self)
+    }
+    #[inline]
+    fn beta_reg(self, a: Self, b: Self) -> Self {
+        crate::special::beta::beta_reg(a, b, self)
+    }
+    #[inline]
+    fn ln_1m_exp(&self) -> Self {
+        // Stable log1mexp: ln(-expm1(x)) near 0, ln1p(-exp(x)) in the tail.
+        let x = *self;
+        if x >= 0.0 {
+            f64::NAN
+        } else if x > -core::f64::consts::LN_2 {
+            (-x.exp_m1()).ln()
+        } else {
+            (-x.exp()).ln_1p()
+        }
+    }
+    #[inline]
+    fn erfcx(self) -> Self {
+        crate::special::erf::erfcx(self)
+    }
+    #[inline]
+    fn bessel_i0e(self) -> Self {
+        crate::special::bessel::i0e(self)
+    }
+    #[inline]
+    fn bessel_i1e(self) -> Self {
+        crate::special::bessel::i1e(self)
+    }
+}
+
+impl Real for f64 {
+    const TWO: Self = 2.0;
+    const HALF: Self = 0.5;
+    const PI: Self = core::f64::consts::PI;
+    const TAU: Self = core::f64::consts::TAU;
+    const FRAC_PI_2: Self = core::f64::consts::FRAC_PI_2;
+    const FRAC_PI_4: Self = core::f64::consts::FRAC_PI_4;
+    const SQRT_2: Self = core::f64::consts::SQRT_2;
+    const FRAC_1_SQRT_2: Self = core::f64::consts::FRAC_1_SQRT_2;
+    const E: Self = core::f64::consts::E;
+    const EPSILON: Self = f64::EPSILON;
+    const INFINITY: Self = f64::INFINITY;
+    const NEG_INFINITY: Self = f64::NEG_INFINITY;
+    const NAN: Self = f64::NAN;
+    const MAX: Self = f64::MAX;
+    const MIN: Self = f64::MIN;
+    const MIN_POSITIVE: Self = f64::MIN_POSITIVE;
+
+    #[inline]
+    fn is_finite(self) -> bool {
+        f64::is_finite(self)
+    }
+    #[inline]
+    fn is_nan(self) -> bool {
+        f64::is_nan(self)
+    }
+    #[inline]
+    fn is_sign_negative(self) -> bool {
+        f64::is_sign_negative(self)
+    }
+}
+
+impl NormedDivisionAlgebra for f64 {
+    type RealPart = f64;
+    #[inline]
+    fn conjugate(&self) -> Self {
+        *self
+    }
+    #[inline]
+    fn norm_sqr(&self) -> f64 {
+        self * self
+    }
+    #[inline]
+    fn real_part(&self) -> f64 {
+        *self
+    }
+    #[inline]
+    fn from_real(re: f64) -> Self {
+        re
+    }
+    #[inline]
+    fn magnitude(&self) -> f64 {
+        f64::abs(*self)
+    }
+}

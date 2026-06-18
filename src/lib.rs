@@ -7,7 +7,9 @@ pub mod special;
 pub mod units;
 
 pub use array::{LazyMatrix, LazyTensor, LazyVector};
-pub use numeric::{Complex, LazyComplex, LazyReal, Real, Scalar};
+pub use numeric::{
+    Arithmetic, Complex, LazyComplex, LazyQuaternion, LazyReal, NormedDivisionAlgebra, Real,
+};
 
 pub use units::{
     AngleDegrees, AngleRadians, ByteRange, Bytes, Count, Dimension, DistanceDecimeters, Factor,
