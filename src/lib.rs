@@ -6,7 +6,8 @@ pub mod numeric;
 pub mod special;
 pub mod units;
 
-pub use array::{LazyMatrix, LazyTensor, LazyVector};
+pub use algebra::{GaussianRational, Integer, Rational, Rational128, Rational64, Zn, Zp};
+pub use array::{LazyDecompositions, LazyMatrix, LazyTensor, LazyVector};
 pub use numeric::{
     Arithmetic, Complex, LazyComplex, LazyQuaternion, LazyReal, NormedDivisionAlgebra, Real,
 };

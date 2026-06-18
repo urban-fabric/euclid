@@ -95,13 +95,27 @@ pub trait LazyMatrix: Clone {
     /// `(rows, cols)`.
     fn shape(&self) -> (usize, usize);
 
+    // --- constructors ---
+    // Context-free (like [`LazyReal::scalar`](crate::numeric::LazyReal::scalar)): an
+    // eager backend allocates; a lazy/XLA backend emits a constant node (`Broadcast` of
+    // `0`, an `Eye`/`Iota` for the identity) in its default graph/device context. They
+    // give the abstract algorithms (`A \ I`, `AᴴA + λI`, …) the values they need to
+    // compose without dropping to a concrete type.
+    /// The `n×n` identity matrix.
+    fn identity(n: usize) -> Self;
+    /// An all-zeros `rows×cols` matrix.
+    fn zeros(rows: usize, cols: usize) -> Self;
+
     // --- vector space + products ---
     fn add(self, other: Self) -> Self;
     fn scale(self, factor: Self::Scalar) -> Self;
-    /// The (plain) transpose `Aᵀ` — the structural axis swap (XLA `Transpose`). The
-    /// Hermitian conjugation the SPD spine needs lives in `dot`/`cholesky`/`mahalanobis`,
-    /// not here.
+    /// The (plain) transpose `Aᵀ` — the structural axis swap (XLA `Transpose`).
     fn transpose(self) -> Self;
+    /// The conjugate (Hermitian) transpose `Aᴴ` — `Transpose` then elementwise
+    /// `conj` (XLA `Transpose`+`Conj`); the plain `transpose` for a real scalar. The
+    /// building block of the Hermitian forms (`AᴴA`, the normal equations) a generic
+    /// algorithm composes without dropping to a concrete type.
+    fn adjoint(self) -> Self;
     fn matmul(self, rhs: Self) -> Self;
     fn matvec(self, v: Self::Vector) -> Self::Vector;
     fn trace(&self) -> Self::Scalar;
@@ -121,6 +135,48 @@ pub trait LazyMatrix: Clone {
     fn mahalanobis_squared(&self, delta: &Self::Vector) -> RealPart<Self::Scalar>;
 }
 
+/// **The fenced decompositions extension.** The heavyweight, non-Hermitian-PD
+/// factorizations and solves — general nonsingular solve, determinant, QR, Hermitian
+/// eigendecomposition, SVD — kept deliberately *out* of the core [`LazyMatrix`]
+/// because on a tensor/XLA backend they are the **T3** path: a pure-HLO Jacobi sweep
+/// or a custom-call into LAPACK/cuSOLVER, not native fused HLO (and on TPU,
+/// slow/precision-sensitive). A backend that can provide them — the eager
+/// `ramanujan::DenseMatrix`, or an XLA `Tensor` via custom-call — implements this
+/// extension; a portable kernel that needs only the SPD spine stays on [`LazyMatrix`]
+/// and lowers everywhere.
+///
+/// The results are stated as **factor matrices** (`Self`), which both an eager dense
+/// matrix and an XLA tensor produce directly. The intrinsically-real spectra
+/// (eigenvalues, singular values) come back as a [`RealVector`](Self::RealVector) over
+/// the scalar's real field — real even over ℂ.
+pub trait LazyDecompositions: LazyMatrix {
+    /// A real-valued companion vector — the eigenvalue / singular-value spectra, real
+    /// even over ℂ. (`DenseVector<f64>` for the `f64` reference; a real-dtype tensor
+    /// for the XLA backend.)
+    type RealVector: LazyVector<Scalar = RealPart<Self::Scalar>>;
+
+    /// The determinant `det A` (a scalar — complex over ℂ).
+    fn determinant(&self) -> Self::Scalar;
+
+    /// The general nonsingular solve `A⁻¹·B` for a (possibly multi-column) right-hand
+    /// side `B` — no Hermitian-PD assumption (the backend picks LU / a general solve).
+    /// For the SPD case prefer [`LazyMatrix::solve_spd`].
+    fn solve(self, rhs: Self) -> Self;
+
+    /// QR factorization `A = Q·R` — `Q` with orthonormal columns, `R` upper-triangular.
+    /// Returns `(Q, R)`. The building block of the least-squares solve.
+    fn qr(self) -> (Self, Self);
+
+    /// Hermitian eigendecomposition `A = V·diag(λ)·Vᴴ` of a Hermitian `A` — eigenvalues
+    /// `λ` **ascending** (real even over ℂ), eigenvectors the columns of `V`. Returns
+    /// `(λ, V)`.
+    fn eigh(self) -> (Self::RealVector, Self);
+
+    /// Singular value decomposition `A = U·diag(σ)·Vᴴ` — singular values `σ`
+    /// **descending** (real, non-negative). Returns `(U, σ, V)`.
+    fn svd(self) -> (Self, Self::RealVector, Self);
+}
+
 /// **Rank n.** An n-dimensional array over a lazy scalar (real or complex), carrying
 /// the abstract array notions — shape and reductions. `LazyTensor: NormedDivisionAlgebra`, so a
 /// tensor is itself a lazy scalar (`Scalar = Vector = Self` for the unified backend); a
@@ -133,7 +189,11 @@ pub trait LazyMatrix: Clone {
 /// comparison/selection mask is represented, broadcast/gather/scatter, precision — is
 /// **not** here; it lives with the tensor backend.
 pub trait LazyTensor: NormedDivisionAlgebra {
-    fn shape(&self) -> &[usize];
+    /// The axis lengths. Returned **owned** — a tensor's shape is dynamic metadata a
+    /// backend computes (a lazy/XLA graph node, a columnar frame), not necessarily a
+    /// stored contiguous slice; consistent with [`LazyMatrix::shape`] /
+    /// [`LazyVector::len`] returning owned shape info.
+    fn shape(&self) -> Vec<usize>;
     fn rank(&self) -> usize {
         self.shape().len()
     }

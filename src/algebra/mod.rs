@@ -238,6 +238,18 @@ impl<T: Field + PartialOrd> OrderedField for T {}
 /// Marker: a [`Field`] in which every non-constant polynomial has a root (ℂ).
 pub trait AlgebraicallyClosedField: Field {}
 
+mod gaussian;
 mod impls;
+mod integer;
+mod modular;
+mod rational;
 #[cfg(test)]
 mod tests;
+
+// The concrete exact number systems — pure algebraic carriers of the tower above.
+// Their matrix-kernel impls (`MatrixRing`/`MatrixField`) live in `jacobi`, which owns
+// that trait (the orphan rule); here they implement only euclid's own algebra.
+pub use gaussian::GaussianRational;
+pub use integer::Integer;
+pub use modular::{Zn, Zp};
+pub use rational::{Rational, Rational128, Rational64};
