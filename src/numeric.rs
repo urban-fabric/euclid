@@ -1,22 +1,27 @@
 //! The scalar traits, in two tiers.
 //!
-//! **Lazy tier** ([`Scalar`] → [`LazyReal`]/[`LazyComplex`]) — the minimal
-//! *analysis* surface (`exp`/`ln`/`sqrt`, `conj`, magnitude) over the four
-//! operators, `Clone` not `Copy`, and crucially **construction-free**: no way to
-//! lift a scalar literal, so a lazy backend (a differentiable `Tensor`, a columnar
-//! `Expr`) implements it without pretending a single `f64` is a tensor. A formula
-//! written purely in analysis + operators runs on every backend.
+//! **Lazy tier** ([`Scalar`] → [`LazyReal`]/[`LazyComplex`]) — the *elementwise
+//! analysis* surface over the four operators, `Clone` not `Copy`: the
+//! transcendentals (`exp`/`ln`/`sqrt`, trig, `atan2`/`hypot`), rounding/sign, the
+//! comparison-free `min`/`max`/`clamp` selectors, `conj`/magnitude, plus
+//! scalar-literal lifting for the constants formulas name. Every operation here is
+//! something a lazy backend (a differentiable `Tensor`, a columnar `Expr`) can
+//! lower — a tensor compiler maps them to `Sin`/`Cos`/`Max`/`Select`/… — so a pure
+//! formula written in analysis + operators + scalar constants runs on every
+//! backend. What is *not* here: anything that returns a scalar `bool` (a tensor
+//! comparison yields a mask, not a bool) or that needs the concrete number line.
 //!
 //! **Concrete tier** ([`Real`]/[`Complex`]) — a `Copy` real / complex *number* with
 //! the full API, formed by **fusing** the lazy analysis with the algebraic field
 //! ([`OrderedField`](crate::algebra::OrderedField) /
 //! [`AlgebraicallyClosedField`](crate::algebra::AlgebraicallyClosedField)): one
 //! bound gives operators, `ZERO`/`ONE`, `÷`, `conjugate`, ordering, *and*
-//! `from_f64` (lift a literal) plus trig/`hypot`/rounding/constants. `Real: LazyReal`
-//! and `Complex: LazyComplex`, so
+//! `from_f64` (the concrete-tier spelling for [`LazyReal::scalar`]) plus
+//! trig/`hypot`/rounding/constants. `Real: LazyReal` and `Complex: LazyComplex`, so
 //! a concrete number also satisfies a lazy formula — but a `Tensor` (no `Copy`, no
-//! `PI`) is *only* lazy. Implemented by `f64`/`f32` (and `jacobi::Complex{32,64}`);
-//! the geometry / matrix / physics kernels bound on the concrete tier.
+//! associated constants) is *only* lazy. Implemented by `f64`/`f32` (and
+//! `jacobi::Complex{32,64}`); the geometry / matrix / physics kernels bound on
+//! the concrete tier.
 //!
 //! The word *field* stays reserved for the algebraic
 //! [`Field`](crate::algebra::Field).
@@ -24,10 +29,12 @@
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
 /// The arithmetic substrate: `Clone` plus the four operations and negation — the
-/// bound behind `+ - * /` in a generic formula. Pure operators, no construction:
-/// implemented by `f64`/`f32`, complex scalars, `Tensor`, and `Expr` alike.
-/// Lifting a scalar *constant* into the type ([`Real::from_f64`]/[`Complex::from_f64`])
-/// is a concrete-tier concern, not part of the lazy analysis surface.
+/// bound behind `+ - * /` in a generic formula. Pure operators, no scalar or vector
+/// construction: implemented by `f64`/`f32`, complex scalars, `Tensor`, and `Expr`
+/// alike.
+/// Lifting a scalar *constant* into a real lazy substrate lives on [`LazyReal`],
+/// because probability/statistics formulas need constants without giving up lazy
+/// execution.
 pub trait Scalar:
     Clone
     + Add<Output = Self>
@@ -42,6 +49,158 @@ pub trait Scalar:
 /// inherently-real formulas (probability densities, geometry kernels) are written
 /// in.
 pub trait LazyReal: Scalar {
+    /// Lift a host scalar into this real substrate.
+    ///
+    /// For `f64` this is the identity and for `f32` it is a narrowing cast. Lazy
+    /// graph backends should represent it as a scalar constant node, ideally
+    /// interned or otherwise cheap to reuse.
+    fn scalar(x: f64) -> Self;
+
+    /// Lift a host scalar using `self` as graph/device/shape context.
+    ///
+    /// The default is a scalar constant. Tensor or expression backends may
+    /// override this when constants need to live in the same arena, dtype, device,
+    /// or broadcast context as an existing value.
+    #[inline]
+    fn scalar_like(&self, x: f64) -> Self {
+        Self::scalar(x)
+    }
+
+    /// `0`.
+    #[inline]
+    fn zero() -> Self {
+        Self::scalar(0.0)
+    }
+
+    /// `1`.
+    #[inline]
+    fn one() -> Self {
+        Self::scalar(1.0)
+    }
+
+    /// `2`.
+    #[inline]
+    fn two() -> Self {
+        Self::scalar(2.0)
+    }
+
+    /// `0.5`.
+    #[inline]
+    fn half() -> Self {
+        Self::scalar(0.5)
+    }
+
+    /// Archimedes' constant `π`.
+    #[inline]
+    fn pi() -> Self {
+        Self::scalar(core::f64::consts::PI)
+    }
+
+    /// `2π`.
+    #[inline]
+    fn tau() -> Self {
+        Self::scalar(core::f64::consts::TAU)
+    }
+
+    /// `π/2`.
+    #[inline]
+    fn frac_pi_2() -> Self {
+        Self::scalar(core::f64::consts::FRAC_PI_2)
+    }
+
+    /// `π/4`.
+    #[inline]
+    fn frac_pi_4() -> Self {
+        Self::scalar(core::f64::consts::FRAC_PI_4)
+    }
+
+    /// `√2`.
+    #[inline]
+    fn sqrt_2() -> Self {
+        Self::scalar(core::f64::consts::SQRT_2)
+    }
+
+    /// `1/√2`.
+    #[inline]
+    fn frac_1_sqrt_2() -> Self {
+        Self::scalar(core::f64::consts::FRAC_1_SQRT_2)
+    }
+
+    /// `ln 2`.
+    #[inline]
+    fn ln_2() -> Self {
+        Self::scalar(core::f64::consts::LN_2)
+    }
+
+    /// `ln π`.
+    #[inline]
+    fn ln_pi() -> Self {
+        Self::scalar(core::f64::consts::PI.ln())
+    }
+
+    /// `ln τ`, where `τ = 2π`.
+    #[inline]
+    fn ln_tau() -> Self {
+        Self::scalar(core::f64::consts::TAU.ln())
+    }
+
+    /// `0.5 * ln τ`, the scalar normal-density normalizer.
+    #[inline]
+    fn half_ln_tau() -> Self {
+        Self::scalar(0.5 * core::f64::consts::TAU.ln())
+    }
+
+    /// Euler's number `e`.
+    ///
+    /// The base of the natural exponential — the fixed point the whole analysis
+    /// surface (`exp`/`ln`) is written around. Naming it directly lets a lazy
+    /// backend intern the constant instead of recovering it as `T::one().exp()`.
+    #[inline]
+    fn e() -> Self {
+        Self::scalar(core::f64::consts::E)
+    }
+
+    /// `log₂ e` — the factor turning a natural log into a base-2 log.
+    #[inline]
+    fn log2_e() -> Self {
+        Self::scalar(core::f64::consts::LOG2_E)
+    }
+
+    /// `log₁₀ e` — the factor turning a natural log into a base-10 log.
+    #[inline]
+    fn log10_e() -> Self {
+        Self::scalar(core::f64::consts::LOG10_E)
+    }
+
+    /// `ln 10`.
+    #[inline]
+    fn ln_10() -> Self {
+        Self::scalar(core::f64::consts::LN_10)
+    }
+
+    /// `log₂ 10`.
+    #[inline]
+    fn log2_10() -> Self {
+        Self::scalar(core::f64::consts::LOG2_10)
+    }
+
+    /// `log₁₀ 2`.
+    #[inline]
+    fn log10_2() -> Self {
+        Self::scalar(core::f64::consts::LOG10_2)
+    }
+
+    /// The Euler–Mascheroni constant `γ ≈ 0.5772…`.
+    ///
+    /// The limit of `Σ_{k≤n} 1/k − ln n`; it is `−ψ(1)` (the additive constant of
+    /// the digamma function) and the additive term in the closed-form entropies of
+    /// the Gumbel, Weibull, and Gamma families. It is not a `core` float constant,
+    /// so it is lifted from its decimal expansion.
+    #[inline]
+    fn euler_gamma() -> Self {
+        Self::scalar(0.577_215_664_901_532_9)
+    }
+
     /// `e^x`.
     fn exp(&self) -> Self;
     /// Natural logarithm.
@@ -54,6 +213,107 @@ pub trait LazyReal: Scalar {
     fn powf(&self, p: f64) -> Self;
     /// Numerically-stable `ln(1 + e^x)` (softplus / `log1pexp`).
     fn ln_1p_exp(&self) -> Self;
+
+    // --- trigonometry ---
+    // Elementwise transcendentals. Every backend that can run a formula can run
+    // these too — a tensor compiler lowers them to `Sin`/`Cos`/`Atan2`/… — so they
+    // belong on the write-once surface, not only on the concrete `Real` tier.
+    // (These take `self` by value to match the concrete `Real` signatures they were
+    // promoted from; the `Clone` bound lets a caller keep the input when needed.)
+    fn sin(self) -> Self;
+    fn cos(self) -> Self;
+    fn tan(self) -> Self;
+    fn asin(self) -> Self;
+    fn acos(self) -> Self;
+    fn atan(self) -> Self;
+    fn atan2(self, x: Self) -> Self;
+    fn sinh(self) -> Self;
+    fn cosh(self) -> Self;
+    fn tanh(self) -> Self;
+    /// `(sin, cos)` in one call.
+    #[inline]
+    fn sin_cos(self) -> (Self, Self) {
+        (self.clone().sin(), self.cos())
+    }
+
+    // --- powers / roots ---
+    /// `√(self² + other²)` without intermediate overflow.
+    fn hypot(self, other: Self) -> Self;
+    fn cbrt(self) -> Self;
+    /// Integer power.
+    fn powi(self, n: i32) -> Self;
+    /// `self * a + b` (fused where the target supports it).
+    fn mul_add(self, a: Self, b: Self) -> Self;
+    fn recip(self) -> Self;
+    fn log2(self) -> Self;
+
+    // --- rounding / sign ---
+    fn floor(self) -> Self;
+    fn ceil(self) -> Self;
+    fn round(self) -> Self;
+    fn trunc(self) -> Self;
+    fn fract(self) -> Self;
+    fn signum(self) -> Self;
+    fn copysign(self, sign: Self) -> Self;
+    /// Least non-negative residue of `self mod m`.
+    fn rem_euclid(self, m: Self) -> Self;
+
+    // --- angles ---
+    fn to_radians(self) -> Self;
+    fn to_degrees(self) -> Self;
+
+    // --- elementwise select (NaN-aware on the concrete reals) ---
+    // The comparison-free `select` primitives: a tensor backend lowers these to
+    // `Max`/`Min`/`Clamp`, so piecewise / support-indicator kernels stay portable
+    // without a `bool`-returning comparison the lazy tier cannot express.
+    fn min(self, other: Self) -> Self;
+    fn max(self, other: Self) -> Self;
+    fn clamp(self, lo: Self, hi: Self) -> Self;
+
+    // --- special functions ---
+    // The elementwise analytic functions a probability/statistics formula reaches
+    // for once it leaves pure algebra: the error function, the gamma family, and the
+    // regularized incomplete gamma/beta CDF kernels. Each has a direct tensor-op
+    // analogue (`Erf`/`Lgamma`/`Digamma`/`Igamma`/`RegularizedIncompleteBeta`, …), so
+    // a backend lowers them the same way it lowers `exp`/`sin`. The concrete `f64`/
+    // `f32` reference implementations live in [`crate::special`]. Where a function
+    // takes auxiliary parameters, `self` is the *evaluation point* (the lazy
+    // variable) and the parameters follow.
+
+    /// The error function `erf(x)`.
+    fn erf(self) -> Self;
+    /// The complementary error function `erfc(x) = 1 − erf(x)`.
+    fn erfc(self) -> Self;
+    /// The inverse error function, `erf_inv(erf(x)) = x`.
+    fn erf_inv(self) -> Self;
+    /// `ln Γ(x)`.
+    fn ln_gamma(self) -> Self;
+    /// The digamma function `ψ(x) = d/dx ln Γ(x)`.
+    fn digamma(self) -> Self;
+    /// The trigamma function `ψ₁(x) = d²/dx² ln Γ(x)`.
+    fn trigamma(self) -> Self;
+    /// Regularized **lower** incomplete gamma `P(shape, self)` — the Gamma /
+    /// chi-squared / Poisson CDF kernel, with `self` the (already-scaled) point.
+    fn gamma_lr(self, shape: Self) -> Self;
+    /// Regularized **upper** incomplete gamma `Q(shape, self) = 1 − P(shape, self)`.
+    fn gamma_ur(self, shape: Self) -> Self;
+    /// Regularized incomplete beta `I_self(a, b)` — the Beta / Student-t / F CDF
+    /// kernel, with `self ∈ [0, 1]` the point and `(a, b)` the shape parameters.
+    fn beta_reg(self, a: Self, b: Self) -> Self;
+
+    /// Numerically-stable `ln(1 − e^x)` (`log1mexp`), the complement of
+    /// [`ln_1p_exp`](Self::ln_1p_exp); defined for `x < 0`. The stable Gamma /
+    /// exponential / Normal log-CDF complements are written through it.
+    fn ln_1m_exp(&self) -> Self;
+    /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)` — the
+    /// stable kernel of a Gaussian / Wald log-CDF tail.
+    fn erfcx(self) -> Self;
+    /// The exponentially-scaled modified Bessel `I₀ᵉ(x) = e^{−|x|} I₀(x)`. From it
+    /// `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`, the directional
+    /// normalizers, follow without overflow.
+    fn bessel_i0e(self) -> Self;
+    /// The exponentially-scaled modified Bessel `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
+    fn bessel_i1e(self) -> Self;
 }
 
 /// A complex-valued numeric scalar: a [`Scalar`] plus complex structure,
@@ -83,26 +343,28 @@ pub trait LazyComplex: Scalar {
     }
 }
 
-/// A **concrete real number** with the full real API — [`LazyReal`] plus the
-/// trigonometry, `hypot`/`atan2`, rounding, `mul_add`, NaN-aware `min`/`max`/`clamp`,
-/// and the constants (`PI`, `TAU`, `EPSILON`, `INFINITY`, …) that geometry, physics,
-/// and signal kernels are written in.
+/// A **concrete real number** — [`LazyReal`] (the whole elementwise analysis
+/// surface) plus the few things that only a concrete number on the real line can
+/// offer: the associated constants (`PI`, `TAU`, `EPSILON`, `INFINITY`, …) and the
+/// `bool`-returning predicates (`is_finite`/`is_nan`/`is_sign_negative`).
 ///
 /// This is **distinct from [`LazyReal`]**, deliberately. `LazyReal` is the
-/// minimal cross-backend analysis surface a *write-once* formula needs, so it is
+/// cross-backend analysis surface a *write-once* formula needs, so it is
 /// implemented by `f64`/`f32` **and** non-`Copy` backends like a differentiable
-/// `Tensor` (which has no single `PI` and no scalar `atan2`). `Real` is the richer
-/// trait the *concrete* reals satisfy — `f64`, `f32`, and any future decimal /
-/// interval / extended-precision type — so code that genuinely needs the whole
-/// real number line (e.g. `hausdorff`'s geometry) bounds on `Real` and runs over
-/// every such representation, while tensor backends remain unaffected.
+/// `Tensor`. The transcendentals, rounding, and `min`/`max`/`clamp` selectors all
+/// live there, because a tensor compiler can lower every one of them. `Real` keeps
+/// only what a tensor *cannot* produce — a single `PI` value, a scalar `bool` from
+/// a comparison — so code that genuinely needs the whole real number line (e.g.
+/// `hausdorff`'s geometry) bounds on `Real` and runs over `f64`, `f32`, and any
+/// future decimal / interval / extended-precision type, while tensor backends
+/// remain unaffected.
 ///
 /// It **fuses the two stacks** for the concrete reals: the algebraic structure
 /// (`+ - * /`, `ZERO`/`ONE`, `÷`, `conjugate`, the total order) comes from
-/// [`crate::algebra::OrderedField`]; `from_f64`/`sqrt`/`abs`/`exp`/`ln`/`powf` from
-/// [`LazyReal`]; this trait adds only the remaining real API (trig, `hypot`,
-/// rounding, the analytic constants). `Real: LazyReal`, so a concrete `f64` also
-/// satisfies any write-once formula bounded on the lazy base.
+/// [`crate::algebra::OrderedField`]; the analysis (`scalar`/`exp`/`ln`/`sqrt`/trig/
+/// rounding/`min`/`max`/`clamp`) from [`LazyReal`]; this trait adds only the
+/// constants and predicates. `Real: LazyReal`, so a concrete `f64` also satisfies
+/// any write-once formula bounded on the lazy base.
 pub trait Real:
     crate::algebra::OrderedField
     + LazyReal
@@ -115,10 +377,12 @@ pub trait Real:
     + core::iter::Sum
 {
     /// Lift a real literal into the type (`f64` identity, `x as f32` for `f32`, the
-    /// nearest representable for a decimal) — the concrete-tier constructor, needed
-    /// wherever a generic formula carries an arbitrary literal or tolerance. (Named
-    /// constants — `0`/`1`/`π`/… — use the consts below rather than this.)
-    fn from_f64(x: f64) -> Self;
+    /// nearest representable for a decimal) — the concrete-tier spelling for
+    /// [`LazyReal::scalar`].
+    #[inline]
+    fn from_f64(x: f64) -> Self {
+        Self::scalar(x)
+    }
 
     /// `2`.
     const TWO: Self;
@@ -136,6 +400,8 @@ pub trait Real:
     const SQRT_2: Self;
     /// `1/√2`.
     const FRAC_1_SQRT_2: Self;
+    /// Euler's number `e`.
+    const E: Self;
     /// Machine epsilon.
     const EPSILON: Self;
     /// `+∞`.
@@ -151,55 +417,11 @@ pub trait Real:
     /// Smallest positive normal value.
     const MIN_POSITIVE: Self;
 
-    // --- trigonometry ---
-    fn sin(self) -> Self;
-    fn cos(self) -> Self;
-    fn tan(self) -> Self;
-    fn asin(self) -> Self;
-    fn acos(self) -> Self;
-    fn atan(self) -> Self;
-    fn atan2(self, x: Self) -> Self;
-    fn sinh(self) -> Self;
-    fn cosh(self) -> Self;
-    fn tanh(self) -> Self;
-    /// `(sin, cos)` in one call.
-    #[inline]
-    fn sin_cos(self) -> (Self, Self) {
-        (self.sin(), self.cos())
-    }
-
-    // --- powers / roots ---
-    /// `√(self² + other²)` without intermediate overflow.
-    fn hypot(self, other: Self) -> Self;
-    fn cbrt(self) -> Self;
-    /// Integer power.
-    fn powi(self, n: i32) -> Self;
-    /// `self * a + b` (fused where the target supports it).
-    fn mul_add(self, a: Self, b: Self) -> Self;
-    fn recip(self) -> Self;
-    fn log2(self) -> Self;
-
-    // --- rounding / sign ---
-    fn floor(self) -> Self;
-    fn ceil(self) -> Self;
-    fn round(self) -> Self;
-    fn trunc(self) -> Self;
-    fn fract(self) -> Self;
-    fn signum(self) -> Self;
-    fn copysign(self, sign: Self) -> Self;
-    /// Least non-negative residue of `self mod m`.
-    fn rem_euclid(self, m: Self) -> Self;
-
-    // --- angles ---
-    fn to_radians(self) -> Self;
-    fn to_degrees(self) -> Self;
-
-    // --- NaN-aware ordering ---
-    fn min(self, other: Self) -> Self;
-    fn max(self, other: Self) -> Self;
-    fn clamp(self, lo: Self, hi: Self) -> Self;
-
     // --- predicates ---
+    // The only methods that stay concrete-only: they return `bool`, which the lazy
+    // tier cannot produce (a tensor comparison yields a mask, not a scalar bool).
+    // The elementwise analysis (trig, rounding, `min`/`max`/`clamp`, …) now lives on
+    // [`LazyReal`] and is inherited here through `Real: LazyReal`.
     fn is_finite(self) -> bool;
     fn is_nan(self) -> bool;
     fn is_sign_negative(self) -> bool;
@@ -236,6 +458,10 @@ impl Scalar for f64 {}
 
 impl LazyReal for f64 {
     #[inline]
+    fn scalar(x: f64) -> Self {
+        x
+    }
+    #[inline]
     fn exp(&self) -> Self {
         f64::exp(*self)
     }
@@ -266,67 +492,6 @@ impl LazyReal for f64 {
             f64::ln_1p(x.exp())
         }
     }
-}
-
-impl Scalar for f32 {}
-
-impl LazyReal for f32 {
-    #[inline]
-    fn exp(&self) -> Self {
-        f32::exp(*self)
-    }
-    #[inline]
-    fn ln(&self) -> Self {
-        f32::ln(*self)
-    }
-    #[inline]
-    fn sqrt(&self) -> Self {
-        f32::sqrt(*self)
-    }
-    #[inline]
-    fn abs(&self) -> Self {
-        f32::abs(*self)
-    }
-    #[inline]
-    fn powf(&self, p: f64) -> Self {
-        f32::powf(*self, p as f32)
-    }
-    #[inline]
-    fn ln_1p_exp(&self) -> Self {
-        let x = *self;
-        if x > 0.0 {
-            x + f32::ln_1p((-x).exp())
-        } else {
-            f32::ln_1p(x.exp())
-        }
-    }
-}
-
-// The concrete `Real` impls. `ZERO`/`ONE` come from `algebra::{HasZero, HasOne}`,
-// `÷`/`conjugate`/ordering from `algebra::OrderedField`, and `from_f64`/`sqrt`/
-// `exp`/`ln`/`powf` from `LazyReal`; only the remaining real API is written here.
-
-impl Real for f64 {
-    #[inline]
-    fn from_f64(x: f64) -> Self {
-        x
-    }
-    const TWO: Self = 2.0;
-    const HALF: Self = 0.5;
-    const PI: Self = core::f64::consts::PI;
-    const TAU: Self = core::f64::consts::TAU;
-    const FRAC_PI_2: Self = core::f64::consts::FRAC_PI_2;
-    const FRAC_PI_4: Self = core::f64::consts::FRAC_PI_4;
-    const SQRT_2: Self = core::f64::consts::SQRT_2;
-    const FRAC_1_SQRT_2: Self = core::f64::consts::FRAC_1_SQRT_2;
-    const EPSILON: Self = f64::EPSILON;
-    const INFINITY: Self = f64::INFINITY;
-    const NEG_INFINITY: Self = f64::NEG_INFINITY;
-    const NAN: Self = f64::NAN;
-    const MAX: Self = f64::MAX;
-    const MIN: Self = f64::MIN;
-    const MIN_POSITIVE: Self = f64::MIN_POSITIVE;
-
     #[inline]
     fn sin(self) -> Self {
         f64::sin(self)
@@ -444,40 +609,103 @@ impl Real for f64 {
         f64::clamp(self, lo, hi)
     }
     #[inline]
-    fn is_finite(self) -> bool {
-        f64::is_finite(self)
+    fn erf(self) -> Self {
+        crate::special::erf::erf(self)
     }
     #[inline]
-    fn is_nan(self) -> bool {
-        f64::is_nan(self)
+    fn erfc(self) -> Self {
+        crate::special::erf::erfc(self)
     }
     #[inline]
-    fn is_sign_negative(self) -> bool {
-        f64::is_sign_negative(self)
+    fn erf_inv(self) -> Self {
+        crate::special::erf::erf_inv(self)
+    }
+    #[inline]
+    fn ln_gamma(self) -> Self {
+        crate::special::gamma::ln_gamma(self)
+    }
+    #[inline]
+    fn digamma(self) -> Self {
+        crate::special::gamma::digamma(self)
+    }
+    #[inline]
+    fn trigamma(self) -> Self {
+        crate::special::gamma::trigamma(self)
+    }
+    #[inline]
+    fn gamma_lr(self, shape: Self) -> Self {
+        crate::special::gamma::gamma_lr(shape, self)
+    }
+    #[inline]
+    fn gamma_ur(self, shape: Self) -> Self {
+        crate::special::gamma::gamma_ur(shape, self)
+    }
+    #[inline]
+    fn beta_reg(self, a: Self, b: Self) -> Self {
+        crate::special::beta::beta_reg(a, b, self)
+    }
+    #[inline]
+    fn ln_1m_exp(&self) -> Self {
+        // Stable log1mexp: ln(-expm1(x)) near 0, ln1p(-exp(x)) in the tail.
+        let x = *self;
+        if x >= 0.0 {
+            f64::NAN
+        } else if x > -core::f64::consts::LN_2 {
+            (-x.exp_m1()).ln()
+        } else {
+            (-x.exp()).ln_1p()
+        }
+    }
+    #[inline]
+    fn erfcx(self) -> Self {
+        crate::special::erf::erfcx(self)
+    }
+    #[inline]
+    fn bessel_i0e(self) -> Self {
+        crate::special::bessel::i0e(self)
+    }
+    #[inline]
+    fn bessel_i1e(self) -> Self {
+        crate::special::bessel::i1e(self)
     }
 }
 
-impl Real for f32 {
+impl Scalar for f32 {}
+
+impl LazyReal for f32 {
     #[inline]
-    fn from_f64(x: f64) -> Self {
+    fn scalar(x: f64) -> Self {
         x as f32
     }
-    const TWO: Self = 2.0;
-    const HALF: Self = 0.5;
-    const PI: Self = core::f32::consts::PI;
-    const TAU: Self = core::f32::consts::TAU;
-    const FRAC_PI_2: Self = core::f32::consts::FRAC_PI_2;
-    const FRAC_PI_4: Self = core::f32::consts::FRAC_PI_4;
-    const SQRT_2: Self = core::f32::consts::SQRT_2;
-    const FRAC_1_SQRT_2: Self = core::f32::consts::FRAC_1_SQRT_2;
-    const EPSILON: Self = f32::EPSILON;
-    const INFINITY: Self = f32::INFINITY;
-    const NEG_INFINITY: Self = f32::NEG_INFINITY;
-    const NAN: Self = f32::NAN;
-    const MAX: Self = f32::MAX;
-    const MIN: Self = f32::MIN;
-    const MIN_POSITIVE: Self = f32::MIN_POSITIVE;
-
+    #[inline]
+    fn exp(&self) -> Self {
+        f32::exp(*self)
+    }
+    #[inline]
+    fn ln(&self) -> Self {
+        f32::ln(*self)
+    }
+    #[inline]
+    fn sqrt(&self) -> Self {
+        f32::sqrt(*self)
+    }
+    #[inline]
+    fn abs(&self) -> Self {
+        f32::abs(*self)
+    }
+    #[inline]
+    fn powf(&self, p: f64) -> Self {
+        f32::powf(*self, p as f32)
+    }
+    #[inline]
+    fn ln_1p_exp(&self) -> Self {
+        let x = *self;
+        if x > 0.0 {
+            x + f32::ln_1p((-x).exp())
+        } else {
+            f32::ln_1p(x.exp())
+        }
+    }
     #[inline]
     fn sin(self) -> Self {
         f32::sin(self)
@@ -594,6 +822,124 @@ impl Real for f32 {
     fn clamp(self, lo: Self, hi: Self) -> Self {
         f32::clamp(self, lo, hi)
     }
+    // `f32` has no native special functions: evaluate in `f64` and narrow, the same
+    // way `scalar`/`powf` already do.
+    #[inline]
+    fn erf(self) -> Self {
+        crate::special::erf::erf(self as f64) as f32
+    }
+    #[inline]
+    fn erfc(self) -> Self {
+        crate::special::erf::erfc(self as f64) as f32
+    }
+    #[inline]
+    fn erf_inv(self) -> Self {
+        crate::special::erf::erf_inv(self as f64) as f32
+    }
+    #[inline]
+    fn ln_gamma(self) -> Self {
+        crate::special::gamma::ln_gamma(self as f64) as f32
+    }
+    #[inline]
+    fn digamma(self) -> Self {
+        crate::special::gamma::digamma(self as f64) as f32
+    }
+    #[inline]
+    fn trigamma(self) -> Self {
+        crate::special::gamma::trigamma(self as f64) as f32
+    }
+    #[inline]
+    fn gamma_lr(self, shape: Self) -> Self {
+        crate::special::gamma::gamma_lr(shape as f64, self as f64) as f32
+    }
+    #[inline]
+    fn gamma_ur(self, shape: Self) -> Self {
+        crate::special::gamma::gamma_ur(shape as f64, self as f64) as f32
+    }
+    #[inline]
+    fn beta_reg(self, a: Self, b: Self) -> Self {
+        crate::special::beta::beta_reg(a as f64, b as f64, self as f64) as f32
+    }
+    #[inline]
+    fn ln_1m_exp(&self) -> Self {
+        let x = *self;
+        if x >= 0.0 {
+            f32::NAN
+        } else if x > -core::f32::consts::LN_2 {
+            (-x.exp_m1()).ln()
+        } else {
+            (-x.exp()).ln_1p()
+        }
+    }
+    #[inline]
+    fn erfcx(self) -> Self {
+        crate::special::erf::erfcx(self as f64) as f32
+    }
+    #[inline]
+    fn bessel_i0e(self) -> Self {
+        crate::special::bessel::i0e(self as f64) as f32
+    }
+    #[inline]
+    fn bessel_i1e(self) -> Self {
+        crate::special::bessel::i1e(self as f64) as f32
+    }
+}
+
+// The concrete `Real` impls. `ZERO`/`ONE` come from `algebra::{HasZero, HasOne}`,
+// `÷`/`conjugate`/ordering from `algebra::OrderedField`, and the whole elementwise
+// analysis (`scalar`/`exp`/`ln`/`sqrt`/trig/rounding/`min`/`max`/`clamp`) from
+// `LazyReal`; only the constants and the `bool` predicates are written here.
+
+impl Real for f64 {
+    const TWO: Self = 2.0;
+    const HALF: Self = 0.5;
+    const PI: Self = core::f64::consts::PI;
+    const TAU: Self = core::f64::consts::TAU;
+    const FRAC_PI_2: Self = core::f64::consts::FRAC_PI_2;
+    const FRAC_PI_4: Self = core::f64::consts::FRAC_PI_4;
+    const SQRT_2: Self = core::f64::consts::SQRT_2;
+    const FRAC_1_SQRT_2: Self = core::f64::consts::FRAC_1_SQRT_2;
+    const E: Self = core::f64::consts::E;
+    const EPSILON: Self = f64::EPSILON;
+    const INFINITY: Self = f64::INFINITY;
+    const NEG_INFINITY: Self = f64::NEG_INFINITY;
+    const NAN: Self = f64::NAN;
+    const MAX: Self = f64::MAX;
+    const MIN: Self = f64::MIN;
+    const MIN_POSITIVE: Self = f64::MIN_POSITIVE;
+
+    #[inline]
+    fn is_finite(self) -> bool {
+        f64::is_finite(self)
+    }
+    #[inline]
+    fn is_nan(self) -> bool {
+        f64::is_nan(self)
+    }
+    #[inline]
+    fn is_sign_negative(self) -> bool {
+        f64::is_sign_negative(self)
+    }
+}
+
+impl Real for f32 {
+    const TWO: Self = 2.0;
+    const HALF: Self = 0.5;
+    const PI: Self = core::f32::consts::PI;
+    const TAU: Self = core::f32::consts::TAU;
+    const FRAC_PI_2: Self = core::f32::consts::FRAC_PI_2;
+    const FRAC_PI_4: Self = core::f32::consts::FRAC_PI_4;
+    const SQRT_2: Self = core::f32::consts::SQRT_2;
+    const FRAC_1_SQRT_2: Self = core::f32::consts::FRAC_1_SQRT_2;
+    const E: Self = core::f32::consts::E;
+    const EPSILON: Self = f32::EPSILON;
+    const INFINITY: Self = f32::INFINITY;
+    const NEG_INFINITY: Self = f32::NEG_INFINITY;
+    const NAN: Self = f32::NAN;
+    const MAX: Self = f32::MAX;
+    const MIN: Self = f32::MIN;
+    const MIN_POSITIVE: Self = f32::MIN_POSITIVE;
+
     #[inline]
     fn is_finite(self) -> bool {
         f32::is_finite(self)
@@ -612,16 +958,45 @@ impl Real for f32 {
 mod tests {
     use super::*;
 
-    /// A formula written once over the lazy analysis base — pure analysis, no
-    /// scalar construction (that lives on the concrete tier's `from_f64`).
-    fn quadratic<T: LazyReal>(x: T) -> T {
-        x.clone() * x.clone() + x
+    /// A formula written once over the lazy analysis base — pure analysis plus a
+    /// scalar constant, with no vector/tensor construction.
+    fn shifted_quadratic<T: LazyReal>(x: T) -> T {
+        let half = T::half();
+        x.clone() * x.clone() + half * x
     }
 
     #[test]
     fn real_formula_runs_on_f64_and_f32() {
-        assert!((quadratic(2.5_f64) - 8.75).abs() < 1e-12);
-        assert!((quadratic(2.5_f32) - 8.75).abs() < 1e-5);
+        assert!((shifted_quadratic(2.5_f64) - 7.5).abs() < 1e-12);
+        assert!((shifted_quadratic(2.5_f32) - 7.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn lazy_real_constants_lift_scalars() {
+        assert_eq!(f64::half(), 0.5);
+        assert_eq!(f32::half(), 0.5);
+        assert!((f64::pi() - core::f64::consts::PI).abs() < 1e-12);
+        assert!((f32::tau() - core::f32::consts::TAU).abs() < 1e-6);
+        assert!((f64::half_ln_tau() - 0.5 * core::f64::consts::TAU.ln()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn euler_constants_lift_on_every_real_tier() {
+        // Euler's number names the base of the analysis surface directly: lifting
+        // it must agree with recovering it as `exp(1)`.
+        assert!((f64::e() - 1.0_f64.exp()).abs() < 1e-12);
+        assert!((f32::e() - 1.0_f32.exp()).abs() < 1e-6);
+        assert_eq!(f64::e(), <f64 as Real>::E);
+        assert_eq!(f32::e(), <f32 as Real>::E);
+
+        // The log-base conversions are mutual inverses through `e` / `10`.
+        assert!((f64::log2_e() * f64::ln_2() - 1.0).abs() < 1e-12);
+        assert!((f64::log10_e() * f64::ln_10() - 1.0).abs() < 1e-12);
+        assert!((f64::log2_10() * f64::log10_2() - 1.0).abs() < 1e-12);
+
+        // Euler–Mascheroni γ, to its leading digits.
+        assert!((f64::euler_gamma() - 0.577_215_664_901_532_9).abs() < 1e-15);
+        assert!((f32::euler_gamma() - 0.577_215_7).abs() < 1e-6);
     }
 
     #[test]
@@ -648,6 +1023,66 @@ mod tests {
         assert!((3.0_f32.hypot(4.0) - 5.0).abs() < 1e-5);
         assert_eq!(<f32 as crate::algebra::HasOne>::ONE, 1.0);
         // A concrete `Real` also satisfies a write-once `LazyReal` formula.
-        assert!((quadratic(2.0_f64) - 6.0).abs() < 1e-12);
+        assert!((shifted_quadratic(2.0_f64) - 5.0).abs() < 1e-12);
+    }
+
+    /// A formula bounded purely on [`LazyReal`] that uses what used to be the
+    /// concrete-only API — `atan2`, trig, and the `clamp` selector. It now compiles
+    /// for every lazy backend, not only the concrete reals.
+    fn wrapped_angle_unit<T: LazyReal>(x: T, y: T) -> T {
+        let angle = y.atan2(x);
+        let pythagorean =
+            angle.clone().sin() * angle.clone().sin() + angle.clone().cos() * angle.cos();
+        pythagorean.clamp(T::zero(), T::one())
+    }
+
+    #[test]
+    fn lazy_real_carries_trig_and_select_on_f64_and_f32() {
+        // sin²+cos² = 1, clamped to [0, 1] — trig + clamp through the LazyReal bound
+        // alone, with no `Real` in sight.
+        assert!((wrapped_angle_unit(0.7_f64, 1.3_f64) - 1.0).abs() < 1e-12);
+        assert!((wrapped_angle_unit(0.7_f32, 1.3_f32) - 1.0).abs() < 1e-6);
+        // The `min`/`max`/`clamp` selectors are on the lazy tier too.
+        assert_eq!(LazyReal::max(LazyReal::min(3.0_f64, 5.0), 1.0), 3.0);
+        assert_eq!(LazyReal::clamp(2.0_f32, 0.0, 1.0), 1.0);
+    }
+
+    /// The Normal CDF `Φ(z) = ½·erfc(−z/√2)`, written once over [`LazyReal`]: it
+    /// needs `erfc`, which now lives on the lazy surface, so the same source lowers
+    /// to a tensor backend's `Erfc` op.
+    fn normal_cdf<T: LazyReal>(z: T) -> T {
+        T::half() * (-z / T::sqrt_2()).erfc()
+    }
+
+    #[test]
+    fn lazy_real_special_functions_run_on_f64_and_f32() {
+        // Φ(0) = ½ through the write-once CDF, on both concrete reals.
+        assert!((normal_cdf(0.0_f64) - 0.5).abs() < 1e-15);
+        assert!((normal_cdf(0.0_f32) - 0.5).abs() < 1e-6);
+
+        // The methods delegate to `crate::special`; spot-check the defining
+        // identities directly through the trait.
+        assert!((LazyReal::ln_gamma(5.0_f64) - 24.0_f64.ln()).abs() < 1e-9);
+        assert!((LazyReal::digamma(1.0_f64) + f64::euler_gamma()).abs() < 1e-9);
+        // P(a, x) + Q(a, x) = 1, with `self` the point `x`.
+        let p = LazyReal::gamma_lr(3.0_f64, 2.5); // P(2.5, 3.0)
+        let q = LazyReal::gamma_ur(3.0_f64, 2.5); // Q(2.5, 3.0)
+        assert!((p + q - 1.0).abs() < 1e-10);
+        // I_x(1, 1) = x.
+        assert!((LazyReal::beta_reg(0.37_f64, 1.0, 1.0) - 0.37).abs() < 1e-12);
+        assert!((LazyReal::erf(1.0_f32) - 0.842_700_8).abs() < 1e-6);
+
+        // erfcx(x)·e^{-x²} = erfc(x); ln(1−e^x) complements ln(1+e^x); scaled
+        // Bessel recovers ln I₀ and the I₁/I₀ ratio.
+        let x = 0.6_f64;
+        assert!((x.erfcx() * (-x * x).exp() - LazyReal::erfc(x)).abs() < 1e-12);
+        assert!((LazyReal::ln_1m_exp(&(-0.5_f64)).exp() - (1.0 - (-0.5_f64).exp())).abs() < 1e-12);
+        let k = 2.5_f64;
+        assert!((k.bessel_i0e().ln() + k - crate::special::bessel::ln_i0(k)).abs() < 1e-9);
+        assert!(
+            (k.bessel_i1e() / k.bessel_i0e() - crate::special::bessel::i1_over_i0(k)).abs() < 1e-9
+        );
+        // f32 paths narrow through f64.
+        assert!((0.5_f32.erfcx() - 0.5_f64.erfcx() as f32).abs() < 1e-6);
     }
 }

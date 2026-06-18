@@ -13,7 +13,9 @@ pub mod ops;
 pub mod quantity;
 
 pub use conversion::UnitOfMeasure;
-pub use quantity::{Dimension, LinearQuantity, Quantity, QuantityError, ScalarQuantity};
+pub use quantity::{
+    Dimension, LinearQuantity, Quantity, QuantityError, ScalarQuantity, scalar_mul,
+};
 
 pub use data::{
     ByteRange, Bytes, Count, DistanceDecimeters, ThreadCount, TimeCentiseconds, UnixMillis,

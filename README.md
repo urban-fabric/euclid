@@ -16,6 +16,29 @@ The public API has three top-level modules:
 - `euclid::units` for quantities, unit conversion, data wrappers, and typed
   quantity operations.
 
+`LazyReal` is the formula substrate for scalar-valued lazy backends — the whole
+*elementwise analysis surface*, designed so a formula written once runs on `f64`
+today and lowers to a tensor backend (eventually XLA) tomorrow. It carries:
+
+- the **transcendentals** — `exp`/`ln`/`sqrt`, the trig family (`sin`/`cos`/`tan`,
+  `atan2`/`hypot`, the hyperbolics), `powf`/`powi`/`cbrt`, rounding and sign;
+- the comparison-free **selectors** `min`/`max`/`clamp` (a tensor lowers these to
+  `Max`/`Min`/`Clamp`, so piecewise formulas stay portable without a `bool`);
+- the **special functions** `erf`/`erfc`/`erf_inv`/`erfcx`, `ln_gamma`/`digamma`/
+  `trigamma`, the regularized incomplete gamma `gamma_lr`/`gamma_ur`, the
+  regularized incomplete beta `beta_reg`, the scaled modified Bessel
+  `bessel_i0e`/`bessel_i1e`, and the stable `ln_1m_exp` — the CDF / entropy /
+  divergence kernels of probability theory, each with a direct tensor-op analogue.
+  Their concrete `f64` reference lives in `euclid::special`;
+- a library of lifted **constants** — `half()`, `pi()`, `half_ln_tau()`, Euler's
+  number `e()`, the log-base conversions (`log2_e()`, `log10_e()`, `ln_10()`,
+  `log2_10()`, `log10_2()`), and the Euler–Mascheroni constant `euler_gamma()`.
+
+The concrete `Real` tier keeps only what a tensor *cannot* produce — the associated
+constants (`PI`/`TAU`/`SQRT_2`/`E`/…) and the `bool`-returning predicates
+(`is_finite`/`is_nan`/`is_sign_negative`). Vector, tensor, and shaped construction
+stays in the backend that owns those containers.
+
 Common quantity types and traits are also re-exported from the crate root:
 
 ```rust
