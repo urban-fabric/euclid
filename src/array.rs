@@ -128,12 +128,51 @@ pub trait LazyMatrix: Clone {
     fn cholesky(self) -> Self;
     /// `Σ⁻¹ B` for Hermitian-PD `Σ` — no explicit inverse is formed.
     fn solve_spd(self, rhs: Self) -> Self;
+    /// `Σ⁻¹ b` for Hermitian-PD `Σ` and a single right-hand-side **vector** `b` — the vector
+    /// analogue of [`solve_spd`](Self::solve_spd). It is the missing primitive for the
+    /// Gaussian *mean* family (`Σ⁻¹µ`, GP posterior mean, conditional mean), which cannot be
+    /// written from `solve_spd` (matrix rhs) alone because `Self` and `Self::Vector` differ.
+    fn solve_spd_vec(self, rhs: Self::Vector) -> Self::Vector;
     /// `ln det Σ` for Hermitian-PD `Σ` — real (the determinant of an HPD matrix is a
     /// positive real).
     fn logdet_spd(self) -> RealPart<Self::Scalar>;
     /// The squared Mahalanobis distance `δᴴ Σ⁻¹ δ` — the multivariate-Gaussian kernel,
     /// real even over ℂ (a Hermitian form).
     fn mahalanobis_squared(&self, delta: &Self::Vector) -> RealPart<Self::Scalar>;
+}
+
+/// A reusable SPD (Cholesky) factorization — the **prepare once, solve/logdet many** seam.
+///
+/// The per-call density path (`solve_spd`/`logdet_spd`/`mahalanobis_squared`) re-factors `Σ`
+/// every call on *every* backend (on XLA the Cholesky is baked into the compiled graph). This
+/// hoists the O(n³) factorization out of that path so an eager backend can **cache** the factor
+/// and an XLA backend can **feed it as a graph input**, amortizing it across many evaluations.
+/// Consumed by the *prepared* kernels (e.g.
+/// `bayes::lazy_matrix::gaussian_process_log_marginal_likelihood_prepared`).
+pub trait SpdFactor {
+    type Scalar: NormedDivisionAlgebra;
+    type Vector: LazyVector<Scalar = Self::Scalar>;
+    /// The companion matrix type (`Self` of the [`PreparedSpd`] that produced this factor).
+    type Matrix: LazyMatrix<Scalar = Self::Scalar, Vector = Self::Vector>;
+    /// `Σ⁻¹ b` for a vector `b`, reusing the stored factor (no re-factorization).
+    fn solve_vec(&self, rhs: Self::Vector) -> Self::Vector;
+    /// `Σ⁻¹ B` for a (multi-column) matrix `B`, reusing the stored factor.
+    fn solve(&self, rhs: Self::Matrix) -> Self::Matrix;
+    /// `L⁻¹ b` — the lower-triangular forward solve (the **whitening** transform). For
+    /// `Σ = L Lᴴ`, the result `z` satisfies `b = L z` and `‖z‖² = bᴴ Σ⁻¹ b`, so it
+    /// decorrelates/standardizes a residual. The missing factor primitive that needed a
+    /// triangular solve, not the full SPD solve.
+    fn whiten_vec(&self, rhs: Self::Vector) -> Self::Vector;
+    /// `ln det Σ` from the stored factor.
+    fn logdet(&self) -> RealPart<Self::Scalar>;
+}
+
+/// An HPD matrix that can produce a reusable [`SpdFactor`]. **Opt-in**: a backend implements it
+/// to offer the amortized path; portable kernels that don't need it stay on [`LazyMatrix`].
+pub trait PreparedSpd: LazyMatrix {
+    type Factor: SpdFactor<Scalar = Self::Scalar, Vector = Self::Vector, Matrix = Self>;
+    /// Factor an HPD matrix once into a reusable [`SpdFactor`].
+    fn prepare_spd(self) -> Self::Factor;
 }
 
 /// **The fenced decompositions extension.** The heavyweight, non-Hermitian-PD
