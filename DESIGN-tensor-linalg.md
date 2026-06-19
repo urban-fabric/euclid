@@ -3,7 +3,8 @@
 Draft contracts, **now committed (no impls)** in `euclid::array` — `LazyVector`,
 `LazyMatrix`, `LazyTensor`. The rank-graded peers of the scalar `LazyReal`, drawn so
 they lower cleanly to XLA — including TPU — and so a single generic kernel runs on
-the `f64`/`ramanujan` reference path **and** the `lebesgue`/tensor path.
+the `f64`/`ramanujan` reference path, the `maxwell`/XLA path, and CPU tensor
+backends as they implement the same contracts.
 
 ## The four ranks (matching the `Scalar` naming)
 
@@ -27,10 +28,10 @@ Three deliberate decisions:
 
 2. **`LazyMatrix` is parameterized over its scalar and its vector**
    (`type Scalar: LazyReal`, `type Vector: LazyVector<Scalar = Self::Scalar>`), so
-   both `ramanujan::DenseMatrix` (`Scalar = f64`, `Vector = DenseVector`) and a rank-2
-   `lebesgue::Tensor` (`Scalar = Vector = Self`) implement it without a cycle.
+   both `ramanujan::DenseMatrix` (`Scalar = f64`, `Vector = DenseVector`) and a
+   rank-2 tensor backend (`Scalar = Vector = Self`) implement it without a cycle.
 
-3. **A tensor *can also be a 1-D tensor*.** For the unified `lebesgue::Tensor`, one
+3. **A tensor *can also be a 1-D tensor*.** For unified tensor backends, one
    type satisfies `LazyTensor` at any rank **and** `LazyVector` (rank 1) and
    `LazyMatrix` (rank 2). For the typed `ramanujan` world, `DenseVector`/`DenseMatrix`
    are distinct types. The rank-graded traits support both shapes of backend.
@@ -87,13 +88,13 @@ absent on purpose; they don't lower to TPU.
 ## How the existing surface lifts
 
 - **Scalar kernels (`<T: LazyReal>`)** — run unchanged at `T = Tensor`, giving
-  batched/elementwise XLA kernels. No rewrite. This is the bulk of the 170.
+  batched/elementwise tensor kernels. No rewrite. This is the bulk of the 170.
 - **Vector kernels (`&[T]` folds)** — get tensor-native twins that use
   `reduce_sum`/`reduce_max` instead of a Rust fold (axis reductions, not loops). The
   `&[T]` forms stay for the `f64` reference and tiny cases.
-- **Matrix kernels (new)** — written once on `LinearAlgebra`, run on `DenseMatrix`
-  (f64 reference) and `Tensor` (XLA), the same way scalar kernels run on `f64` and
-  `Tensor`.
+- **Matrix kernels (new)** — written once on `LazyMatrix`, run on `DenseMatrix`
+  (f64 reference) and `maxwell::Tensor` (XLA), the same way scalar kernels run on
+  `f64` and tensor backends.
 
 ## TPU reality to bake in (from the XLA discussion)
 
@@ -108,8 +109,9 @@ absent on purpose; they don't lower to TPU.
 ## Resolved
 
 - **Four rank-graded traits** (`Scalar`/`Vector`/`Matrix`/`Tensor`), `LazyMatrix`
-  carrying `type Vector` so typed (`ramanujan`) and unified (`lebesgue::Tensor`,
-  rank-1) backends both fit. A tensor *can also be a 1-D tensor*.
+  carrying `type Vector` so typed (`ramanujan`) and unified (`maxwell::Tensor`,
+  `lebesgue::Tensor` for supported ranks) backends both fit. A tensor *can also be a
+  1-D tensor*.
 
 ## Open questions
 

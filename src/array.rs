@@ -12,9 +12,10 @@
 //!
 //! The contract exposes only the math (`dot`, `matmul`, `cholesky`, `solve_spd`,
 //! `logdet_spd`, `mahalanobis_squared`, reductions). The concrete implementors are the
-//! backends: `ramanujan::{DenseVector, DenseMatrix}` (the `f64`/complex reference) and
-//! `lebesgue::Tensor` (the lazy/XLA engine — one type satisfies all three ranks, since
-//! a tensor *can also be a 1-D tensor*).
+//! backends: `ramanujan::{DenseVector, DenseMatrix}` (the `f64`/complex reference),
+//! `maxwell::Tensor` (compiled XLA), and tensor engines such as `lebesgue::Tensor` for
+//! the rank surfaces they support. One tensor type can satisfy multiple ranks, since a
+//! tensor *can also be a 1-D tensor*.
 //!
 //! ## Real **and** complex
 //!
@@ -97,7 +98,7 @@ pub trait LazyMatrix: Clone {
 
     // --- constructors ---
     // Context-free (like [`LazyReal::scalar`](crate::numeric::LazyReal::scalar)): an
-    // eager backend allocates; a lazy/XLA backend emits a constant node (`Broadcast` of
+    // eager backend allocates; a lazy tensor backend emits a constant node (`Broadcast` of
     // `0`, an `Eye`/`Iota` for the identity) in its default graph/device context. They
     // give the abstract algorithms (`A \ I`, `AᴴA + λI`, …) the values they need to
     // compose without dropping to a concrete type.
@@ -190,7 +191,7 @@ pub trait LazyDecompositions: LazyMatrix {
 /// **not** here; it lives with the tensor backend.
 pub trait LazyTensor: NormedDivisionAlgebra {
     /// The axis lengths. Returned **owned** — a tensor's shape is dynamic metadata a
-    /// backend computes (a lazy/XLA graph node, a columnar frame), not necessarily a
+    /// backend computes (a lazy graph node, a columnar expression), not necessarily a
     /// stored contiguous slice; consistent with [`LazyMatrix::shape`] /
     /// [`LazyVector::len`] returning owned shape info.
     fn shape(&self) -> Vec<usize>;
