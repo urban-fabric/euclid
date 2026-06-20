@@ -252,4 +252,4 @@ mod tests;
 pub use gaussian::GaussianRational;
 pub use integer::Integer;
 pub use modular::{Zn, Zp};
-pub use rational::{Rational, Rational128, Rational64};
+pub use rational::{Rational, Rational64, Rational128};

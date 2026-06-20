@@ -10,12 +10,9 @@
 //! - *how* a contraction names its axes (XLA `DotGeneral`'s dimension-number tuples);
 //! - *how* a comparison/selection or precision policy is represented.
 //!
-//! The contract exposes only the math (`dot`, `matmul`, `cholesky`, `solve_spd`,
-//! `logdet_spd`, `mahalanobis_squared`, reductions). The concrete implementors are the
-//! backends: `ramanujan::{DenseVector, DenseMatrix}` (the `f64`/complex reference),
-//! `maxwell::Tensor` (compiled XLA), and tensor engines such as `lebesgue::Tensor` for
-//! the rank surfaces they support. One tensor type can satisfy multiple ranks, since a
-//! tensor *can also be a 1-D tensor*.
+//! The contract exposes only the rank math (`dot`, `matmul`, `cholesky`, `solve_spd`,
+//! `logdet_spd`, `mahalanobis_squared`, reductions). Richer matrix extension traits
+//! (`PreparedSpd`, `SpdFactor`, general decompositions) live in `frobenius`.
 //!
 //! ## Real **and** complex
 //!
@@ -139,82 +136,6 @@ pub trait LazyMatrix: Clone {
     /// The squared Mahalanobis distance `δᴴ Σ⁻¹ δ` — the multivariate-Gaussian kernel,
     /// real even over ℂ (a Hermitian form).
     fn mahalanobis_squared(&self, delta: &Self::Vector) -> RealPart<Self::Scalar>;
-}
-
-/// A reusable SPD (Cholesky) factorization — the **prepare once, solve/logdet many** seam.
-///
-/// The per-call density path (`solve_spd`/`logdet_spd`/`mahalanobis_squared`) re-factors `Σ`
-/// every call on *every* backend (on XLA the Cholesky is baked into the compiled graph). This
-/// hoists the O(n³) factorization out of that path so an eager backend can **cache** the factor
-/// and an XLA backend can **feed it as a graph input**, amortizing it across many evaluations.
-/// Consumed by the *prepared* kernels (e.g.
-/// `bayes::lazy_matrix::gaussian_process_log_marginal_likelihood_prepared`).
-pub trait SpdFactor {
-    type Scalar: NormedDivisionAlgebra;
-    type Vector: LazyVector<Scalar = Self::Scalar>;
-    /// The companion matrix type (`Self` of the [`PreparedSpd`] that produced this factor).
-    type Matrix: LazyMatrix<Scalar = Self::Scalar, Vector = Self::Vector>;
-    /// `Σ⁻¹ b` for a vector `b`, reusing the stored factor (no re-factorization).
-    fn solve_vec(&self, rhs: Self::Vector) -> Self::Vector;
-    /// `Σ⁻¹ B` for a (multi-column) matrix `B`, reusing the stored factor.
-    fn solve(&self, rhs: Self::Matrix) -> Self::Matrix;
-    /// `L⁻¹ b` — the lower-triangular forward solve (the **whitening** transform). For
-    /// `Σ = L Lᴴ`, the result `z` satisfies `b = L z` and `‖z‖² = bᴴ Σ⁻¹ b`, so it
-    /// decorrelates/standardizes a residual. The missing factor primitive that needed a
-    /// triangular solve, not the full SPD solve.
-    fn whiten_vec(&self, rhs: Self::Vector) -> Self::Vector;
-    /// `ln det Σ` from the stored factor.
-    fn logdet(&self) -> RealPart<Self::Scalar>;
-}
-
-/// An HPD matrix that can produce a reusable [`SpdFactor`]. **Opt-in**: a backend implements it
-/// to offer the amortized path; portable kernels that don't need it stay on [`LazyMatrix`].
-pub trait PreparedSpd: LazyMatrix {
-    type Factor: SpdFactor<Scalar = Self::Scalar, Vector = Self::Vector, Matrix = Self>;
-    /// Factor an HPD matrix once into a reusable [`SpdFactor`].
-    fn prepare_spd(self) -> Self::Factor;
-}
-
-/// **The fenced decompositions extension.** The heavyweight, non-Hermitian-PD
-/// factorizations and solves — general nonsingular solve, determinant, QR, Hermitian
-/// eigendecomposition, SVD — kept deliberately *out* of the core [`LazyMatrix`]
-/// because on a tensor/XLA backend they are the **T3** path: a pure-HLO Jacobi sweep
-/// or a custom-call into LAPACK/cuSOLVER, not native fused HLO (and on TPU,
-/// slow/precision-sensitive). A backend that can provide them — the eager
-/// `ramanujan::DenseMatrix`, or an XLA `Tensor` via custom-call — implements this
-/// extension; a portable kernel that needs only the SPD spine stays on [`LazyMatrix`]
-/// and lowers everywhere.
-///
-/// The results are stated as **factor matrices** (`Self`), which both an eager dense
-/// matrix and an XLA tensor produce directly. The intrinsically-real spectra
-/// (eigenvalues, singular values) come back as a [`RealVector`](Self::RealVector) over
-/// the scalar's real field — real even over ℂ.
-pub trait LazyDecompositions: LazyMatrix {
-    /// A real-valued companion vector — the eigenvalue / singular-value spectra, real
-    /// even over ℂ. (`DenseVector<f64>` for the `f64` reference; a real-dtype tensor
-    /// for the XLA backend.)
-    type RealVector: LazyVector<Scalar = RealPart<Self::Scalar>>;
-
-    /// The determinant `det A` (a scalar — complex over ℂ).
-    fn determinant(&self) -> Self::Scalar;
-
-    /// The general nonsingular solve `A⁻¹·B` for a (possibly multi-column) right-hand
-    /// side `B` — no Hermitian-PD assumption (the backend picks LU / a general solve).
-    /// For the SPD case prefer [`LazyMatrix::solve_spd`].
-    fn solve(self, rhs: Self) -> Self;
-
-    /// QR factorization `A = Q·R` — `Q` with orthonormal columns, `R` upper-triangular.
-    /// Returns `(Q, R)`. The building block of the least-squares solve.
-    fn qr(self) -> (Self, Self);
-
-    /// Hermitian eigendecomposition `A = V·diag(λ)·Vᴴ` of a Hermitian `A` — eigenvalues
-    /// `λ` **ascending** (real even over ℂ), eigenvectors the columns of `V`. Returns
-    /// `(λ, V)`.
-    fn eigh(self) -> (Self::RealVector, Self);
-
-    /// Singular value decomposition `A = U·diag(σ)·Vᴴ` — singular values `σ`
-    /// **descending** (real, non-negative). Returns `(U, σ, V)`.
-    fn svd(self) -> (Self, Self::RealVector, Self);
 }
 
 /// **Rank n.** An n-dimensional array over a lazy scalar (real or complex), carrying

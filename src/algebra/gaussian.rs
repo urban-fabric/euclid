@@ -6,8 +6,8 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssi
 use crate::algebra::{
     AdditiveMagma, AssociativeAddition, AssociativeMultiplication, CommutativeAddition,
     CommutativeMultiplication, Distributive, EuclideanDomain, Field, HasOne, HasZero,
-    IntegralDomain, MultiplicativeMagma, Pid, Rational128, RefAdditiveMagma, RefMultiplicativeMagma,
-    Ufd, ZeroAnnihilatesMultiplication,
+    IntegralDomain, MultiplicativeMagma, Pid, Rational128, RefAdditiveMagma,
+    RefMultiplicativeMagma, Ufd, ZeroAnnihilatesMultiplication,
 };
 
 /// A Gaussian rational `a + b·i` with `a, b ∈ ℚ` — the field ℚ(i). Exact complex
