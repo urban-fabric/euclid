@@ -3,7 +3,7 @@
 //! The public surface is the numeric trait layer (`LazyReal` for real-valued functions and
 //! `LazyNatural` for count combinatorics). This module is deliberately private to the crate:
 //! it houses the concrete `f64`/`f32` algorithms and a few grouped composite helpers used by
-//! tests and downstream trait implementations.
+//! tests and scalar trait implementations.
 
 #![allow(dead_code)]
 

@@ -1,10 +1,8 @@
-//! Backend-neutral random-source contracts over the lazy numeric/array tier.
+//! Random-source contracts over the lazy numeric and array traits.
 //!
-//! Traits for drawing `Uniform(0, 1)`, standard-normal, and gamma variates as lazy
-//! scalars/vectors/matrices/tensors, independent of host `rand`: an eager adapter wraps a
-//! `rand::Rng`, an XLA adapter maps the same requests to keyed random tensor ops. The
-//! associated types are euclid's own lazy-array contracts, so nothing here names dense
-//! storage or a concrete backend.
+//! Traits for drawing `Uniform(0, 1)`, standard-normal, and `Gamma(shape, 1)` variates as
+//! lazy scalars, vectors, matrices, and tensors. The traits cover mutable streams and
+//! explicit-key draws without prescribing a PRNG, storage type, or tensor runtime.
 
 use crate::array::{LazyMatrix, LazyTensor, LazyVector};
 use crate::numeric::LazyReal;
@@ -53,15 +51,28 @@ pub trait RandomStream {
 
     /// Draw a scalar `Gamma(shape, 1)` variate.
     fn standard_gamma(&mut self, shape: Self::Scalar) -> Self::Scalar;
+    /// Draw `len` independent `Gamma(shape, 1)` variates.
+    fn standard_gamma_vector(&mut self, shape: Self::Scalar, len: usize) -> Self::Vector;
+    /// Draw a `rows x cols` matrix of independent `Gamma(shape, 1)` variates.
+    fn standard_gamma_matrix(
+        &mut self,
+        shape: Self::Scalar,
+        rows: usize,
+        cols: usize,
+    ) -> Self::Matrix;
 }
 
-/// A lazy random stream that can draw arbitrary-rank tensors. `maxwell::Tensor` implements
-/// this directly; eager dense backends implement [`RandomStream`] instead (distinct types).
+/// A lazy random stream that can draw arbitrary-rank tensors.
 pub trait TensorRandomStream: RandomStream {
     type Tensor: LazyTensor + LazyReal;
 
     fn uniform01_tensor(&mut self, shape: &[usize]) -> Self::Tensor;
     fn standard_normal_tensor(&mut self, shape: &[usize]) -> Self::Tensor;
+    fn standard_gamma_tensor(
+        &mut self,
+        shape_parameter: Self::Scalar,
+        shape: &[usize],
+    ) -> Self::Tensor;
 }
 
 /// A distribution sampled from a backend random stream.
@@ -91,13 +102,36 @@ pub trait KeyedRandomBackend {
         rows: usize,
         cols: usize,
     ) -> (Self::Key, Self::Matrix);
-    fn standard_gamma(
+    fn standard_gamma_scalar(
+        key: Self::Key,
+        shape_parameter: Self::Scalar,
+    ) -> (Self::Key, Self::Scalar);
+    fn standard_gamma_vector(
         key: Self::Key,
         shape_parameter: Self::Scalar,
         len: usize,
     ) -> (Self::Key, Self::Vector);
+    fn standard_gamma_matrix(
+        key: Self::Key,
+        shape_parameter: Self::Scalar,
+        rows: usize,
+        cols: usize,
+    ) -> (Self::Key, Self::Matrix);
+    /// Deprecated spelling kept as a compatibility alias for vector gamma draws.
+    fn standard_gamma(
+        key: Self::Key,
+        shape_parameter: Self::Scalar,
+        len: usize,
+    ) -> (Self::Key, Self::Vector) {
+        Self::standard_gamma_vector(key, shape_parameter, len)
+    }
     fn uniform01_tensor(key: Self::Key, shape: &[usize]) -> (Self::Key, Self::Tensor);
     fn standard_normal_tensor(key: Self::Key, shape: &[usize]) -> (Self::Key, Self::Tensor);
+    fn standard_gamma_tensor(
+        key: Self::Key,
+        shape_parameter: Self::Scalar,
+        shape: &[usize],
+    ) -> (Self::Key, Self::Tensor);
 }
 
 /// A lazy random process with explicit stream state.

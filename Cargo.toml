@@ -5,19 +5,19 @@ edition = "2024"
 license = "Proprietary"
 authors = ["Raymond Mead"]
 rust-version = "1.95"
-description = "Domain-neutral numeric foundations: the abstract algebra tower (semiring/dioid graph stack, ring/field), the lazy numeric analysis surface (LazyReal/LazyComplex/NormedDivisionAlgebra), and the rank-graded lazy array contracts (LazyVector/LazyMatrix/LazyTensor). Backend-neutral; the concrete Copy tier lives in napier, units in oresme."
+description = "Domain-neutral lazy numeric contracts: scalar algebra and analysis, rank-graded array traits, random-source traits, and lazy physical quantities."
 repository = "https://github.com/urban-fabric/euclid"
 
-# euclid is the foundations crate: pure trait contracts + exact-arithmetic carriers
-# and the f64/f32 reference special functions. It has no external dependencies
-# (bytemuck/serde moved out with the units, now in oresme).
+# euclid is the dependency-free foundations crate: lazy trait contracts, f64/f32
+# reference scalar implementations, integer/natural/bool carriers, and lazy
+# physical quantities.
 
 [lints.rust]
-unsafe_code = "warn"
-unreachable_pub = "warn"
+unsafe_code = "deny"
+unreachable_pub = "deny"
 
 [lints.clippy]
-unwrap_used = "warn"
-expect_used = "warn"
-panic = "warn"
-self_named_module_files = "warn"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+self_named_module_files = "deny"

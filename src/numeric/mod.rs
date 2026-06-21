@@ -1,27 +1,22 @@
-//! The number traits, in five tiers.
+//! Scalar numeric contracts.
 //!
-//! - **Lazy** ([`Arithmetic`] → [`LazyReal`]/[`LazyComplex`]) — the elementwise analysis
-//!   surface over `+ - * /`, `Clone` not `Copy`: transcendentals, rounding/sign, the
-//!   comparison-free `min`/`max`/`clamp` selectors, stable scalar log-domain helpers,
-//!   `conj`/magnitude, and scalar-literal lifting. Every op lowers to a tensor compiler
-//!   (`Sin`/`Max`/`Select`/…), so a pure formula runs on every backend. Nothing here returns
-//!   a scalar `bool` or needs the concrete number line.
-//! - **Semiring** ([`LazySemiring`] → [`LazyNatural`]) — the carriers with `+ *` but no
-//!   subtraction, the naturals (a `u64` non-negative count/index/shape array). One rung
-//!   below the ring; cross into the signed integers via [`LazyNatural::to_integer`] when a
-//!   formula needs subtraction.
-//! - **Ring** ([`LazyRing`] → [`LazyInteger`]) — the semiring refined with `-` and negation,
-//!   the integers (an `s64` count/index/shape array). The bridge a discrete log-density
-//!   crosses into real analysis is [`LazyInteger::to_real`].
-//! - **Mask** ([`LazyBool`] + [`LazyCompare`]) — the comparison/`select` surface. Booleans
-//!   are a Boolean algebra, not a ring, so they sit beside the tower: a comparison returns
-//!   [`LazyCompare::Mask`] (`bool` eagerly, a `pred` tensor on a backend) and `select`
-//!   consumes it, expressing comparisons without the scalar `bool` a backend cannot return.
-//! - **Concrete** (`Real`/`Complex`, in `napier`) — a `Copy` number with the full API,
-//!   fusing this lazy analysis with the algebraic field. `napier::Real: LazyReal`, so a
-//!   concrete number satisfies a lazy formula — but a `Tensor` (no `Copy`) is *only* lazy.
+//! The traits are grouped by the structure they require:
 //!
-//! The word *field* stays reserved for the algebraic `Field`.
+//! - [`LazySemiring`] and [`LazyNatural`]: `+`, `*`, identities, natural-number lifting,
+//!   Euclidean division, and count combinatorics.
+//! - [`LazyRing`] and [`LazyInteger`]: subtraction, negation, signed integer lifting,
+//!   Euclidean division, and conversion to real carriers.
+//! - [`Arithmetic`]: division on top of the ring operations.
+//! - [`LazyReal`]: real analysis, lifted constants, square/powers, rounding/sign
+//!   operations, comparison-free selectors, masks, special functions, and stable log-domain
+//!   helpers.
+//! - [`NormedDivisionAlgebra`], [`LazyComplex`], and [`LazyQuaternion`]: conjugation,
+//!   magnitude, real part, and complex/quaternionic construction.
+//! - [`LazyBool`] and [`LazyCompare`]: mask algebra, comparisons, `select`, and lazy
+//!   control flow.
+//!
+//! Use the narrowest trait bound that contains the operations a formula needs. Nothing in
+//! this module returns a scalar `bool` from a lazy comparison; comparisons return masks.
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
@@ -36,9 +31,9 @@ impl<T> LazySemiring for T where T: Clone + Add<Output = T> + Mul<Output = T> {}
 /// The **ring** substrate: a [`LazySemiring`] plus `-` and negation, `÷` withheld — the lazy
 /// peer of the algebraic `Ring`. Blanket-implemented for every carrier with the four ring
 /// operators, so the division-bearing scalars (`f64`/`f32`, complex, `Tensor`) join it
-/// alongside `i64`/`i128` and integer tensors. (Unsigned carriers stop at [`LazySemiring`],
-/// having no `Neg`.) [`Arithmetic`] refines it with `Div`; [`LazyInteger`] with the integer
-/// surface.
+/// alongside `i32`/`i64`/`i128` and integer tensors. (Unsigned carriers stop at
+/// [`LazySemiring`], having no `Neg`.) [`Arithmetic`] refines it with `Div`;
+/// [`LazyInteger`] with the integer surface.
 pub trait LazyRing: LazySemiring + Sub<Output = Self> + Neg<Output = Self> {}
 impl<T> LazyRing for T where T: LazySemiring + Sub<Output = T> + Neg<Output = T> {}
 
@@ -53,9 +48,10 @@ pub trait Arithmetic: LazyRing + Div<Output = Self> {}
 /// associative ones are exactly ℝ, ℂ, ℍ, so one matrix/vector kernel runs over all three.
 ///
 /// It names the real field magnitudes, norms, and SPD quantities live in (`Self` for a
-/// real number, the real part otherwise) and the `conjugate` every Hermitian formula
-/// needs — the identity on a real number, so a `conjugate`/`magnitude` kernel specializes
-/// to the real case for free. Refined by [`LazyReal`], [`LazyComplex`], [`LazyQuaternion`].
+/// real number, the real part otherwise), the `conjugate` every Hermitian formula needs,
+/// and real-axis constant lifting through [`field_scalar`](Self::field_scalar),
+/// [`field_zero`](Self::field_zero), and [`field_one`](Self::field_one). Refined by
+/// [`LazyReal`], [`LazyComplex`], [`LazyQuaternion`].
 pub trait NormedDivisionAlgebra: Arithmetic {
     /// The real field of magnitudes / norms — `Self` for a real scalar, the real
     /// component for a complex one.
@@ -69,10 +65,20 @@ pub trait NormedDivisionAlgebra: Arithmetic {
     fn real_part(&self) -> Self::RealPart;
     /// Embed a real value (`re + 0i` for complex; the identity for a real scalar).
     fn from_real(re: Self::RealPart) -> Self;
-    /// The magnitude `|x|`. Defaults to `√(norm_sqr)`; a real scalar overrides with `abs`.
-    fn magnitude(&self) -> Self::RealPart {
-        self.norm_sqr().sqrt()
+    /// Lift a host scalar into this division algebra's real axis.
+    fn field_scalar(x: f64) -> Self {
+        Self::from_real(Self::RealPart::scalar(x))
     }
+    /// The additive identity, embedded through the real axis.
+    fn field_zero() -> Self {
+        Self::field_scalar(0.0)
+    }
+    /// The multiplicative identity, embedded through the real axis.
+    fn field_one() -> Self {
+        Self::field_scalar(1.0)
+    }
+    /// The magnitude `|x|`.
+    fn magnitude(&self) -> Self::RealPart;
 }
 
 mod boolean;

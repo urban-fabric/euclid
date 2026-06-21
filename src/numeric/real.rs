@@ -1,7 +1,7 @@
 //! The real-number lazy analysis surface [`LazyReal`]. The concrete `Real` number (the
 //! `Copy`, ordered tier) lives in the `napier` crate.
 
-use super::{LazyInteger, NormedDivisionAlgebra};
+use super::{LazyCompare, LazyInteger, NormedDivisionAlgebra};
 
 /// A real-valued numeric scalar: an [`Arithmetic`](super::Arithmetic) plus the real
 /// transcendentals inherently-real formulas (densities, geometry kernels) are written in.
@@ -9,7 +9,18 @@ use super::{LazyInteger, NormedDivisionAlgebra};
 /// `LazyReal: NormedDivisionAlgebra<RealPart = Self>` — a real scalar's real field is
 /// itself, so its `conjugate` is the identity and a [`NormedDivisionAlgebra`] kernel
 /// collapses to the plain real case here.
-pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
+///
+/// `LazyReal: LazyCompare` — a real scalar is **ordered**, so the comparison/control-flow
+/// surface is part of the real surface itself: the six comparisons
+/// (`lt`/`le`/`gt`/`ge`/`eq`/`ne`) to a [`Mask`](LazyCompare::Mask), and the branchless
+/// [`select`](LazyCompare::select)/[`if_then_else`](LazyCompare::if_then_else) the mask
+/// drives. A piecewise / truncated density — or any `if`/`then`/`else` over real numbers —
+/// uses the `LazyReal` bound alone. The comparison-free
+/// [`min`](Self::min)/[`max`](Self::max)/[`clamp`](Self::clamp) selectors cover common
+/// min/max/clamp shapes without an explicit mask; use the comparison surface when the branch
+/// condition is something else. Complex values are unordered, so
+/// [`LazyComplex`](super::LazyComplex) carries no comparison.
+pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
     /// The integer substrate indexing this real's integer powers — `i32` for `f32`, `i64`
     /// for `f64`, an integer tensor for a tensor backend; the exponent type of
     /// [`powi`](Self::powi). The bound is the bare [`LazyInteger`], not
@@ -21,13 +32,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     /// for `f32`). Lazy backends should represent it as a constant node, ideally interned.
     fn scalar(x: f64) -> Self;
 
-    /// Lift a host scalar using `self` as graph/device/shape context. Defaults to
-    /// [`scalar`](Self::scalar); backends override when constants must share an existing
-    /// value's arena, dtype, device, or broadcast context.
-    #[inline]
-    fn scalar_like(&self, x: f64) -> Self {
-        Self::scalar(x)
-    }
+    /// Lift a host scalar using `self` as graph/device/shape context.
+    fn scalar_like(&self, x: f64) -> Self;
 
     /// `0`.
     #[inline]
@@ -157,6 +163,92 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
         Self::scalar(0.577_215_664_901_532_9)
     }
 
+    // --- non-finite IEEE sentinels ---
+    // Every target real is IEEE-754 (host `f32`/`f64`, an XLA `f32`/`f64` tensor), so these
+    // bit patterns lift as ordinary constants through `scalar`. Useful as reduction/clamp
+    // bounds (`±∞`), log-domain masks (`select(keep, logit, neg_infinity())` ahead of a
+    // softmax), and the open ends of a distribution's support. They poison arithmetic and
+    // its gradients, so detect them with the finiteness predicates below rather than
+    // computing through them.
+
+    /// Positive infinity, `+∞`.
+    #[inline]
+    fn infinity() -> Self {
+        Self::scalar(f64::INFINITY)
+    }
+
+    /// Negative infinity, `−∞`.
+    #[inline]
+    fn neg_infinity() -> Self {
+        Self::scalar(f64::NEG_INFINITY)
+    }
+
+    /// A quiet `NaN` ("not a number") — the IEEE result of an undefined operation
+    /// (`0/0`, `∞ − ∞`). It is unequal to everything including itself, so test it with
+    /// [`is_nan`](Self::is_nan); never compare it with `eq`.
+    #[inline]
+    fn nan() -> Self {
+        Self::scalar(f64::NAN)
+    }
+
+    // --- finiteness predicates ---
+
+    /// `true` where `self` is `NaN`.
+    fn is_nan(&self) -> Self::Mask;
+
+    /// `true` where `self` is `±∞`.
+    fn is_infinite(&self) -> Self::Mask;
+
+    /// `true` where `self` is finite — neither `±∞` nor `NaN`.
+    fn is_finite(&self) -> Self::Mask;
+
+    // --- non-finite recovery helpers ---
+    // Convenience composites that turn the classifier predicates above into value-level
+    // recovery — the shape an out-of-support guard takes.
+
+    /// Replace `NaN` lanes with `fill`, leaving `±∞` and finite values untouched — the
+    /// portable `nan_to_num` for the `NaN` case. A `NaN` log-density (a bug, or `0·∞`) becomes
+    /// a chosen sentinel (often `neg_infinity()`, i.e. "impossible") instead of poisoning a
+    /// later sum.
+    #[inline]
+    fn nan_to_num(self, fill: Self) -> Self {
+        let is_nan = self.is_nan();
+        Self::select(&is_nan, fill, self)
+    }
+
+    /// Replace every non-finite lane (`NaN` **or** `±∞`) with `fill`, keeping the finite ones —
+    /// the "force finite" recovery. Use [`nan_to_num`](Self::nan_to_num) instead when an
+    /// intended `±∞`, such as a log-domain `−∞`, must survive.
+    #[inline]
+    fn finite_or(self, fill: Self) -> Self {
+        let is_finite = self.is_finite();
+        Self::select(&is_finite, self, fill)
+    }
+
+    /// Out-of-support guard: keep `self` where `valid`, else `fill`. This is the *output* half
+    /// of the "double `where`" — pair it with a sanitized *input* so a tensor backend (which
+    /// evaluates both `select` branches) never forms a `NaN` in an invalid lane to begin with:
+    ///
+    /// ```ignore
+    /// let safe_x = T::select(&in_support, x.clone(), x.scalar_like(1.0)); // any in-domain dummy
+    /// let logp   = density(safe_x);                                       // no NaN in masked lanes
+    /// let out    = logp.mask_invalid(in_support, T::neg_infinity());
+    /// ```
+    #[inline]
+    fn mask_invalid(self, valid: Self::Mask, fill: Self) -> Self {
+        Self::select(&valid, self, fill)
+    }
+
+    /// A debugging hook that returns `self` unchanged but lets a backend trap non-finite values.
+    /// The default is the identity (no check); the eager reals override it to `debug_assert!`
+    /// finiteness, and a tensor backend may lower it to a runtime NaN-check (the `checkify`
+    /// model) behind a debug flag. It carries **no** semantic meaning — release builds and
+    /// checkless backends erase it — so never rely on it to change a value.
+    #[inline]
+    fn debug_assert_finite(self) -> Self {
+        self
+    }
+
     /// `e^x`.
     fn exp(&self) -> Self;
     /// Natural logarithm.
@@ -169,6 +261,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn sqrt(&self) -> Self;
     /// Absolute value.
     fn abs(&self) -> Self;
+    /// Square, `self * self`.
+    fn square(&self) -> Self;
     /// Raise to a real power, `self^p`. The exponent is itself a real of this substrate, so
     /// a lazy backend can pow by a graph-computed value; lift a literal with
     /// `x.powf(x.scalar_like(2.5))`. Integer exponents have their own [`powi`](Self::powi).
@@ -177,8 +271,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn ln_1p_exp(&self) -> Self;
 
     // --- trigonometry ---
-    // Elementwise transcendentals a tensor compiler lowers to `Sin`/`Cos`/`Atan2`/…; taken
-    // by value to match the concrete `Real` signatures (the `Clone` bound keeps the input).
+    // Elementwise transcendentals; taken by value to match the concrete `Real` signatures
+    // (the `Clone` bound keeps the input).
     fn sin(self) -> Self;
     fn cos(self) -> Self;
     fn tan(self) -> Self;
@@ -189,28 +283,14 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn sinh(self) -> Self;
     fn cosh(self) -> Self;
     fn tanh(self) -> Self;
-    /// Inverse hyperbolic sine, `asinh(x) = ln(x + √(x² + 1))`. Defaulted through
-    /// `ln`/`sqrt` so every backend gets it; `f64`/`f32` override with the libm form.
-    #[inline]
-    fn asinh(self) -> Self {
-        (self.clone() + (self.clone() * self + Self::one()).sqrt()).ln()
-    }
+    /// Inverse hyperbolic sine.
+    fn asinh(self) -> Self;
     /// Inverse hyperbolic cosine, `acosh(x) = ln(x + √(x² − 1))` (for `x ≥ 1`).
-    #[inline]
-    fn acosh(self) -> Self {
-        (self.clone() + (self.clone() * self - Self::one()).sqrt()).ln()
-    }
+    fn acosh(self) -> Self;
     /// Inverse hyperbolic tangent, `atanh(x) = ½·ln((1 + x)/(1 − x))` (for `|x| < 1`).
-    #[inline]
-    fn atanh(self) -> Self {
-        let one = Self::one();
-        ((one.clone() + self.clone()) / (one - self)).ln() * Self::half()
-    }
+    fn atanh(self) -> Self;
     /// `(sin, cos)` in one call.
-    #[inline]
-    fn sin_cos(self) -> (Self, Self) {
-        (self.clone().sin(), self.cos())
-    }
+    fn sin_cos(self) -> (Self, Self);
 
     // --- powers / roots ---
     /// `√(self² + other²)` without intermediate overflow.
@@ -242,8 +322,7 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn to_degrees(self) -> Self;
 
     // --- elementwise select (NaN-aware on the concrete reals) ---
-    // Comparison-free selectors lowering to `Max`/`Min`/`Clamp`, so piecewise kernels stay
-    // portable without a `bool`-returning comparison.
+    // Comparison-free selectors for min/max/clamp-shaped piecewise kernels.
     fn min(self, other: Self) -> Self;
     fn max(self, other: Self) -> Self;
     fn clamp(self, lo: Self, hi: Self) -> Self;
@@ -294,9 +373,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     ///
     /// It is a **trait primitive**, not a free composite: honoring the `x = 0` case needs
     /// a value-dependent select that the comparison-free real surface cannot express, so
-    /// each backend supplies it directly — the eager reals branch on `x == 0`, and a
-    /// tensor backend lowers to a `select`-guarded `x · ln y` (the primitive jax/scipy
-    /// expose as `xlogy`).
+    /// each carrier supplies it directly. Eager reals branch on `x == 0`; lazy carriers can
+    /// use a `select`-guarded `x · ln y` form.
     fn xlogy(self, y: Self) -> Self;
 
     /// `x · ln(1 + y)` with the same absorbing-zero convention as [`xlogy`](Self::xlogy):
@@ -307,104 +385,55 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     /// surface cannot express.
     fn xlog1py(self, y: Self) -> Self;
 
-    // --- stable composites (defaulted) ---
+    // --- stable scalar functions ---
 
     /// Stable `ln(1 − x)`, accurate when `x` is near zero; defined for `x ≤ 1`.
-    #[inline]
-    fn ln_1m(&self) -> Self {
-        (-self.clone()).ln_1p()
-    }
+    fn ln_1m(&self) -> Self;
 
     /// Stable `ln(e^x − 1)`, the inverse of [`ln_1p_exp`](Self::ln_1p_exp) on positive
     /// inputs. Defined for `x > 0`.
-    #[inline]
-    fn ln_exp_m1(&self) -> Self {
-        self.clone() + (-self.clone()).ln_1m_exp()
-    }
+    fn ln_exp_m1(&self) -> Self;
 
     /// Stable logistic sigmoid `1 / (1 + e^{-x})`, evaluated without overflowing the
     /// intermediate exponential.
-    #[inline]
-    fn sigmoid(&self) -> Self {
-        self.clone().min(Self::zero()).exp() / (Self::one() + (-self.clone().abs()).exp())
-    }
+    fn sigmoid(&self) -> Self;
 
     /// Stable `ln(sigmoid(x)) = -ln(1 + e^{-x})`.
-    #[inline]
-    fn ln_sigmoid(&self) -> Self {
-        -(-self.clone()).ln_1p_exp()
-    }
+    fn ln_sigmoid(&self) -> Self;
 
     /// Stable `ln(1 − sigmoid(x)) = -ln(1 + e^x)`.
-    #[inline]
-    fn ln_1m_sigmoid(&self) -> Self {
-        -self.ln_1p_exp()
-    }
+    fn ln_1m_sigmoid(&self) -> Self;
 
     /// Stable logit, `ln(p / (1 − p))`, using [`ln_1m`](Self::ln_1m) for the complement.
-    #[inline]
-    fn logit(&self) -> Self {
-        self.clone().ln() - self.ln_1m()
-    }
+    fn logit(&self) -> Self;
 
     /// `x · ln(1 − y)` with the same absorbing-zero convention as [`xlogy`](Self::xlogy).
-    #[inline]
-    fn xlog1my(self, y: Self) -> Self {
-        self.xlog1py(-y)
-    }
+    fn xlog1my(self, y: Self) -> Self;
 
     /// Stable pairwise `ln(eᵃ + eᵇ) = max(a, b) + ln(1 + e^{−|a−b|})`.
-    #[inline]
-    fn ln_add_exp(self, other: Self) -> Self {
-        let m = self.clone().max(other.clone());
-        let gap = (self - other).abs();
-        m + (-gap).ln_1p_exp()
-    }
+    fn ln_add_exp(self, other: Self) -> Self;
 
     /// Stable pairwise `ln(eᵃ − eᵇ) = a + ln(1 − e^{b−a})`, valid for `self >= other`.
-    #[inline]
-    fn ln_sub_exp(self, other: Self) -> Self {
-        let gap = other - self.clone();
-        self + gap.ln_1m_exp()
-    }
+    fn ln_sub_exp(self, other: Self) -> Self;
 
-    // --- composite special functions (defaulted) ---
-    // Short closed forms over the primitives above, defaulted so every backend gets them
-    // for free and a tensor lowers them op-for-op. The eager reals may override with a
-    // direct reference where one is more accurate or has a wider domain.
+    // --- composite special functions ---
+    // These are part of the contract surface. Implementors choose the numerics appropriate
+    // for their carrier rather than inheriting a generic stability policy.
 
-    /// `Γ(x)` on the positive domain, `Γ(x) = exp(ln Γ(x))` — the form a tensor backend
-    /// lowers (`exp ∘ Lgamma`). For `x > 0` it agrees with the reflection-based reference
-    /// to rounding; the negative-argument reflection is a `bool`-valued branch outside the
-    /// lazy surface, so the eager reals override this with the exact reference.
-    #[inline]
-    fn gamma(self) -> Self {
-        self.ln_gamma().exp()
-    }
+    /// `Γ(x)`.
+    fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
-    #[inline]
-    fn ln_beta(self, b: Self) -> Self {
-        self.clone().ln_gamma() + b.clone().ln_gamma() - (self + b).ln_gamma()
-    }
+    fn ln_beta(self, b: Self) -> Self;
 
     /// `B(a, b) = exp(ln B(a, b))`, with `self = a`.
-    #[inline]
-    fn beta(self, b: Self) -> Self {
-        self.ln_beta(b).exp()
-    }
+    fn beta(self, b: Self) -> Self;
 
     /// `ln I₀(x) = ln I₀ᵉ(x) + |x|`, the overflow-free log of the modified Bessel `I₀`
     /// (the von Mises / directional normalizer).
-    #[inline]
-    fn ln_bessel_i0(self) -> Self {
-        self.clone().bessel_i0e().ln() + self.abs()
-    }
+    fn ln_bessel_i0(self) -> Self;
 
     /// `I₁(x) / I₀(x) = I₁ᵉ(x) / I₀ᵉ(x)` — the von Mises mean resultant length;
     /// overflow-free, since the shared `e^{|x|}` growth factor cancels.
-    #[inline]
-    fn bessel_i1_over_i0(self) -> Self {
-        self.clone().bessel_i1e() / self.bessel_i0e()
-    }
+    fn bessel_i1_over_i0(self) -> Self;
 }

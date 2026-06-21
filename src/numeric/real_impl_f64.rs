@@ -11,6 +11,21 @@ impl LazyReal for f64 {
         x
     }
     #[inline]
+    fn scalar_like(&self, x: f64) -> Self {
+        let _ = self;
+        x
+    }
+    #[inline]
+    fn debug_assert_finite(self) -> Self {
+        // The eager reference real traps non-finite values in debug builds; release builds
+        // erase the check (it carries no semantic meaning).
+        debug_assert!(
+            self.is_finite(),
+            "LazyReal::debug_assert_finite: non-finite f64 {self}"
+        );
+        self
+    }
+    #[inline]
     fn exp(&self) -> Self {
         f64::exp(*self)
     }
@@ -35,6 +50,10 @@ impl LazyReal for f64 {
         f64::abs(*self)
     }
     #[inline]
+    fn square(&self) -> Self {
+        *self * *self
+    }
+    #[inline]
     fn powf(&self, p: Self) -> Self {
         f64::powf(*self, p)
     }
@@ -48,6 +67,18 @@ impl LazyReal for f64 {
         } else {
             f64::ln_1p(x.exp())
         }
+    }
+    #[inline]
+    fn is_nan(&self) -> bool {
+        f64::is_nan(*self)
+    }
+    #[inline]
+    fn is_infinite(&self) -> bool {
+        f64::is_infinite(*self)
+    }
+    #[inline]
+    fn is_finite(&self) -> bool {
+        f64::is_finite(*self)
     }
     #[inline]
     fn sin(self) -> Self {
@@ -102,6 +133,10 @@ impl LazyReal for f64 {
         f64::atanh(self)
     }
     #[inline]
+    fn sin_cos(self) -> (Self, Self) {
+        f64::sin_cos(self)
+    }
+    #[inline]
     fn hypot(self, other: Self) -> Self {
         f64::hypot(self, other)
     }
@@ -111,7 +146,7 @@ impl LazyReal for f64 {
     }
     #[inline]
     fn powi(self, n: i64) -> Self {
-        f64::powi(self, n as i32)
+        powi_i64(self, n)
     }
     #[inline]
     fn mul_add(self, a: Self, b: Self) -> Self {
@@ -249,11 +284,116 @@ impl LazyReal for f64 {
         if self == 0.0 { 0.0 } else { self * y.ln_1p() }
     }
     #[inline]
+    fn ln_1m(&self) -> Self {
+        (-*self).ln_1p()
+    }
+    #[inline]
+    fn ln_exp_m1(&self) -> Self {
+        let x = *self;
+        x + (-x).ln_1m_exp()
+    }
+    #[inline]
+    fn sigmoid(&self) -> Self {
+        let x = *self;
+        if x >= 0.0 {
+            1.0 / (1.0 + (-x).exp())
+        } else {
+            let exp_x = x.exp();
+            exp_x / (1.0 + exp_x)
+        }
+    }
+    #[inline]
+    fn ln_sigmoid(&self) -> Self {
+        -(-*self).ln_1p_exp()
+    }
+    #[inline]
+    fn ln_1m_sigmoid(&self) -> Self {
+        -self.ln_1p_exp()
+    }
+    #[inline]
+    fn logit(&self) -> Self {
+        self.ln() - self.ln_1m()
+    }
+    #[inline]
+    fn xlog1my(self, y: Self) -> Self {
+        self.xlog1py(-y)
+    }
+    #[inline]
+    fn ln_add_exp(self, other: Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return f64::NAN;
+        }
+        if self == f64::NEG_INFINITY {
+            return other;
+        }
+        if other == f64::NEG_INFINITY {
+            return self;
+        }
+        if self == f64::INFINITY || other == f64::INFINITY {
+            return f64::INFINITY;
+        }
+
+        let m = self.max(other);
+        let gap = (self - other).abs();
+        m + (-gap).ln_1p_exp()
+    }
+    #[inline]
+    fn ln_sub_exp(self, other: Self) -> Self {
+        if self.is_nan() || other.is_nan() || self < other {
+            return f64::NAN;
+        }
+        if self == f64::INFINITY && other == f64::INFINITY {
+            return f64::NAN;
+        }
+        if other == f64::NEG_INFINITY {
+            return self;
+        }
+        if self == other {
+            return f64::NEG_INFINITY;
+        }
+
+        self + (other - self).ln_1m_exp()
+    }
+    #[inline]
     fn gamma(self) -> Self {
         // The exact Lanczos reference: more accurate than `exp(ln Γ)` and valid for
-        // negative `x` (via reflection), which the defaulted form is not.
+        // negative `x` through reflection.
         crate::numeric::special::gamma::gamma(self)
     }
+    #[inline]
+    fn ln_beta(self, b: Self) -> Self {
+        crate::numeric::special::beta::ln_beta(self, b)
+    }
+    #[inline]
+    fn beta(self, b: Self) -> Self {
+        crate::numeric::special::beta::beta(self, b)
+    }
+    #[inline]
+    fn ln_bessel_i0(self) -> Self {
+        crate::numeric::special::bessel::ln_i0(self)
+    }
+    #[inline]
+    fn bessel_i1_over_i0(self) -> Self {
+        crate::numeric::special::bessel::i1_over_i0(self)
+    }
+}
+
+fn powi_i64(base: f64, exponent: i64) -> f64 {
+    let mut n = exponent.unsigned_abs();
+    let mut factor = base;
+    let mut acc = 1.0;
+
+    while n > 0 {
+        if n & 1 == 1 {
+            acc *= factor;
+        }
+        n >>= 1;
+        if n > 0 {
+            factor *= factor;
+        }
+    }
+
+    if exponent < 0 { acc.recip() } else { acc }
 }
 
 impl NormedDivisionAlgebra for f64 {

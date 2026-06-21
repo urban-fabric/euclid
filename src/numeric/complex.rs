@@ -6,9 +6,12 @@ use super::NormedDivisionAlgebra;
 /// A complex-valued numeric scalar: a [`NormedDivisionAlgebra`] that adds the imaginary
 /// part. Implemented by genuinely-complex types (`Complex{32,64}`, a complex `Tensor`), not
 /// the real scalars. The real field, `conjugate`, `magnitude`, and `norm_sqr` come from
-/// [`NormedDivisionAlgebra`]; `re`/`conj` are the idiomatic complex spellings. Construction
-/// from `(re, im)` lives on the concrete constructors, not here.
+/// [`NormedDivisionAlgebra`]; `from_parts`, `re`, and `conj` are the idiomatic complex
+/// spellings.
 pub trait LazyComplex: NormedDivisionAlgebra {
+    /// Construct `re + i·im` from real and imaginary parts.
+    fn from_parts(re: Self::RealPart, im: Self::RealPart) -> Self;
+
     /// Imaginary part.
     fn im(&self) -> Self::RealPart;
 

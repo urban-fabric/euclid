@@ -13,8 +13,8 @@ use super::{LazyReal, LazyRing};
 
 /// A lazy ring of integers: a [`LazyRing`] plus the integer surface — machine-integer lift,
 /// the cast into the real analysis surface, sign/abs, and Euclidean division-with-remainder.
-/// Implemented by `i32`/`i64`/`i128`, and the seam an integer tensor (an XLA `s64` array)
-/// slots into.
+/// Implemented by `i32`/`i64`/`i128`; lazy signed-integer carriers can implement the same
+/// surface.
 pub trait LazyInteger: LazyRing {
     /// The real surface this integer casts into — `f32` for `i32`, `f64` for `i64`/`i128`.
     /// Mirrors [`NormedDivisionAlgebra::RealPart`](super::NormedDivisionAlgebra::RealPart).
@@ -47,8 +47,9 @@ pub trait LazyInteger: LazyRing {
     /// The absolute value (XLA `Abs`).
     fn abs(self) -> Self;
 
-    /// Euclidean division with remainder `(quotient, remainder)`, truncating toward zero so
-    /// `self == quotient * rhs + remainder` (XLA `Div`+`Rem`) — not the field `÷`.
+    /// Euclidean division with remainder `(quotient, remainder)`, so
+    /// `self == quotient * rhs + remainder` and `0 <= remainder < abs(rhs)` when `rhs != 0`.
+    /// This is integer division, not the field operator `÷`.
     fn div_rem(self, rhs: Self) -> (Self, Self);
 }
 
@@ -72,7 +73,7 @@ impl LazyInteger for i32 {
     }
     #[inline]
     fn div_rem(self, rhs: Self) -> (Self, Self) {
-        (self / rhs, self % rhs)
+        (self.div_euclid(rhs), self.rem_euclid(rhs))
     }
 }
 
@@ -96,7 +97,7 @@ impl LazyInteger for i64 {
     }
     #[inline]
     fn div_rem(self, rhs: Self) -> (Self, Self) {
-        (self / rhs, self % rhs)
+        (self.div_euclid(rhs), self.rem_euclid(rhs))
     }
 }
 
@@ -120,6 +121,6 @@ impl LazyInteger for i128 {
     }
     #[inline]
     fn div_rem(self, rhs: Self) -> (Self, Self) {
-        (self / rhs, self % rhs)
+        (self.div_euclid(rhs), self.rem_euclid(rhs))
     }
 }

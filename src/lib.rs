@@ -1,45 +1,36 @@
-//! # euclid — domain-neutral numeric foundations
+//! # euclid
 //!
-//! The backend-neutral contract layer for the urban-fabric math stack: trait contracts
-//! that let a numeric formula be written **once** and run on many backends. The same
-//! Gaussian log-density or Cholesky solve evaluates eagerly on `f64`/`f32` today and
-//! lowers to a tensor compiler (XLA, via `maxwell`) tomorrow, unchanged.
+//! Domain-neutral numeric foundations for the urban-fabric math stack.
 //!
-//! The crate is pure trait contracts plus the `f64`/`f32` reference scalars, with no
-//! external dependencies. The concrete `Copy` number tier, the abstract-algebra tower,
-//! and physical units live in sibling crates — see [Ecosystem](#ecosystem).
+//! euclid defines lazy trait contracts for scalar, array, random, and unit-aware math.
+//! It has no external dependencies. The crate includes the contracts, the `f64`/`f32`
+//! reference scalar implementations, integer/natural/bool scalar carriers, and lazy
+//! physical-unit wrappers.
 //!
-//! Every contract is *lazy* — `Clone`, never `Copy`, and free of anything a tensor
-//! backend cannot produce: a comparison returns a **mask**, not a `bool`; a constant is
-//! lifted with [`LazyReal::scalar`], not read from a `const`; piecewise logic uses the
-//! comparison-free [`min`](LazyReal::min)/[`max`](LazyReal::max)/[`clamp`](LazyReal::clamp)
-//! selectors. A formula staying inside this surface lowers op-for-op (`exp` → `Exp`,
-//! `dot` → `DotGeneral`, …).
+//! The contracts are intentionally small:
 //!
-//! ## The two tiers
+//! - Values are `Clone`, not `Copy`.
+//! - Constants are lifted with methods such as [`LazyReal::scalar`].
+//! - Comparisons return masks, consumed by [`LazyCompare::select`] or
+//!   [`LazyCompare::if_then_else`].
+//! - Matrix traits expose stable mathematical results such as `solve_spd` and
+//!   `logdet_spd`, not `inverse`.
+//! - Each trait names the structure it requires; code should use the narrowest bound that
+//!   contains the operations it needs.
 //!
-//! - **Scalar surface** ([`numeric`]) — the analysis and algebra of one number, graded by
-//!   structure: [`LazySemiring`] (`+ *`, the naturals via [`LazyNatural`]) refined by
-//!   [`LazyRing`] (`+ - *`), in turn refined by [`Arithmetic`] (adds `/`) and
-//!   [`LazyInteger`]; [`LazyReal`] (transcendentals, constants, selectors, special
-//!   functions, and stable scalar log-domain helpers); [`NormedDivisionAlgebra`] over
-//!   ℝ/ℂ/ℍ, refined by [`LazyComplex`] and [`LazyQuaternion`]; and [`LazyBool`] +
-//!   [`LazyCompare`], the mask tier.
-//! - **Array contracts** ([`array`](mod@array)) — the rank-graded peers: [`LazyVector`]
-//!   (rank 1), [`LazyMatrix`] (rank 2: matmul + the SPD quantities), [`LazyTensor`]
-//!   (rank n: shape, reshape, reductions, contraction). [`LazyTensor`] sits on
-//!   [`LazyRing`]; [`LazyVector`]/[`LazyMatrix`] stay over a [`NormedDivisionAlgebra`].
+//! ## Modules
 //!
-//! [`random`] adds backend-neutral random-source contracts ([`RandomStream`],
-//! [`KeyedRandomBackend`]), covering both host-PRNG and keyed/counter-based styles.
+//! - [`numeric`] defines scalar algebra, real analysis, masks, and special functions.
+//! - [`array`](mod@array) defines [`LazyVector`], [`LazyMatrix`], and [`LazyTensor`].
+//! - [`random`] defines stream-shaped and keyed random-source contracts.
+//! - [`units`] defines lazy physical quantities over any [`LazyReal`] carrier.
 //!
-//! ## Example — one formula, written against the contract
+//! ## Example
 //!
 //! ```
 //! use euclid::LazyReal;
 //!
-//! // Standard-normal log-density, generic over `T: LazyReal` — the same code runs on a
-//! // concrete `f64` today and on a tensor scalar tomorrow.
+//! // Standard-normal log-density, generic over the lazy real surface.
 //! fn standard_normal_logpdf<T: LazyReal>(x: T) -> T {
 //!     let x2 = x.clone() * x;
 //!     -(T::half() * x2) - T::half_ln_tau()
@@ -49,14 +40,14 @@
 //! assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
 //! ```
 //!
-//! In-crate, `f64`/`f32` implement the real traits,
-//! `i64`/`i128` implement [`LazyInteger`],
-//! `u32`/`u64`/`u128` implement [`LazyNatural`],
-//! and `bool` implements [`LazyBool`].
+//! In this crate, `f64`/`f32` implement the real traits; `i32`/`i64`/`i128`
+//! implement [`LazyInteger`]; `u32`/`u64`/`u128` implement [`LazyNatural`]; and
+//! `bool` implements [`LazyBool`].
 
 pub mod array;
 pub mod numeric;
 pub mod random;
+pub mod units;
 
 pub use array::{LazyMatrix, LazyTensor, LazyVector};
 pub use numeric::{
@@ -66,4 +57,8 @@ pub use numeric::{
 pub use random::{
     KeyedRandomBackend, RandomAlgorithm, RandomProcess, RandomStream, SampleWith,
     TensorRandomStream,
+};
+pub use units::{
+    Dimension, LazyKm, LazyLinearQuantity, LazyMeters, LazyQuantity, LazyScalarQuantity,
+    LazySeconds, LazySpeedMs, LazySquareMeters,
 };

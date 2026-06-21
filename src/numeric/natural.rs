@@ -14,8 +14,8 @@ use super::{LazyInteger, LazyReal, LazySemiring};
 
 /// A lazy semiring of naturals: a [`LazySemiring`] plus the natural surface — machine-natural
 /// lift, the cast into the real analysis surface, the widen into the signed integer ring, and
-/// Euclidean division-with-remainder. Implemented by `u32`/`u64`/`u128`, and the seam an
-/// unsigned tensor (an XLA `u64` array) slots into.
+/// Euclidean division-with-remainder. Implemented by `u32`/`u64`/`u128`; lazy unsigned
+/// carriers can implement the same surface.
 ///
 /// Naturals carry no `signum`/`abs` (they are already non-negative) and no `Sub`/`Neg` (the
 /// semiring has no additive inverse) — cross into [`Integer`](Self::Integer) via
@@ -64,41 +64,18 @@ pub trait LazyNatural: LazySemiring {
     /// truncate-toward-zero caveat.
     fn div_rem(self, rhs: Self) -> (Self, Self);
 
-    /// `ln(n!) = ln Γ(n + 1)` in the associated real surface.
-    ///
-    /// For a lazy unsigned tensor this is the elementwise count-to-real formula. Concrete
-    /// host naturals may override with exact small-count loops before falling back to
-    /// `ln_gamma`.
-    #[inline]
-    fn ln_factorial(&self) -> Self::Real {
-        (self.to_real() + Self::Real::one()).ln_gamma()
-    }
+    /// `ln(n!)` in the associated real surface.
+    fn ln_factorial(&self) -> Self::Real;
 
     /// `n!` in the associated real surface.
-    #[inline]
-    fn factorial(&self) -> Self::Real {
-        self.ln_factorial().exp()
-    }
+    fn factorial(&self) -> Self::Real;
 
     /// `ln C(n, k)`, valid on the combinatorial support `k <= n`.
-    ///
-    /// The generic lazy form cannot branch on `k > n` without a mask/select surface, so
-    /// out-of-support policy is left to the caller or to concrete overrides.
-    #[inline]
-    fn ln_binomial(&self, k: &Self) -> Self::Real {
-        let one = Self::Real::one();
-        let n = self.to_real();
-        let k = k.to_real();
-        let n_minus_k = n.clone() - k.clone();
-        (n + one.clone()).ln_gamma() - (k + one.clone()).ln_gamma() - (n_minus_k + one).ln_gamma()
-    }
+    fn ln_binomial(&self, k: &Self) -> Self::Real;
 
     /// `C(n, k)` in the associated real surface, valid on the combinatorial support
     /// `k <= n`.
-    #[inline]
-    fn binomial(&self, k: &Self) -> Self::Real {
-        self.ln_binomial(k).exp()
-    }
+    fn binomial(&self, k: &Self) -> Self::Real;
 }
 
 impl LazyNatural for u32 {
@@ -193,5 +170,49 @@ impl LazyNatural for u128 {
     #[inline]
     fn div_rem(self, rhs: Self) -> (Self, Self) {
         (self / rhs, self % rhs)
+    }
+    #[inline]
+    fn ln_factorial(&self) -> f64 {
+        if *self <= 20 {
+            let mut sum = 0.0;
+            for k in 2..=*self {
+                sum += (k as f64).ln();
+            }
+            sum
+        } else {
+            let n = *self as f64;
+            crate::numeric::special::gamma::ln_gamma(n + 1.0)
+        }
+    }
+    #[inline]
+    fn factorial(&self) -> f64 {
+        if *self <= 20 {
+            let mut acc = 1.0;
+            for k in 2..=*self {
+                acc *= k as f64;
+            }
+            acc
+        } else {
+            self.ln_factorial().exp()
+        }
+    }
+    #[inline]
+    fn ln_binomial(&self, k: &Self) -> f64 {
+        if k > self {
+            return f64::NEG_INFINITY;
+        }
+        let n = *self as f64;
+        let k = *k as f64;
+        crate::numeric::special::gamma::ln_gamma(n + 1.0)
+            - crate::numeric::special::gamma::ln_gamma(k + 1.0)
+            - crate::numeric::special::gamma::ln_gamma(n - k + 1.0)
+    }
+    #[inline]
+    fn binomial(&self, k: &Self) -> f64 {
+        if k > self {
+            0.0
+        } else {
+            self.ln_binomial(k).exp().round()
+        }
     }
 }

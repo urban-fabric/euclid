@@ -11,6 +11,21 @@ impl LazyReal for f32 {
         x as f32
     }
     #[inline]
+    fn scalar_like(&self, x: f64) -> Self {
+        let _ = self;
+        x as f32
+    }
+    #[inline]
+    fn debug_assert_finite(self) -> Self {
+        // The eager reference real traps non-finite values in debug builds; release builds
+        // erase the check (it carries no semantic meaning).
+        debug_assert!(
+            self.is_finite(),
+            "LazyReal::debug_assert_finite: non-finite f32 {self}"
+        );
+        self
+    }
+    #[inline]
     fn exp(&self) -> Self {
         f32::exp(*self)
     }
@@ -35,6 +50,10 @@ impl LazyReal for f32 {
         f32::abs(*self)
     }
     #[inline]
+    fn square(&self) -> Self {
+        *self * *self
+    }
+    #[inline]
     fn powf(&self, p: Self) -> Self {
         f32::powf(*self, p)
     }
@@ -46,6 +65,18 @@ impl LazyReal for f32 {
         } else {
             f32::ln_1p(x.exp())
         }
+    }
+    #[inline]
+    fn is_nan(&self) -> bool {
+        f32::is_nan(*self)
+    }
+    #[inline]
+    fn is_infinite(&self) -> bool {
+        f32::is_infinite(*self)
+    }
+    #[inline]
+    fn is_finite(&self) -> bool {
+        f32::is_finite(*self)
     }
     #[inline]
     fn sin(self) -> Self {
@@ -98,6 +129,10 @@ impl LazyReal for f32 {
     #[inline]
     fn atanh(self) -> Self {
         f32::atanh(self)
+    }
+    #[inline]
+    fn sin_cos(self) -> (Self, Self) {
+        f32::sin_cos(self)
     }
     #[inline]
     fn hypot(self, other: Self) -> Self {
@@ -248,9 +283,96 @@ impl LazyReal for f32 {
         if self == 0.0 { 0.0 } else { self * y.ln_1p() }
     }
     #[inline]
+    fn ln_1m(&self) -> Self {
+        (-*self).ln_1p()
+    }
+    #[inline]
+    fn ln_exp_m1(&self) -> Self {
+        let x = *self;
+        x + (-x).ln_1m_exp()
+    }
+    #[inline]
+    fn sigmoid(&self) -> Self {
+        let x = *self;
+        if x >= 0.0 {
+            1.0 / (1.0 + (-x).exp())
+        } else {
+            let exp_x = x.exp();
+            exp_x / (1.0 + exp_x)
+        }
+    }
+    #[inline]
+    fn ln_sigmoid(&self) -> Self {
+        -(-*self).ln_1p_exp()
+    }
+    #[inline]
+    fn ln_1m_sigmoid(&self) -> Self {
+        -self.ln_1p_exp()
+    }
+    #[inline]
+    fn logit(&self) -> Self {
+        self.ln() - self.ln_1m()
+    }
+    #[inline]
+    fn xlog1my(self, y: Self) -> Self {
+        self.xlog1py(-y)
+    }
+    #[inline]
+    fn ln_add_exp(self, other: Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return f32::NAN;
+        }
+        if self == f32::NEG_INFINITY {
+            return other;
+        }
+        if other == f32::NEG_INFINITY {
+            return self;
+        }
+        if self == f32::INFINITY || other == f32::INFINITY {
+            return f32::INFINITY;
+        }
+
+        let m = self.max(other);
+        let gap = (self - other).abs();
+        m + (-gap).ln_1p_exp()
+    }
+    #[inline]
+    fn ln_sub_exp(self, other: Self) -> Self {
+        if self.is_nan() || other.is_nan() || self < other {
+            return f32::NAN;
+        }
+        if self == f32::INFINITY && other == f32::INFINITY {
+            return f32::NAN;
+        }
+        if other == f32::NEG_INFINITY {
+            return self;
+        }
+        if self == other {
+            return f32::NEG_INFINITY;
+        }
+
+        self + (other - self).ln_1m_exp()
+    }
+    #[inline]
     fn gamma(self) -> Self {
         // The native single-precision Lanczos reference (accurate + valid for negative `x`).
         crate::numeric::special::f32::gamma::gamma(self)
+    }
+    #[inline]
+    fn ln_beta(self, b: Self) -> Self {
+        crate::numeric::special::f32::beta::ln_beta(self, b)
+    }
+    #[inline]
+    fn beta(self, b: Self) -> Self {
+        crate::numeric::special::f32::beta::beta(self, b)
+    }
+    #[inline]
+    fn ln_bessel_i0(self) -> Self {
+        crate::numeric::special::f32::bessel::ln_i0(self)
+    }
+    #[inline]
+    fn bessel_i1_over_i0(self) -> Self {
+        crate::numeric::special::f32::bessel::i1_over_i0(self)
     }
 }
 
