@@ -28,8 +28,6 @@ fn euler_constants_lift_on_every_real_tier() {
     // it must agree with recovering it as `exp(1)`.
     assert!((f64::e() - 1.0_f64.exp()).abs() < 1e-12);
     assert!((f32::e() - 1.0_f32.exp()).abs() < 1e-6);
-    assert_eq!(f64::e(), <f64 as Real>::E);
-    assert_eq!(f32::e(), <f32 as Real>::E);
 
     // The log-base conversions are mutual inverses through `e` / `10`.
     assert!((f64::log2_e() * f64::ln_2() - 1.0).abs() < 1e-12);
@@ -46,26 +44,6 @@ fn softplus_is_stable_at_extremes() {
     assert!((f64::ln_1p_exp(&0.0) - core::f64::consts::LN_2).abs() < 1e-12);
     let big = 50.0_f64;
     assert!((big.ln_1p_exp() - big).abs() < 1e-10);
-}
-
-/// A point on the unit circle — written once over the fused [`Real`] trait,
-/// which carries algebra (operators), analysis (`LazyReal`), and the real API
-/// (`sin_cos`/`PI`) through a single bound.
-fn unit_circle_point<T: Real>(theta: T) -> (T, T) {
-    let (s, c) = theta.sin_cos();
-    (c, s)
-}
-
-#[test]
-fn fused_real_runs_on_f64_and_f32() {
-    // The fused trait at f64: trig + constants.
-    let (x, y) = unit_circle_point(f64::PI);
-    assert!((x + 1.0).abs() < 1e-12 && y.abs() < 1e-12);
-    // ...and at f32, mixing analysis (hypot) with the algebra identity ONE.
-    assert!((3.0_f32.hypot(4.0) - 5.0).abs() < 1e-5);
-    assert_eq!(<f32 as crate::algebra::HasOne>::ONE, 1.0);
-    // A concrete `Real` also satisfies a write-once `LazyReal` formula.
-    assert!((shifted_quadratic(2.0_f64) - 5.0).abs() < 1e-12);
 }
 
 /// A formula bounded purely on [`LazyReal`] that uses what used to be the
@@ -101,7 +79,7 @@ fn lazy_real_special_functions_run_on_f64_and_f32() {
     assert!((normal_cdf(0.0_f64) - 0.5).abs() < 1e-15);
     assert!((normal_cdf(0.0_f32) - 0.5).abs() < 1e-6);
 
-    // The methods delegate to `crate::special`; spot-check the defining
+    // The methods delegate to `crate::numeric::special`; spot-check the defining
     // identities directly through the trait.
     assert!((LazyReal::ln_gamma(5.0_f64) - 24.0_f64.ln()).abs() < 1e-9);
     assert!((LazyReal::digamma(1.0_f64) + f64::euler_gamma()).abs() < 1e-9);
@@ -119,8 +97,77 @@ fn lazy_real_special_functions_run_on_f64_and_f32() {
     assert!((x.erfcx() * (-x * x).exp() - LazyReal::erfc(x)).abs() < 1e-12);
     assert!((LazyReal::ln_1m_exp(&(-0.5_f64)).exp() - (1.0 - (-0.5_f64).exp())).abs() < 1e-12);
     let k = 2.5_f64;
-    assert!((k.bessel_i0e().ln() + k - crate::special::bessel::ln_i0(k)).abs() < 1e-9);
-    assert!((k.bessel_i1e() / k.bessel_i0e() - crate::special::bessel::i1_over_i0(k)).abs() < 1e-9);
+    assert!((k.bessel_i0e().ln() + k - crate::numeric::special::bessel::ln_i0(k)).abs() < 1e-9);
+    assert!(
+        (k.bessel_i1e() / k.bessel_i0e() - crate::numeric::special::bessel::i1_over_i0(k)).abs()
+            < 1e-9
+    );
     // f32 paths narrow through f64.
     assert!((0.5_f32.erfcx() - 0.5_f64.erfcx() as f32).abs() < 1e-6);
+}
+
+/// A write-once **ring** formula — `+ - *`, no division — over the lazy ring base.
+/// The binomial-coefficient step `(n − k)·(k + 1)` is exactly the count arithmetic a
+/// discrete distribution does before it ever reaches the real surface.
+fn ring_step<I: LazyInteger>(n: I, k: I) -> I {
+    (n - k.clone()) * (k + I::one())
+}
+
+#[test]
+fn lazy_ring_formula_runs_on_i64_and_i128() {
+    // (10 − 3)·(3 + 1) = 28, on both signed integer carriers.
+    assert_eq!(ring_step(10_i64, 3), 28);
+    assert_eq!(ring_step(10_i128, 3), 28);
+    // The integer surface: lift, sign, abs, Euclidean div/rem.
+    assert_eq!(i64::from_i64(7), 7);
+    assert_eq!(LazyInteger::signum(-7_i64), -1);
+    assert_eq!(LazyInteger::abs(-7_i64), 7);
+    assert_eq!(7_i64.div_rem(3), (2, 1)); // 7 = 2·3 + 1
+    assert_eq!((-7_i64).div_rem(3), (-2, -1)); // truncates toward zero
+}
+
+/// The integer→real bridge: a Poisson-style log-mass kernel whose **count** is a
+/// [`LazyInteger`] and whose **parameters** are [`LazyReal`], crossing into the real
+/// surface exactly once via [`LazyInteger::to_real`]. This is the shape the discrete
+/// `bayes` kernels take once counts are integer-typed on a tensor backend.
+fn poisson_log_pmf<I, T>(k: I, lambda: T, ln_factorial_k: T) -> T
+where
+    I: LazyInteger<Real = T>,
+    T: LazyReal,
+{
+    k.to_real() * lambda.clone().ln() - lambda - ln_factorial_k
+}
+
+#[test]
+fn lazy_integer_bridges_into_the_real_surface() {
+    // Poisson(λ=2) log-pmf at k=3: 3·ln2 − 2 − ln(3!) = 3·ln2 − 2 − ln6.
+    let got = poisson_log_pmf(3_i64, 2.0_f64, 6.0_f64.ln());
+    let want = 3.0 * 2.0_f64.ln() - 2.0 - 6.0_f64.ln();
+    assert!((got - want).abs() < 1e-12);
+}
+
+/// A write-once **piecewise** kernel over the mask tier: `relu(x) = select(x > 0, x, 0)`
+/// — a comparison to a [`LazyCompare::Mask`] driving a branchless `select`, running on any
+/// ordered carrier (real or integer) with no scalar `bool` in the formula.
+fn relu<T: LazyCompare>(x: T, zero: T) -> T {
+    let positive = x.gt(&zero);
+    T::select(&positive, x, zero)
+}
+
+#[test]
+fn lazy_bool_mask_drives_select_and_logic() {
+    // relu on both a real and an integer carrier, write-once.
+    assert_eq!(relu(3.0_f64, 0.0), 3.0);
+    assert_eq!(relu(-2.0_f64, 0.0), 0.0);
+    assert_eq!(relu(5_i64, 0), 5);
+    assert_eq!(relu(-7_i64, 0), 0);
+
+    // The Boolean algebra on the masks (trait-qualified to avoid the std `PartialOrd`
+    // method of the same name on the concrete scalar).
+    let t = LazyCompare::lt(&2.0_f64, &3.0); // true
+    let f = LazyCompare::gt(&2.0_f64, &3.0); // false
+    assert!(LazyBool::or(&t, &f));
+    assert!(!LazyBool::and(&t, &f));
+    assert!(LazyBool::xor(&t, &f));
+    assert!(LazyBool::not(&f));
 }

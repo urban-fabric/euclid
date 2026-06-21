@@ -5,15 +5,12 @@ edition = "2024"
 license = "Proprietary"
 authors = ["Raymond Mead"]
 rust-version = "1.95"
-description = "Standard metric/unit primitives - speeds, lengths, times, angles, mass, temperature, area, acceleration, percentages, epoch timestamps, plus byte-size and count newtypes, with uncertainty intervals and affine positions. Domain-agnostic; no kolmogorov coupling."
+description = "Domain-neutral numeric foundations: the abstract algebra tower (semiring/dioid graph stack, ring/field), the lazy numeric analysis surface (LazyReal/LazyComplex/NormedDivisionAlgebra), and the rank-graded lazy array contracts (LazyVector/LazyMatrix/LazyTensor). Backend-neutral; the concrete Copy tier lives in napier, units in oresme."
 repository = "https://github.com/urban-fabric/euclid"
 
-[dependencies]
-bytemuck = { version = "1.25", features = ["derive", "min_const_generics"] }
-serde = { version = "1", features = ["derive"] }
-
-[dev-dependencies]
-serde_json = "1"
+# euclid is the foundations crate: pure trait contracts + exact-arithmetic carriers
+# and the f64/f32 reference special functions. It has no external dependencies
+# (bytemuck/serde moved out with the units, now in oresme).
 
 [lints.rust]
 unsafe_code = "warn"

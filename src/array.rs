@@ -14,34 +14,45 @@
 //! `logdet_spd`, `mahalanobis_squared`, reductions). Richer matrix extension traits
 //! (`PreparedSpd`, `SpdFactor`, general decompositions) live in `frobenius`.
 //!
-//! ## Real **and** complex
+//! ## Two bands: dtype-agnostic structure vs. field-only linear algebra
 //!
-//! Every rank is generic over a [`NormedDivisionAlgebra`] — real
-//! (`f64`/`f32`) or complex — so one kernel covers both. The vector-space and product
-//! operations stay in the scalar field; the quantities that are **intrinsically real
-//! even over ℂ** — vector `norm`/`norm_squared`, the SPD `logdet_spd` and
-//! `mahalanobis_squared` — return the scalar's
-//! [`RealPart`](crate::numeric::NormedDivisionAlgebra::RealPart) field. `dot` is the **Hermitian** inner product `Σ conj(aᵢ)·bᵢ` (the ordinary dot
-//! for real vectors, since `conjugate` is the identity there), and `cholesky` is the
-//! Hermitian factorization `Σ = L·Lᴴ` (`L·Lᵀ` for real `Σ`).
+//! The split mirrors XLA/JAX's `lax`, where `reshape`/`reduce_sum`/`dot`/`iota` carry
+//! no dtype demand but `cholesky`/`triangular_solve` want a field. So:
+//!
+//! - The **rank-n structural surface** ([`LazyTensor`]) sits on [`LazyRing`] — shape,
+//!   reshape, reductions, and contraction run over **real, complex, *or* integer**
+//!   elements alike (an `s64` index/count array is a first-class `LazyTensor`). The
+//!   elementwise-analysis and division-algebra structure is then a *refinement*: a real
+//!   tensor adds [`LazyReal`], a complex one [`LazyComplex`](crate::numeric::LazyComplex),
+//!   an integer one [`LazyInteger`](crate::numeric::LazyInteger).
+//! - The **rank-1/2 linear algebra** ([`LazyVector`]/[`LazyMatrix`]) stays generic over a
+//!   [`NormedDivisionAlgebra`] — real (`f64`/`f32`) or complex — because inner products,
+//!   norms, and the SPD quantities genuinely need a field. The quantities **intrinsically
+//!   real even over ℂ** — vector `norm`/`norm_squared`, the SPD `logdet_spd` and
+//!   `mahalanobis_squared` — return the scalar's
+//!   [`RealPart`](crate::numeric::NormedDivisionAlgebra::RealPart) field. `dot` is the
+//!   **Hermitian** inner product `Σ conj(aᵢ)·bᵢ` (the ordinary dot for real vectors,
+//!   since `conjugate` is the identity there), and `cholesky` is the Hermitian
+//!   factorization `Σ = L·Lᴴ` (`L·Lᵀ` for real `Σ`).
 //!
 //! ## The four ranks
 //!
-//! | rank | trait | adds |
-//! |------|-------|------|
-//! | 0 | [`NormedDivisionAlgebra`] | conjugate + magnitude + the real field |
-//! | 1 | [`LazyVector`] | inner product, norms, vector-space ops |
-//! | 2 | [`LazyMatrix`] | matmul + the SPD linear-algebra quantities |
-//! | n | [`LazyTensor`] | shape + reductions over an elementwise-analytic array |
+//! | rank | trait | bound | adds |
+//! |------|-------|-------|------|
+//! | 0 | [`NormedDivisionAlgebra`] | — | conjugate + magnitude + the real field |
+//! | 1 | [`LazyVector`] | field | inner product, norms, vector-space ops |
+//! | 2 | [`LazyMatrix`] | field | matmul + the SPD linear-algebra quantities |
+//! | n | [`LazyTensor`] | [`LazyRing`] | shape + reductions + contraction over a real/complex/integer array |
 //!
 //! `LazyVector`/`LazyMatrix` carry only vector-space / linear-algebra structure, so a
-//! `DenseMatrix` (not elementwise-analytic) can implement them. `LazyTensor: NormedDivisionAlgebra`
-//! is the array itself *as* a lazy scalar; a **real** tensor additionally implements
+//! `DenseMatrix` (not elementwise-analytic) can implement them. `LazyTensor: LazyRing`
+//! is the array itself *as* a lazy ring element; a **real** tensor additionally implements
 //! [`LazyReal`] (so the scalar kernels lift to batched tensor
-//! kernels by monomorphizing at `T = Tensor`), and a complex tensor
-//! [`LazyComplex`](crate::numeric::LazyComplex).
+//! kernels by monomorphizing at `T = Tensor`), a complex tensor
+//! [`LazyComplex`](crate::numeric::LazyComplex), and an integer tensor
+//! [`LazyInteger`](crate::numeric::LazyInteger).
 
-use crate::numeric::{LazyReal, NormedDivisionAlgebra};
+use crate::numeric::{LazyReal, LazyRing, NormedDivisionAlgebra};
 
 /// The real field of a vector/matrix's scalar — its norms, log-determinant, and
 /// Mahalanobis distance. `S` for a real scalar, the real part for a complex one.
@@ -138,18 +149,27 @@ pub trait LazyMatrix: Clone {
     fn mahalanobis_squared(&self, delta: &Self::Vector) -> RealPart<Self::Scalar>;
 }
 
-/// **Rank n.** An n-dimensional array over a lazy scalar (real or complex), carrying
-/// the abstract array notions — shape and reductions. `LazyTensor: NormedDivisionAlgebra`, so a
-/// tensor is itself a lazy scalar (`Scalar = Vector = Self` for the unified backend); a
-/// **real** tensor additionally implements [`LazyReal`], so
-/// every scalar kernel applies elementwise/batched for free, and a complex tensor
-/// [`LazyComplex`](crate::numeric::LazyComplex). A rank-1 `LazyTensor` is also a
-/// [`LazyVector`] and a rank-2 one a [`LazyMatrix`].
+/// **Rank n.** An n-dimensional array over a lazy *ring* element — real, complex, **or
+/// integer** — carrying the dtype-agnostic array notions: shape, reshape, reductions,
+/// and contraction. `LazyTensor: LazyRing`, so a tensor is itself a lazy ring element
+/// (`Scalar = Vector = Self` for the unified backend), and the element kind is a
+/// *refinement*: a **real** tensor additionally implements [`LazyReal`] (so every scalar
+/// analysis kernel applies elementwise/batched for free), a **complex** one
+/// [`LazyComplex`](crate::numeric::LazyComplex), and an **integer** one
+/// [`LazyInteger`](crate::numeric::LazyInteger) (an `s64` count/index/shape array, cast
+/// into the real surface with [`to_real`](crate::numeric::LazyInteger::to_real)). A
+/// rank-1 `LazyTensor` over a field is also a [`LazyVector`] and a rank-2 one a
+/// [`LazyMatrix`].
+///
+/// The bound is [`LazyRing`] rather than [`NormedDivisionAlgebra`] precisely so the
+/// structural ops below — like XLA/JAX's `reshape`/`reduce`/`dot`/`iota` — carry no
+/// field demand; only [`max`](LazyTensor::max) (an ordered reduction) and the rank-1/2
+/// linear algebra require more, which they state as their own bounds.
 ///
 /// Backend-specific machinery — how axes are named in a contraction, how a
 /// comparison/selection mask is represented, broadcast/gather/scatter, precision — is
 /// **not** here; it lives with the tensor backend.
-pub trait LazyTensor: NormedDivisionAlgebra {
+pub trait LazyTensor: LazyRing {
     /// The axis lengths. Returned **owned** — a tensor's shape is dynamic metadata a
     /// backend computes (a lazy graph node, a columnar expression), not necessarily a
     /// stored contiguous slice; consistent with [`LazyMatrix::shape`] /

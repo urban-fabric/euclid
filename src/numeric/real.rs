@@ -1,5 +1,5 @@
-//! The real-number traits: the lazy analysis surface [`LazyReal`] and the
-//! concrete [`Real`] number.
+//! The real-number lazy analysis surface [`LazyReal`]. The concrete `Real`
+//! number (the `Copy`, ordered tier) now lives in the `napier` crate.
 
 use super::NormedDivisionAlgebra;
 
@@ -238,7 +238,7 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     // regularized incomplete gamma/beta CDF kernels. Each has a direct tensor-op
     // analogue (`Erf`/`Lgamma`/`Digamma`/`Igamma`/`RegularizedIncompleteBeta`, …), so
     // a backend lowers them the same way it lowers `exp`/`sin`. The concrete `f64`/
-    // `f32` reference implementations live in [`crate::special`]. Where a function
+    // `f32` reference implementations live in [`crate::numeric::special`]. Where a function
     // takes auxiliary parameters, `self` is the *evaluation point* (the lazy
     // variable) and the parameters follow.
 
@@ -276,88 +276,4 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn bessel_i0e(self) -> Self;
     /// The exponentially-scaled modified Bessel `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
     fn bessel_i1e(self) -> Self;
-}
-
-/// A **concrete real number** — [`LazyReal`] (the whole elementwise analysis
-/// surface) plus the few things that only a concrete number on the real line can
-/// offer: the associated constants (`PI`, `TAU`, `EPSILON`, `INFINITY`, …) and the
-/// `bool`-returning predicates (`is_finite`/`is_nan`/`is_sign_negative`).
-///
-/// This is **distinct from [`LazyReal`]**, deliberately. `LazyReal` is the
-/// cross-backend analysis surface a *write-once* formula needs, so it is
-/// implemented by `f64`/`f32` **and** non-`Copy` backends like a differentiable
-/// `Tensor`. The transcendentals, rounding, and `min`/`max`/`clamp` selectors all
-/// live there, because a tensor compiler can lower every one of them. `Real` keeps
-/// only what a tensor *cannot* produce — a single `PI` value, a scalar `bool` from
-/// a comparison — so code that genuinely needs the whole real number line (e.g.
-/// `hausdorff`'s geometry) bounds on `Real` and runs over `f64`, `f32`, and any
-/// future decimal / interval / extended-precision type, while tensor backends
-/// remain unaffected.
-///
-/// It **fuses the two stacks** for the concrete reals: the algebraic structure
-/// (`+ - * /`, `ZERO`/`ONE`, `÷`, `conjugate`, the total order) comes from
-/// [`crate::algebra::OrderedField`]; the analysis (`scalar`/`exp`/`ln`/`sqrt`/trig/
-/// rounding/`min`/`max`/`clamp`) from [`LazyReal`]; this trait adds only the
-/// constants and predicates. `Real: LazyReal`, so a concrete `f64` also satisfies
-/// any write-once formula bounded on the lazy base.
-pub trait Real:
-    crate::algebra::OrderedField
-    + LazyReal
-    + Copy
-    + core::ops::AddAssign
-    + core::ops::SubAssign
-    + core::ops::MulAssign
-    + core::ops::DivAssign
-    + core::ops::Rem<Output = Self>
-    + core::iter::Sum
-{
-    /// Lift a real literal into the type (`f64` identity, `x as f32` for `f32`, the
-    /// nearest representable for a decimal) — the concrete-tier spelling for
-    /// [`LazyReal::scalar`].
-    #[inline]
-    fn from_f64(x: f64) -> Self {
-        Self::scalar(x)
-    }
-
-    /// `2`.
-    const TWO: Self;
-    /// `0.5`.
-    const HALF: Self;
-    /// Archimedes' constant `π`.
-    const PI: Self;
-    /// `2π`.
-    const TAU: Self;
-    /// `π/2`.
-    const FRAC_PI_2: Self;
-    /// `π/4`.
-    const FRAC_PI_4: Self;
-    /// `√2`.
-    const SQRT_2: Self;
-    /// `1/√2`.
-    const FRAC_1_SQRT_2: Self;
-    /// Euler's number `e`.
-    const E: Self;
-    /// Machine epsilon.
-    const EPSILON: Self;
-    /// `+∞`.
-    const INFINITY: Self;
-    /// `−∞`.
-    const NEG_INFINITY: Self;
-    /// Not-a-number.
-    const NAN: Self;
-    /// Largest finite value.
-    const MAX: Self;
-    /// Smallest (most negative) finite value.
-    const MIN: Self;
-    /// Smallest positive normal value.
-    const MIN_POSITIVE: Self;
-
-    // --- predicates ---
-    // The only methods that stay concrete-only: they return `bool`, which the lazy
-    // tier cannot produce (a tensor comparison yields a mask, not a scalar bool).
-    // The elementwise analysis (trig, rounding, `min`/`max`/`clamp`, …) now lives on
-    // [`LazyReal`] and is inherited here through `Real: LazyReal`.
-    fn is_finite(self) -> bool;
-    fn is_nan(self) -> bool;
-    fn is_sign_negative(self) -> bool;
 }

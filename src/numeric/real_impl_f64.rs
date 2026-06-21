@@ -1,6 +1,6 @@
 //! `f64` implementations of the numeric traits.
 
-use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra, Real};
+use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra};
 
 impl Arithmetic for f64 {}
 
@@ -158,39 +158,39 @@ impl LazyReal for f64 {
     }
     #[inline]
     fn erf(self) -> Self {
-        crate::special::erf::erf(self)
+        crate::numeric::special::erf::erf(self)
     }
     #[inline]
     fn erfc(self) -> Self {
-        crate::special::erf::erfc(self)
+        crate::numeric::special::erf::erfc(self)
     }
     #[inline]
     fn erf_inv(self) -> Self {
-        crate::special::erf::erf_inv(self)
+        crate::numeric::special::erf::erf_inv(self)
     }
     #[inline]
     fn ln_gamma(self) -> Self {
-        crate::special::gamma::ln_gamma(self)
+        crate::numeric::special::gamma::ln_gamma(self)
     }
     #[inline]
     fn digamma(self) -> Self {
-        crate::special::gamma::digamma(self)
+        crate::numeric::special::gamma::digamma(self)
     }
     #[inline]
     fn trigamma(self) -> Self {
-        crate::special::gamma::trigamma(self)
+        crate::numeric::special::gamma::trigamma(self)
     }
     #[inline]
     fn gamma_lr(self, shape: Self) -> Self {
-        crate::special::gamma::gamma_lr(shape, self)
+        crate::numeric::special::gamma::gamma_lr(shape, self)
     }
     #[inline]
     fn gamma_ur(self, shape: Self) -> Self {
-        crate::special::gamma::gamma_ur(shape, self)
+        crate::numeric::special::gamma::gamma_ur(shape, self)
     }
     #[inline]
     fn beta_reg(self, a: Self, b: Self) -> Self {
-        crate::special::beta::beta_reg(a, b, self)
+        crate::numeric::special::beta::beta_reg(a, b, self)
     }
     #[inline]
     fn ln_1m_exp(&self) -> Self {
@@ -206,47 +206,15 @@ impl LazyReal for f64 {
     }
     #[inline]
     fn erfcx(self) -> Self {
-        crate::special::erf::erfcx(self)
+        crate::numeric::special::erf::erfcx(self)
     }
     #[inline]
     fn bessel_i0e(self) -> Self {
-        crate::special::bessel::i0e(self)
+        crate::numeric::special::bessel::i0e(self)
     }
     #[inline]
     fn bessel_i1e(self) -> Self {
-        crate::special::bessel::i1e(self)
-    }
-}
-
-impl Real for f64 {
-    const TWO: Self = 2.0;
-    const HALF: Self = 0.5;
-    const PI: Self = core::f64::consts::PI;
-    const TAU: Self = core::f64::consts::TAU;
-    const FRAC_PI_2: Self = core::f64::consts::FRAC_PI_2;
-    const FRAC_PI_4: Self = core::f64::consts::FRAC_PI_4;
-    const SQRT_2: Self = core::f64::consts::SQRT_2;
-    const FRAC_1_SQRT_2: Self = core::f64::consts::FRAC_1_SQRT_2;
-    const E: Self = core::f64::consts::E;
-    const EPSILON: Self = f64::EPSILON;
-    const INFINITY: Self = f64::INFINITY;
-    const NEG_INFINITY: Self = f64::NEG_INFINITY;
-    const NAN: Self = f64::NAN;
-    const MAX: Self = f64::MAX;
-    const MIN: Self = f64::MIN;
-    const MIN_POSITIVE: Self = f64::MIN_POSITIVE;
-
-    #[inline]
-    fn is_finite(self) -> bool {
-        f64::is_finite(self)
-    }
-    #[inline]
-    fn is_nan(self) -> bool {
-        f64::is_nan(self)
-    }
-    #[inline]
-    fn is_sign_negative(self) -> bool {
-        f64::is_sign_negative(self)
+        crate::numeric::special::bessel::i1e(self)
     }
 }
 

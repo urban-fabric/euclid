@@ -1,153 +1,182 @@
 # euclid
 
-`euclid` provides small, domain-neutral primitives for algebra, scalar
-computation, and typed quantities. It is the place for units, conversions,
-compact storage wrappers, and basic dimensional arithmetic; it deliberately
-does not depend on application crates.
+**Domain-neutral numeric foundations — the backend-neutral contract layer for the
+urban-fabric math stack.**
+
+euclid is a set of trait *contracts*, and almost nothing more. Its job is to let a
+numeric formula be written **once** and run on **many backends**: the same Gaussian
+log-density, Cholesky solve, or Mahalanobis distance you write against these traits
+evaluates eagerly on `f64`/`f32` today and lowers to a tensor compiler (XLA, via
+[`maxwell`](#ecosystem)) tomorrow — with no change to the formula.
+
+The crate is **pure trait contracts plus the `f64`/`f32` reference scalars**, and has
+**no external dependencies**.
+
+```toml
+[dependencies]
+euclid = "0.1"
+```
+
+## The idea: lazy, write-once numerics
+
+Every contract in euclid is *lazy*: it is `Clone` (never `Copy`) and carries only
+operations a tensor backend can actually produce. That single constraint is what makes
+a formula portable:
+
+- **No scalar `bool`.** A tensor comparison yields a *mask*, not a boolean, so the
+  comparison/`select` surface (`LazyBool` / `LazyCompare`) is its own tier and piecewise
+  logic is expressed with the comparison-free `min` / `max` / `clamp` selectors.
+- **Constants are lifted, not read.** `LazyReal::scalar(x)` lifts a host `f64` into the
+  backend (an eager value, or a constant graph node) instead of reading an associated
+  `const` a tensor type cannot expose.
+- **Operations map op-for-op.** A formula that stays inside this surface lowers directly:
+  `exp → Exp`, `erf → Erf`, `dot → DotGeneral`, `cholesky → Cholesky`, and so on.
+
+Write the kernel against the trait; pick the carrier later.
+
+```rust
+use euclid::LazyReal;
+
+/// Standard-normal log-density `−½x² − ½·ln(2π)`, written once over the lazy real
+/// surface. Generic over `T: LazyReal`, so the *same* code runs on a concrete `f64`
+/// today and on a tensor scalar tomorrow.
+fn standard_normal_logpdf<T: LazyReal>(x: T) -> T {
+    let x2 = x.clone() * x;
+    -(T::half() * x2) - T::half_ln_tau()
+}
+
+// Evaluated eagerly here, because `f64: LazyReal`.
+let lp = standard_normal_logpdf(0.0_f64);
+assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
+```
 
 ## Public API
 
-The public API has three top-level modules:
+Three top-level modules:
 
-- `euclid::algebra` for semirings, dioids, rings, fields, and related algebraic
-  traits.
-- `euclid::numeric` for generic scalar traits such as `Scalar`, `LazyReal`,
-  `LazyComplex`, `Real`, and `Complex`.
-- `euclid::units` for quantities, unit conversion, data wrappers, and typed
-  quantity operations.
+| module | what it contracts |
+|--------|-------------------|
+| [`numeric`](src/numeric/mod.rs) | the scalar surface — the analysis and algebra of a single number |
+| [`array`](src/array.rs) | the rank-graded array contracts — vector, matrix, tensor |
+| [`random`](src/random.rs) | backend-neutral random-source contracts over those types |
 
-`LazyReal` is the formula substrate for scalar-valued lazy backends — the whole
-*elementwise analysis surface*, designed so a formula written once runs on `f64`
-today and lowers to a tensor backend (eventually XLA) tomorrow. It carries:
+### `numeric` — the scalar surface
 
-- the **transcendentals** — `exp`/`ln`/`sqrt`, the trig family (`sin`/`cos`/`tan`,
-  `atan2`/`hypot`, the hyperbolics), `powf`/`powi`/`cbrt`, rounding and sign;
-- the comparison-free **selectors** `min`/`max`/`clamp` (a tensor lowers these to
-  `Max`/`Min`/`Clamp`, so piecewise formulas stay portable without a `bool`);
-- the **special functions** `erf`/`erfc`/`erf_inv`/`erfcx`, `ln_gamma`/`digamma`/
-  `trigamma`, the regularized incomplete gamma `gamma_lr`/`gamma_ur`, the
-  regularized incomplete beta `beta_reg`, the scaled modified Bessel
-  `bessel_i0e`/`bessel_i1e`, and the stable `ln_1m_exp` — the CDF / entropy /
-  divergence kernels of probability theory, each with a direct tensor-op analogue.
-  Their concrete `f64` reference lives in `euclid::special`;
-- a library of lifted **constants** — `half()`, `pi()`, `half_ln_tau()`, Euler's
-  number `e()`, the log-base conversions (`log2_e()`, `log10_e()`, `ln_10()`,
-  `log2_10()`, `log10_2()`), and the Euler–Mascheroni constant `euler_gamma()`.
+The number traits, graded by structure so a formula demands exactly the operators it
+uses, no more:
 
-The concrete `Real` tier keeps only what a tensor *cannot* produce — the associated
-constants (`PI`/`TAU`/`SQRT_2`/`E`/…) and the `bool`-returning predicates
-(`is_finite`/`is_nan`/`is_sign_negative`). Vector, tensor, and shaped construction
-stays in the backend that owns those containers.
+- **`LazyRing`** — `Clone` + `+ - *` and negation, with division *deliberately
+  withheld*. Blanket-implemented for every carrier with the four ring operators.
+  - **`Arithmetic`** refines it with `/` — the field-operator bound (`f64`/`f32`,
+    complex, tensors).
+  - **`LazyInteger`** refines it with the integer surface (the machine-integer lift,
+    Euclidean `div_rem`, and `to_real`) — the `s64`-style count/index/shape dtype.
+    Implemented for `i64`/`i128`.
+- **`LazyReal`** — the real-number analysis surface: the transcendentals
+  (`exp`/`ln`/`sqrt`, trig, `atan2`/`hypot`, hyperbolics), rounding/sign, the
+  comparison-free `min`/`max`/`clamp` selectors, a library of lifted constants
+  (`pi`, `e`, `half_ln_tau`, `euler_gamma`, the log-base factors, …), and the
+  **special functions** that probability and statistics reach for —
+  `erf`/`erfc`/`erf_inv`/`erfcx`, `ln_gamma`/`digamma`/`trigamma`, the regularized
+  incomplete gamma `gamma_lr`/`gamma_ur`, the regularized incomplete beta `beta_reg`,
+  the scaled modified Bessel `bessel_i0e`/`bessel_i1e`, and the stable `ln_1p_exp` /
+  `ln_1m_exp`. Each has a direct tensor-op analogue.
+- **`NormedDivisionAlgebra`** — a normed division algebra over ℝ. By
+  Frobenius/Hurwitz the associative ones are exactly **ℝ (1D), ℂ (2D), ℍ (4D)**, so one
+  matrix/vector kernel runs over all three. It names the real field that magnitudes and
+  norms live in, and the `conjugate` every Hermitian formula needs (the identity on a
+  real number, so real kernels specialize for free).
+  - **`LazyComplex`** adds the imaginary part (`re`/`im`/`conj`).
+  - **`LazyQuaternion`** adds the `i`/`j`/`k` components (ℍ is non-commutative — a
+    division ring, not a field).
+- **`LazyBool` + `LazyCompare`** — the **mask** tier. Booleans are a Boolean algebra,
+  not a ring, so they sit *beside* the tower: a comparison returns the abstract
+  `LazyCompare::Mask` (`bool` eagerly, a `pred` tensor on a backend) and `select`
+  consumes it.
 
-Common quantity types and traits are also re-exported from the crate root:
+The reference `f64`/`f32` implementations of the special functions live under
+[`numeric::special`](src/numeric/special/mod.rs) (Lanczos gamma, Numerical-Recipes
+continued fractions for the incomplete gamma/beta, Giles's inverse-erf rational), and
+are also re-exported as `euclid::special` for backward compatibility.
 
-```rust
-use euclid::{LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
+### `array` — the rank-graded contracts
 
-let distance = LengthMeters::new(100.0);
-let elapsed = TimeSeconds::new(10.0);
-let speed: SpeedMs = distance / elapsed;
+The array-level peers of the scalar surface. These are **abstract mathematical
+contracts** — the operations a kernel is written in, not any backend's parameterization
+of them (axis-naming, `uplo`/`trans` flags, memory layout, and precision policy stay
+with the implementor).
 
-assert_eq!(speed.as_ms(), 10.0);
-```
+| rank | trait | bound | adds |
+|------|-------|-------|------|
+| 0 | `NormedDivisionAlgebra` | — | conjugate + magnitude + the real field |
+| 1 | `LazyVector` | field | inner product, norms, vector-space ops |
+| 2 | `LazyMatrix` | field | matmul + the SPD linear-algebra quantities |
+| n | `LazyTensor` | `LazyRing` | shape + reductions + contraction (real/complex/integer) |
 
-Use structured module paths when you want the implementation layout:
+Two bands, mirroring XLA/JAX's `lax`:
 
-```rust
-use euclid::units::conversion::{UnitOfMeasure, dim};
-use euclid::units::measure::length::LengthMeters;
-use euclid::units::ops::Interval;
-```
+- **Dtype-agnostic structure.** `LazyTensor: LazyRing`, so shape/reshape/reductions/
+  contraction run over real, complex, **or** integer elements alike (an `s64`
+  index/count array is a first-class `LazyTensor`). Element kind is a *refinement*: a
+  real tensor also implements `LazyReal`, a complex one `LazyComplex`, an integer one
+  `LazyInteger`.
+- **Field-only linear algebra.** `LazyVector`/`LazyMatrix` stay generic over a
+  `NormedDivisionAlgebra` because inner products, norms, and SPD quantities genuinely
+  need a field. `dot` is the **Hermitian** inner product `Σ conj(aᵢ)·bᵢ`; `cholesky`
+  is the Hermitian factorization `Σ = L·Lᴴ` — both collapsing to the ordinary real case
+  since `conjugate` is the identity there. The intrinsically-real outputs
+  (`norm`, `logdet_spd`, `mahalanobis_squared`) return the scalar's real part even over ℂ.
 
-## Units
+`LazyMatrix` exposes only stated mathematical *results* — `solve_spd`, `solve_spd_vec`,
+`logdet_spd`, `mahalanobis_squared` — and deliberately **no `inverse`**; the backend
+owns the stable factorization. Richer decompositions and prepared-factor seams
+(`SpdFactor`, `PreparedSpd`, …) live in [`frobenius`](#ecosystem).
 
-The `units` module is organized by responsibility:
+### `random` — backend-neutral random sources
 
-- `units::quantity` defines `Dimension`, `Quantity`, `ScalarQuantity`,
-  `LinearQuantity`, and `QuantityError`.
-- `units::conversion` defines `UnitOfMeasure` and the type-level `dim` markers.
-- `units::measure` contains base measurements: length, time, angle, mass,
-  temperature, factor, and percentage.
-- `units::derived` contains derived measurements: speed, area, and acceleration.
-- `units::ops` contains quantity operations: dimensional arithmetic, affine
-  points, and uncertainty intervals.
-- `units::data` contains boundary/storage wrappers: bytes, counts, epoch
-  timestamps, centiseconds, and decimeters.
+Contracts for drawing `Uniform(0,1)`, standard-normal, and gamma variates as lazy
+scalars / vectors / matrices / tensors, independent of host `rand`:
 
-## Conversion
+- **`RandomStream`** / **`TensorRandomStream`** — a mutable stream (an eager adapter
+  wraps a host `rand::Rng`; an XLA adapter advances an owned key).
+- **`KeyedRandomBackend`** — the stateless, counter-based sibling (ThreeFry / Philox)
+  where each call takes and returns an explicit key, for reproducible graph state.
+- **`SampleWith`** / **`RandomProcess`** — a distribution sampled from a stream, and a
+  stream-stateful stochastic process.
 
-Every scalar unit declares its dimension and how to express itself in that
-dimension's primary unit. `UnitOfMeasure::convert` works only between units with
-the same type-level dimension.
+The associated scalar/vector/matrix/tensor types are euclid's own lazy contracts, so
+nothing here names dense storage or a concrete backend.
 
-```rust
-use euclid::{LengthFeet, LengthKm, LengthMeters, UnitOfMeasure};
+## What's implemented where
 
-let distance = LengthKm::new(1.0);
-let meters: LengthMeters = distance.convert();
-let feet: LengthFeet = distance.convert();
+euclid ships the **contracts** plus the **reference scalar carriers**:
 
-assert_eq!(meters.as_meters(), 1000.0);
-assert!((feet.as_feet() - 3280.839_895).abs() < 1e-6);
-```
+- `f64` / `f32` implement `Arithmetic`, `LazyReal`, and `NormedDivisionAlgebra`.
+- `i64` / `i128` implement `LazyInteger`.
+- `bool` implements `LazyBool`.
 
-Temperature conversion is offset-aware, so absolute temperatures can convert
-between Kelvin, Celsius, and Fahrenheit without becoming vector quantities.
+The array and random contracts are implemented by the backends downstream.
 
-## Arithmetic
+## Ecosystem
 
-`ScalarQuantity` provides shared helpers for finite construction, ordering,
-rounding, finiteness checks, and typed approximate equality.
+euclid owns the contracts; the implementations live in sibling crates:
 
-`LinearQuantity` marks quantities that behave like displacements. Linear
-quantities can be added, subtracted, negated, scaled, interpolated, summed, and
-used in `Interval<Q>` and `Point<Q>`.
+- **`napier`** — the concrete `Copy` number tier (`Real` / `Complex`) and the
+  abstract-algebra tower (semiring / dioid / ring / field + the exact carriers
+  `Rational` / `Zn` / `GaussianRational`), formed by fusing this lazy surface with the
+  algebraic field.
+- **`frobenius`** — backend-generic linear-algebra algorithms and the richer matrix
+  extension traits over `LazyMatrix`, for both eager and XLA backends.
+- **`maxwell`** — the XLA / StableHLO compute backend: a euclid-contract implementation
+  over compiled HLO, so write-once kernels run on accelerators.
+- **`oresme`** — physical units, quantities, and conversions.
+- **`bayes`** — closed-form probability and statistics (distributions, special
+  functions, sample statistics, stochastic processes, conjugate Bayesian updates)
+  written against this surface.
 
-Absolute temperatures intentionally do not implement `LinearQuantity`.
-
-Dimensional operators are intentionally defined for primary units only:
-
-```rust
-use euclid::{LengthKm, LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
-
-let distance: LengthMeters = LengthKm::new(5.0).convert();
-let elapsed = TimeSeconds::new(1800.0);
-let speed: SpeedMs = distance / elapsed;
-
-assert!((speed.as_ms() - 2.777_777_777_777_777_7).abs() < 1e-12);
-```
-
-Convert non-primary units before dimensional arithmetic. This keeps the operator
-surface small and avoids a combinatorial set of unit-pair implementations.
-
-## Boundary Types
-
-`units::data` contains compact wrappers for values that cross storage, wire, or
-system boundaries:
-
-- `Bytes` and `ByteRange`
-- `Count` and `ThreadCount`
-- `UnixSeconds` and `UnixMillis`
-- `TimeCentiseconds` and `DistanceDecimeters`
-
-These types name raw values and serialization contracts. Route-cost sentinels,
-workflow state, graph-specific ordering, and application control-flow types
-belong in the crates that use `euclid`.
-
-## Adding Units
-
-When adding a scalar unit:
-
-1. Add a transparent newtype under `units::measure` or `units::derived`.
-2. Implement `Quantity` with a private payload, named constructor, accessor,
-   runtime dimension, and unit symbol.
-3. Implement `LinearQuantity` only for displacement-like quantities.
-4. Add the `UnitOfMeasure` implementation in `units::conversion`.
-5. Add same-unit operator support if the type is linear.
-6. Re-export the type from its local module, `units`, and the crate root if it
-   should be part of the ergonomic API.
-7. Add conversion, arithmetic, serde, and boundary tests matching nearby
-   modules.
+> **History.** Earlier versions of euclid also carried the abstract-algebra tower, the
+> concrete `Copy` number tier, and a `units` module. Those have moved to `napier` and
+> `oresme`; euclid is now strictly the contract layer.
 
 ## Validation
 
@@ -159,3 +188,7 @@ cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
 cargo test --doc
 ```
+
+## License
+
+Proprietary. © Raymond Mead.

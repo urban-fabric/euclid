@@ -1,6 +1,6 @@
 //! `f32` implementations of the numeric traits.
 
-use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra, Real};
+use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra};
 
 impl Arithmetic for f32 {}
 
@@ -158,39 +158,39 @@ impl LazyReal for f32 {
     // way `scalar`/`powf` already do.
     #[inline]
     fn erf(self) -> Self {
-        crate::special::erf::erf(self as f64) as f32
+        crate::numeric::special::erf::erf(self as f64) as f32
     }
     #[inline]
     fn erfc(self) -> Self {
-        crate::special::erf::erfc(self as f64) as f32
+        crate::numeric::special::erf::erfc(self as f64) as f32
     }
     #[inline]
     fn erf_inv(self) -> Self {
-        crate::special::erf::erf_inv(self as f64) as f32
+        crate::numeric::special::erf::erf_inv(self as f64) as f32
     }
     #[inline]
     fn ln_gamma(self) -> Self {
-        crate::special::gamma::ln_gamma(self as f64) as f32
+        crate::numeric::special::gamma::ln_gamma(self as f64) as f32
     }
     #[inline]
     fn digamma(self) -> Self {
-        crate::special::gamma::digamma(self as f64) as f32
+        crate::numeric::special::gamma::digamma(self as f64) as f32
     }
     #[inline]
     fn trigamma(self) -> Self {
-        crate::special::gamma::trigamma(self as f64) as f32
+        crate::numeric::special::gamma::trigamma(self as f64) as f32
     }
     #[inline]
     fn gamma_lr(self, shape: Self) -> Self {
-        crate::special::gamma::gamma_lr(shape as f64, self as f64) as f32
+        crate::numeric::special::gamma::gamma_lr(shape as f64, self as f64) as f32
     }
     #[inline]
     fn gamma_ur(self, shape: Self) -> Self {
-        crate::special::gamma::gamma_ur(shape as f64, self as f64) as f32
+        crate::numeric::special::gamma::gamma_ur(shape as f64, self as f64) as f32
     }
     #[inline]
     fn beta_reg(self, a: Self, b: Self) -> Self {
-        crate::special::beta::beta_reg(a as f64, b as f64, self as f64) as f32
+        crate::numeric::special::beta::beta_reg(a as f64, b as f64, self as f64) as f32
     }
     #[inline]
     fn ln_1m_exp(&self) -> Self {
@@ -205,52 +205,15 @@ impl LazyReal for f32 {
     }
     #[inline]
     fn erfcx(self) -> Self {
-        crate::special::erf::erfcx(self as f64) as f32
+        crate::numeric::special::erf::erfcx(self as f64) as f32
     }
     #[inline]
     fn bessel_i0e(self) -> Self {
-        crate::special::bessel::i0e(self as f64) as f32
+        crate::numeric::special::bessel::i0e(self as f64) as f32
     }
     #[inline]
     fn bessel_i1e(self) -> Self {
-        crate::special::bessel::i1e(self as f64) as f32
-    }
-}
-
-// The concrete `Real` impls. `ZERO`/`ONE` come from `algebra::{HasZero, HasOne}`,
-// `÷`/`conjugate`/ordering from `algebra::OrderedField`, and the whole elementwise
-// analysis (`scalar`/`exp`/`ln`/`sqrt`/trig/rounding/`min`/`max`/`clamp`) from
-// `LazyReal`; only the constants and the `bool` predicates are written here.
-
-impl Real for f32 {
-    const TWO: Self = 2.0;
-    const HALF: Self = 0.5;
-    const PI: Self = core::f32::consts::PI;
-    const TAU: Self = core::f32::consts::TAU;
-    const FRAC_PI_2: Self = core::f32::consts::FRAC_PI_2;
-    const FRAC_PI_4: Self = core::f32::consts::FRAC_PI_4;
-    const SQRT_2: Self = core::f32::consts::SQRT_2;
-    const FRAC_1_SQRT_2: Self = core::f32::consts::FRAC_1_SQRT_2;
-    const E: Self = core::f32::consts::E;
-    const EPSILON: Self = f32::EPSILON;
-    const INFINITY: Self = f32::INFINITY;
-    const NEG_INFINITY: Self = f32::NEG_INFINITY;
-    const NAN: Self = f32::NAN;
-    const MAX: Self = f32::MAX;
-    const MIN: Self = f32::MIN;
-    const MIN_POSITIVE: Self = f32::MIN_POSITIVE;
-
-    #[inline]
-    fn is_finite(self) -> bool {
-        f32::is_finite(self)
-    }
-    #[inline]
-    fn is_nan(self) -> bool {
-        f32::is_nan(self)
-    }
-    #[inline]
-    fn is_sign_negative(self) -> bool {
-        f32::is_sign_negative(self)
+        crate::numeric::special::bessel::i1e(self as f64) as f32
     }
 }
 
