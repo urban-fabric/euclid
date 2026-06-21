@@ -67,29 +67,234 @@ pub trait LazyCompare: Clone {
     fn select(mask: &Self::Mask, on_true: Self, on_false: Self) -> Self;
 }
 
-macro_rules! eager_compare {
-    ($($t:ty),*) => {$(
-        impl LazyCompare for $t {
-            type Mask = bool;
-            #[inline]
-            fn lt(&self, other: &Self) -> bool { *self < *other }
-            #[inline]
-            fn le(&self, other: &Self) -> bool { *self <= *other }
-            #[inline]
-            fn gt(&self, other: &Self) -> bool { *self > *other }
-            #[inline]
-            fn ge(&self, other: &Self) -> bool { *self >= *other }
-            #[inline]
-            fn eq(&self, other: &Self) -> bool { *self == *other }
-            #[inline]
-            fn ne(&self, other: &Self) -> bool { *self != *other }
-            #[inline]
-            fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-                if *mask { on_true } else { on_false }
-            }
-        }
-    )*};
+// The ordered carriers. (Complex is unordered, so it carries no comparison here.)
+impl LazyCompare for f64 {
+    type Mask = bool;
+
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        *self < *other
+    }
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        *self <= *other
+    }
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        *self > *other
+    }
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        *self >= *other
+    }
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+    #[inline]
+    fn ne(&self, other: &Self) -> bool {
+        *self != *other
+    }
+    #[inline]
+    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
+        if *mask { on_true } else { on_false }
+    }
 }
 
-// The ordered carriers. (Complex is unordered, so it carries no comparison here.)
-eager_compare!(f64, f32, i64, i128, u32, u64, u128);
+impl LazyCompare for f32 {
+    type Mask = bool;
+
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        *self < *other
+    }
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        *self <= *other
+    }
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        *self > *other
+    }
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        *self >= *other
+    }
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+    #[inline]
+    fn ne(&self, other: &Self) -> bool {
+        *self != *other
+    }
+    #[inline]
+    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
+        if *mask { on_true } else { on_false }
+    }
+}
+
+impl LazyCompare for i64 {
+    type Mask = bool;
+
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        *self < *other
+    }
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        *self <= *other
+    }
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        *self > *other
+    }
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        *self >= *other
+    }
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+    #[inline]
+    fn ne(&self, other: &Self) -> bool {
+        *self != *other
+    }
+    #[inline]
+    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
+        if *mask { on_true } else { on_false }
+    }
+}
+
+impl LazyCompare for i128 {
+    type Mask = bool;
+
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        *self < *other
+    }
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        *self <= *other
+    }
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        *self > *other
+    }
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        *self >= *other
+    }
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+    #[inline]
+    fn ne(&self, other: &Self) -> bool {
+        *self != *other
+    }
+    #[inline]
+    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
+        if *mask { on_true } else { on_false }
+    }
+}
+
+impl LazyCompare for u32 {
+    type Mask = bool;
+
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        *self < *other
+    }
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        *self <= *other
+    }
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        *self > *other
+    }
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        *self >= *other
+    }
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+    #[inline]
+    fn ne(&self, other: &Self) -> bool {
+        *self != *other
+    }
+    #[inline]
+    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
+        if *mask { on_true } else { on_false }
+    }
+}
+
+impl LazyCompare for u64 {
+    type Mask = bool;
+
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        *self < *other
+    }
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        *self <= *other
+    }
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        *self > *other
+    }
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        *self >= *other
+    }
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+    #[inline]
+    fn ne(&self, other: &Self) -> bool {
+        *self != *other
+    }
+    #[inline]
+    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
+        if *mask { on_true } else { on_false }
+    }
+}
+
+impl LazyCompare for u128 {
+    type Mask = bool;
+
+    #[inline]
+    fn lt(&self, other: &Self) -> bool {
+        *self < *other
+    }
+    #[inline]
+    fn le(&self, other: &Self) -> bool {
+        *self <= *other
+    }
+    #[inline]
+    fn gt(&self, other: &Self) -> bool {
+        *self > *other
+    }
+    #[inline]
+    fn ge(&self, other: &Self) -> bool {
+        *self >= *other
+    }
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        *self == *other
+    }
+    #[inline]
+    fn ne(&self, other: &Self) -> bool {
+        *self != *other
+    }
+    #[inline]
+    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
+        if *mask { on_true } else { on_false }
+    }
+}

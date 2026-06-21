@@ -48,21 +48,10 @@
 //! assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
 //! ```
 //!
-//! ## Ecosystem
-//!
-//! euclid owns the contracts; implementations live downstream:
-//!
-//! - **`napier`** — the concrete `Copy` number tier (`Real` / `Complex`) and the
-//!   abstract-algebra tower, fusing this lazy surface with the algebraic field.
-//! - **`frobenius`** — backend-generic linear algebra and the richer matrix traits
-//!   (`SpdFactor`, general decompositions) over [`LazyMatrix`].
-//! - **`maxwell`** — the XLA / StableHLO backend, compiling formulas to HLO.
-//! - **`oresme`** — physical units, quantities, and conversions.
-//! - **`bayes`** — closed-form probability and statistics over this surface.
-//!
-//! In-crate, `f64`/`f32` implement the real traits, `i64`/`i128` implement
-//! [`LazyInteger`], `u32`/`u64`/`u128` implement [`LazyNatural`], and `bool` implements
-//! [`LazyBool`].
+//! In-crate, `f64`/`f32` implement the real traits,
+//! `i64`/`i128` implement [`LazyInteger`],
+//! `u32`/`u64`/`u128` implement [`LazyNatural`],
+//! and `bool` implements [`LazyBool`].
 
 pub mod array;
 pub mod numeric;
