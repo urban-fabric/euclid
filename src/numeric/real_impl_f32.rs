@@ -167,43 +167,43 @@ impl LazyReal for f32 {
     fn clamp(self, lo: Self, hi: Self) -> Self {
         f32::clamp(self, lo, hi)
     }
-    // `f32` has no native special functions: evaluate in `f64` and narrow, the same
-    // way `scalar` already narrows a host constant.
+    // Native `f32` special functions (`numeric::special::f32`): evaluated in single
+    // precision throughout, with no `f64` round-trip.
     #[inline]
     fn erf(self) -> Self {
-        crate::numeric::special::erf::erf(self as f64) as f32
+        crate::numeric::special::f32::erf::erf(self)
     }
     #[inline]
     fn erfc(self) -> Self {
-        crate::numeric::special::erf::erfc(self as f64) as f32
+        crate::numeric::special::f32::erf::erfc(self)
     }
     #[inline]
     fn erf_inv(self) -> Self {
-        crate::numeric::special::erf::erf_inv(self as f64) as f32
+        crate::numeric::special::f32::erf::erf_inv(self)
     }
     #[inline]
     fn ln_gamma(self) -> Self {
-        crate::numeric::special::gamma::ln_gamma(self as f64) as f32
+        crate::numeric::special::f32::gamma::ln_gamma(self)
     }
     #[inline]
     fn digamma(self) -> Self {
-        crate::numeric::special::gamma::digamma(self as f64) as f32
+        crate::numeric::special::f32::gamma::digamma(self)
     }
     #[inline]
     fn trigamma(self) -> Self {
-        crate::numeric::special::gamma::trigamma(self as f64) as f32
+        crate::numeric::special::f32::gamma::trigamma(self)
     }
     #[inline]
     fn gamma_lr(self, shape: Self) -> Self {
-        crate::numeric::special::gamma::gamma_lr(shape as f64, self as f64) as f32
+        crate::numeric::special::f32::gamma::gamma_lr(shape, self)
     }
     #[inline]
     fn gamma_ur(self, shape: Self) -> Self {
-        crate::numeric::special::gamma::gamma_ur(shape as f64, self as f64) as f32
+        crate::numeric::special::f32::gamma::gamma_ur(shape, self)
     }
     #[inline]
     fn beta_reg(self, a: Self, b: Self) -> Self {
-        crate::numeric::special::beta::beta_reg(a as f64, b as f64, self as f64) as f32
+        crate::numeric::special::f32::beta::beta_reg(a, b, self)
     }
     #[inline]
     fn ln_1m_exp(&self) -> Self {
@@ -218,15 +218,26 @@ impl LazyReal for f32 {
     }
     #[inline]
     fn erfcx(self) -> Self {
-        crate::numeric::special::erf::erfcx(self as f64) as f32
+        crate::numeric::special::f32::erf::erfcx(self)
     }
     #[inline]
     fn bessel_i0e(self) -> Self {
-        crate::numeric::special::bessel::i0e(self as f64) as f32
+        crate::numeric::special::f32::bessel::i0e(self)
     }
     #[inline]
     fn bessel_i1e(self) -> Self {
-        crate::numeric::special::bessel::i1e(self as f64) as f32
+        crate::numeric::special::f32::bessel::i1e(self)
+    }
+    #[inline]
+    fn xlogy(self, y: Self) -> Self {
+        // 0·ln 0 = 0 (and 0·ln y = 0): short-circuit the absorbing zero so the
+        // multiply never forms 0·(−∞) = NaN.
+        if self == 0.0 { 0.0 } else { self * y.ln() }
+    }
+    #[inline]
+    fn gamma(self) -> Self {
+        // The native single-precision Lanczos reference (accurate + valid for negative `x`).
+        crate::numeric::special::f32::gamma::gamma(self)
     }
 }
 

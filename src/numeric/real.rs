@@ -247,8 +247,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     // --- special functions ---
     // The analytic functions a probability formula reaches for past pure algebra. Each has
     // a direct tensor-op analogue (`Erf`/`Lgamma`/`Igamma`/…); the `f64`/`f32` reference
-    // impls live in [`crate::numeric::special`]. `self` is always the evaluation point, with
-    // any parameters following.
+    // impls live in the crate-internal `numeric::special` module. `self` is always the
+    // evaluation point, with any parameters following.
 
     /// The error function `erf(x)`.
     fn erf(self) -> Self;
@@ -282,4 +282,73 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn bessel_i0e(self) -> Self;
     /// The exponentially-scaled modified Bessel `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
     fn bessel_i1e(self) -> Self;
+
+    /// `x · ln y` with the convention `0 · ln 0 = 0` (and `0 · ln y = 0` for any `y`) —
+    /// the numerically stable form that keeps entropy / cross-entropy / KL sums finite
+    /// where a plain `x * y.ln()` would evaluate `0 · (−∞) = NaN`. `self` is `x`, the
+    /// multiplier whose zero is absorbing.
+    ///
+    /// It is a **trait primitive**, not a free composite: honoring the `x = 0` case needs
+    /// a value-dependent select that the comparison-free real surface cannot express, so
+    /// each backend supplies it directly — the eager reals branch on `x == 0`, and a
+    /// tensor backend lowers to a `select`-guarded `x · ln y` (the primitive jax/scipy
+    /// expose as `xlogy`).
+    fn xlogy(self, y: Self) -> Self;
+
+    // --- stable composites (defaulted) ---
+
+    /// Stable pairwise `ln(eᵃ + eᵇ) = max(a, b) + ln(1 + e^{−|a−b|})`.
+    #[inline]
+    fn ln_add_exp(self, other: Self) -> Self {
+        let m = self.clone().max(other.clone());
+        let gap = (self - other).abs();
+        m + (-gap).ln_1p_exp()
+    }
+
+    /// Stable pairwise `ln(eᵃ − eᵇ) = a + ln(1 − e^{b−a})`, valid for `self >= other`.
+    #[inline]
+    fn ln_sub_exp(self, other: Self) -> Self {
+        let gap = other - self.clone();
+        self + gap.ln_1m_exp()
+    }
+
+    // --- composite special functions (defaulted) ---
+    // Short closed forms over the primitives above, defaulted so every backend gets them
+    // for free and a tensor lowers them op-for-op. The eager reals may override with a
+    // direct reference where one is more accurate or has a wider domain.
+
+    /// `Γ(x)` on the positive domain, `Γ(x) = exp(ln Γ(x))` — the form a tensor backend
+    /// lowers (`exp ∘ Lgamma`). For `x > 0` it agrees with the reflection-based reference
+    /// to rounding; the negative-argument reflection is a `bool`-valued branch outside the
+    /// lazy surface, so the eager reals override this with the exact reference.
+    #[inline]
+    fn gamma(self) -> Self {
+        self.ln_gamma().exp()
+    }
+
+    /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
+    #[inline]
+    fn ln_beta(self, b: Self) -> Self {
+        self.clone().ln_gamma() + b.clone().ln_gamma() - (self + b).ln_gamma()
+    }
+
+    /// `B(a, b) = exp(ln B(a, b))`, with `self = a`.
+    #[inline]
+    fn beta(self, b: Self) -> Self {
+        self.ln_beta(b).exp()
+    }
+
+    /// `ln I₀(x) = ln I₀ᵉ(x) + |x|`, the overflow-free log of the modified Bessel `I₀`
+    /// (the von Mises / directional normalizer).
+    #[inline]
+    fn ln_bessel_i0(self) -> Self {
+        self.clone().bessel_i0e().ln() + self.abs()
+    }
+
+    /// `I₁(x) / I₀(x) = I₁ᵉ(x) / I₀ᵉ(x)` — the von Mises mean resultant length;
+    /// overflow-free, since the shared `e^{|x|}` growth factor cancels.
+    #[inline]
+    fn bessel_i1_over_i0(self) -> Self {
+        self.clone().bessel_i1e() / self.bessel_i0e()
+    }
 }

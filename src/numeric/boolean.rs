@@ -42,7 +42,7 @@ impl LazyBool for bool {
 
 /// Elementwise comparison to a [`LazyBool`] mask, plus the branchless
 /// [`select`](LazyCompare::select) it drives. Implemented by the ordered carriers
-/// (`f64`/`f32`, `i64`/`i128`, a backend tensor).
+/// (`f64`/`f32`, `i64`/`i128`, `u32`/`u64`/`u128`, a backend tensor).
 ///
 /// The methods share names with `PartialOrd`/`PartialEq` but return the [`Mask`](Self::Mask),
 /// not a `bool`; on a concrete scalar, disambiguate with `LazyCompare::lt(&a, &b)`.
@@ -92,4 +92,4 @@ macro_rules! eager_compare {
 }
 
 // The ordered carriers. (Complex is unordered, so it carries no comparison here.)
-eager_compare!(f64, f32, i64, i128);
+eager_compare!(f64, f32, i64, i128, u32, u64, u128);

@@ -3,8 +3,9 @@
 //!
 //! Integers form a ring: `+ - *` and Euclidean [`div_rem`](LazyInteger::div_rem), but no
 //! inverse, so `LazyInteger` is a [`LazyRing`](super::LazyRing) without `Div`. Only signed
-//! integers qualify (the naturals are a semiring), so it is implemented for
-//! `i32`/`i64`/`i128` — XLA/JAX's signed `s32`/`s64` convention — each width-matched to the
+//! integers qualify (the naturals are a [semiring](super::LazyNatural), one rung below), so
+//! it is implemented for `i32`/`i64`/`i128` — XLA/JAX's signed `s32`/`s64` convention — each
+//! width-matched to the
 //! real it casts into (`i32 → f32`, `i64`/`i128 → f64`). This is the dtype a backend uses
 //! for count/index/shape data.
 

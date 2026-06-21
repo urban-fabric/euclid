@@ -72,6 +72,8 @@ fn softplus_is_stable_at_extremes() {
     assert!((f64::ln_1p_exp(&0.0) - core::f64::consts::LN_2).abs() < 1e-12);
     let big = 50.0_f64;
     assert!((big.ln_1p_exp() - big).abs() < 1e-10);
+    assert!((0.0_f64.ln_add_exp(0.0) - core::f64::consts::LN_2).abs() < 1e-12);
+    assert!((2.0_f64.ln_sub_exp(1.0).exp() - (2.0_f64.exp() - 1.0_f64.exp())).abs() < 1e-12);
 }
 
 /// A formula on [`LazyReal`] using `atan2`, trig, and the `clamp` selector — once a
@@ -192,6 +194,47 @@ fn lazy_integer_bridges_into_the_real_surface() {
     assert!((got - want).abs() < 1e-12);
 }
 
+/// A write-once semiring formula (`+ *`, no subtraction): `n·n + n` — the count arithmetic a
+/// formula does staying inside the naturals, before any cast leaves the semiring.
+fn semiring_step<N: LazyNatural>(n: N) -> N {
+    n.clone() * n.clone() + n
+}
+
+#[test]
+fn lazy_semiring_formula_runs_on_u32_u64_and_u128() {
+    // 6·6 + 6 = 42, on every natural carrier.
+    assert_eq!(semiring_step(6_u32), 42);
+    assert_eq!(semiring_step(6_u64), 42);
+    assert_eq!(semiring_step(6_u128), 42);
+    // The width-matched cast into the real surface.
+    assert_eq!(3_u32.to_real(), 3.0_f32);
+    assert_eq!(3_u64.to_real(), 3.0_f64);
+    // Lift, the widen into the signed ring, Euclidean div/rem (floor division, no sign).
+    assert_eq!(u64::from_u64(7), 7);
+    assert_eq!(7_u32.to_integer(), 7_i64);
+    assert_eq!(7_u64.to_integer(), 7_i128);
+    assert_eq!(7_u64.div_rem(3), (2, 1));
+    assert_eq!(5_u64.factorial(), 120.0);
+    assert_eq!(5_u64.binomial(&2), 10.0);
+    assert_eq!(5_u32.factorial(), 120.0);
+    assert_eq!(5_u32.binomial(&2), 10.0);
+    assert!((5_u32.ln_factorial() - 120.0_f32.ln()).abs() < 1e-6);
+}
+
+/// The natural→integer bridge: a signed difference of counts crosses into the ring via
+/// [`LazyNatural::to_integer`], where the subtraction the semiring withholds is available —
+/// the result is unrepresentable in the naturals themselves.
+fn count_difference<N: LazyNatural>(a: N, b: N) -> N::Integer {
+    a.to_integer() - b.to_integer()
+}
+
+#[test]
+fn lazy_natural_bridges_into_the_integer_ring() {
+    // 3 − 7 = −4 in the signed ring; the naturals have no such value.
+    assert_eq!(count_difference(3_u32, 7_u32), -4_i64);
+    assert_eq!(count_difference(3_u64, 7_u64), -4_i128);
+}
+
 /// A write-once piecewise kernel over the mask tier: `relu(x) = select(x > 0, x, 0)`, a
 /// comparison to a [`LazyCompare::Mask`] driving a branchless `select` with no scalar `bool`.
 fn relu<T: LazyCompare>(x: T, zero: T) -> T {
@@ -206,6 +249,10 @@ fn lazy_bool_mask_drives_select_and_logic() {
     assert_eq!(relu(-2.0_f64, 0.0), 0.0);
     assert_eq!(relu(5_i64, 0), 5);
     assert_eq!(relu(-7_i64, 0), 0);
+
+    // Naturals are ordered carriers too: min(4, 7) = 4 via comparison + select.
+    let lt = LazyCompare::lt(&4_u64, &7_u64);
+    assert_eq!(u64::select(&lt, 4, 7), 4);
 
     // The Boolean algebra on the masks (trait-qualified to avoid std's `PartialOrd`).
     let t = LazyCompare::lt(&2.0_f64, &3.0); // true

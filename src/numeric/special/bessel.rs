@@ -33,7 +33,7 @@ fn i1_asymp(t: f64) -> f64 {
 }
 
 /// The modified Bessel function `I₀(x)` (even in `x`).
-pub fn i0(x: f64) -> f64 {
+pub(crate) fn i0(x: f64) -> f64 {
     let ax = x.abs();
     if ax < 3.75 {
         let t = (x / 3.75) * (x / 3.75);
@@ -47,7 +47,7 @@ pub fn i0(x: f64) -> f64 {
 }
 
 /// The modified Bessel function `I₁(x)` (odd in `x`).
-pub fn i1(x: f64) -> f64 {
+pub(crate) fn i1(x: f64) -> f64 {
     let ax = x.abs();
     let result = if ax < 3.75 {
         let t = (x / 3.75) * (x / 3.75);
@@ -64,7 +64,7 @@ pub fn i1(x: f64) -> f64 {
 
 /// The **exponentially-scaled** `I₀ᵉ(x) = e^{−|x|} I₀(x)`, finite for all `x` where
 /// `I₀` itself overflows. `ln I₀(x) = ln I₀ᵉ(x) + |x|`.
-pub fn i0e(x: f64) -> f64 {
+pub(crate) fn i0e(x: f64) -> f64 {
     let ax = x.abs();
     if ax < 3.75 {
         i0(x) * (-ax).exp()
@@ -74,7 +74,7 @@ pub fn i0e(x: f64) -> f64 {
 }
 
 /// The **exponentially-scaled** `I₁ᵉ(x) = e^{−|x|} I₁(x)` (odd in `x`).
-pub fn i1e(x: f64) -> f64 {
+pub(crate) fn i1e(x: f64) -> f64 {
     let ax = x.abs();
     if ax < 3.75 {
         i1(x) * (-ax).exp()
@@ -86,7 +86,7 @@ pub fn i1e(x: f64) -> f64 {
 
 /// The ratio `I₁(x)/I₀(x) ∈ [0, 1)` for `x ≥ 0` (the von Mises mean resultant length).
 /// Stable for large `x`: the shared `eˣ/√x` growth factor cancels, so it never overflows.
-pub fn i1_over_i0(x: f64) -> f64 {
+pub(crate) fn i1_over_i0(x: f64) -> f64 {
     let ax = x.abs();
     if ax < 3.75 {
         i1(ax) / i0(ax)
@@ -98,7 +98,7 @@ pub fn i1_over_i0(x: f64) -> f64 {
 
 /// `ln I₀(x)` for `x ≥ 0`, stable for large `x` where `I₀` itself overflows: uses
 /// the asymptotic `ln I₀(x) ≈ x − ½ln(2πx) + ln(1 + 1/8x + 9/128x² + …)`.
-pub fn ln_i0(x: f64) -> f64 {
+pub(crate) fn ln_i0(x: f64) -> f64 {
     let ax = x.abs();
     if ax < 15.0 {
         i0(ax).ln()
@@ -126,7 +126,7 @@ fn ln_add_exp(a: f64, b: f64) -> f64 {
 /// log-sum-exp, so it never overflows and stays accurate for any order/argument. Returns `0`
 /// for `x = ν = 0` and `−∞` for `x = 0, ν > 0`.
 #[must_use]
-pub fn ln_iv(nu: f64, x: f64) -> f64 {
+pub(crate) fn ln_iv(nu: f64, x: f64) -> f64 {
     debug_assert!(nu >= 0.0 && x >= 0.0, "ln_iv needs ν ≥ 0, x ≥ 0");
     if x == 0.0 {
         return if nu == 0.0 { 0.0 } else { f64::NEG_INFINITY };

@@ -5,17 +5,17 @@
 use super::gamma::ln_gamma;
 
 /// `ln B(a, b) = ln Γ(a) + ln Γ(b) - ln Γ(a+b)`.
-pub fn ln_beta(a: f64, b: f64) -> f64 {
+pub(crate) fn ln_beta(a: f64, b: f64) -> f64 {
     ln_gamma(a) + ln_gamma(b) - ln_gamma(a + b)
 }
 
 /// The beta function `B(a, b)`.
-pub fn beta(a: f64, b: f64) -> f64 {
+pub(crate) fn beta(a: f64, b: f64) -> f64 {
     ln_beta(a, b).exp()
 }
 
 /// The regularized incomplete beta `Iₓ(a, b)`, `x ∈ [0, 1]`, `a, b > 0`.
-pub fn beta_reg(a: f64, b: f64, x: f64) -> f64 {
+pub(crate) fn beta_reg(a: f64, b: f64, x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }

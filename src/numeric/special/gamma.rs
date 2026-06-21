@@ -20,7 +20,7 @@ const LANCZOS: [f64; 9] = [
 
 /// Natural log of the gamma function, `ln Γ(x)`, for `x > 0` (and, via reflection,
 /// `x < 0` away from the non-positive integers).
-pub fn ln_gamma(x: f64) -> f64 {
+pub(crate) fn ln_gamma(x: f64) -> f64 {
     if x < 0.5 {
         (PI / (PI * x).sin()).ln() - ln_gamma(1.0 - x)
     } else {
@@ -35,7 +35,7 @@ pub fn ln_gamma(x: f64) -> f64 {
 }
 
 /// The gamma function `Γ(x)`.
-pub fn gamma(x: f64) -> f64 {
+pub(crate) fn gamma(x: f64) -> f64 {
     if x < 0.5 {
         PI / ((PI * x).sin() * gamma(1.0 - x))
     } else {
@@ -53,7 +53,7 @@ const MAX_ITER: usize = 200;
 const EPS: f64 = 1e-15;
 
 /// Regularized **lower** incomplete gamma `P(a, x) = γ(a, x) / Γ(a)`, `a > 0`, `x ≥ 0`.
-pub fn gamma_lr(a: f64, x: f64) -> f64 {
+pub(crate) fn gamma_lr(a: f64, x: f64) -> f64 {
     if a <= 0.0 || x < 0.0 {
         return f64::NAN;
     }
@@ -79,7 +79,7 @@ pub fn gamma_lr(a: f64, x: f64) -> f64 {
 }
 
 /// Regularized **upper** incomplete gamma `Q(a, x) = Γ(a, x) / Γ(a) = 1 - P(a, x)`.
-pub fn gamma_ur(a: f64, x: f64) -> f64 {
+pub(crate) fn gamma_ur(a: f64, x: f64) -> f64 {
     if a <= 0.0 || x < 0.0 {
         return f64::NAN;
     }
@@ -116,7 +116,7 @@ pub fn gamma_ur(a: f64, x: f64) -> f64 {
 }
 
 /// The digamma function `ψ(x) = d/dx ln Γ(x)`.
-pub fn digamma(mut x: f64) -> f64 {
+pub(crate) fn digamma(mut x: f64) -> f64 {
     let mut result = 0.0;
     while x < 10.0 {
         result -= 1.0 / x;
@@ -128,7 +128,7 @@ pub fn digamma(mut x: f64) -> f64 {
 }
 
 /// The trigamma function `ψ₁(x) = d²/dx² ln Γ(x)` — the derivative of [`digamma`].
-pub fn trigamma(x: f64) -> f64 {
+pub(crate) fn trigamma(x: f64) -> f64 {
     if x <= 0.0 && x == x.floor() {
         return f64::INFINITY;
     }

@@ -1,4 +1,4 @@
-//! The number traits, in four tiers.
+//! The number traits, in five tiers.
 //!
 //! - **Lazy** ([`Arithmetic`] → [`LazyReal`]/[`LazyComplex`]) — the elementwise analysis
 //!   surface over `+ - * /`, `Clone` not `Copy`: transcendentals, rounding/sign, the
@@ -6,9 +6,13 @@
 //!   lifting. Every op lowers to a tensor compiler (`Sin`/`Max`/`Select`/…), so a pure
 //!   formula runs on every backend. Nothing here returns a scalar `bool` or needs the
 //!   concrete number line.
-//! - **Ring** ([`LazyRing`] → [`LazyInteger`]) — the same surface for the carriers with
-//!   `+ - *` but no division, the integers (an `s64` count/index/shape array). The bridge
-//!   a discrete log-density crosses into real analysis is [`LazyInteger::to_real`].
+//! - **Semiring** ([`LazySemiring`] → [`LazyNatural`]) — the carriers with `+ *` but no
+//!   subtraction, the naturals (a `u64` non-negative count/index/shape array). One rung
+//!   below the ring; cross into the signed integers via [`LazyNatural::to_integer`] when a
+//!   formula needs subtraction.
+//! - **Ring** ([`LazyRing`] → [`LazyInteger`]) — the semiring refined with `-` and negation,
+//!   the integers (an `s64` count/index/shape array). The bridge a discrete log-density
+//!   crosses into real analysis is [`LazyInteger::to_real`].
 //! - **Mask** ([`LazyBool`] + [`LazyCompare`]) — the comparison/`select` surface. Booleans
 //!   are a Boolean algebra, not a ring, so they sit beside the tower: a comparison returns
 //!   [`LazyCompare::Mask`] (`bool` eagerly, a `pred` tensor on a backend) and `select`
@@ -21,19 +25,22 @@
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-/// The **ring** substrate: `Clone` plus `+ - *` and negation, `÷` withheld — the lazy
+/// The **semiring** substrate: `Clone` plus `+ *` (with identities `0`/`1`), subtraction and
+/// negation withheld — the lazy peer of the algebraic `Semiring`, and the tier the naturals
+/// (`u32`/`u64`/`u128`, an XLA `u64` count/index array) sit at. Blanket-implemented for every
+/// carrier with `Add` and `Mul`, so every ring/field carrier joins it too; [`LazyRing`]
+/// refines it with `Sub`/`Neg`, [`LazyNatural`] with the natural surface.
+pub trait LazySemiring: Clone + Add<Output = Self> + Mul<Output = Self> {}
+impl<T> LazySemiring for T where T: Clone + Add<Output = T> + Mul<Output = T> {}
+
+/// The **ring** substrate: a [`LazySemiring`] plus `-` and negation, `÷` withheld — the lazy
 /// peer of the algebraic `Ring`. Blanket-implemented for every carrier with the four ring
 /// operators, so the division-bearing scalars (`f64`/`f32`, complex, `Tensor`) join it
-/// alongside `i64`/`i128` and integer tensors. [`Arithmetic`] refines it with `Div`;
-/// [`LazyInteger`] with the integer surface.
-pub trait LazyRing:
-    Clone + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Neg<Output = Self>
-{
-}
-impl<T> LazyRing for T where
-    T: Clone + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Neg<Output = T>
-{
-}
+/// alongside `i64`/`i128` and integer tensors. (Unsigned carriers stop at [`LazySemiring`],
+/// having no `Neg`.) [`Arithmetic`] refines it with `Div`; [`LazyInteger`] with the integer
+/// surface.
+pub trait LazyRing: LazySemiring + Sub<Output = Self> + Neg<Output = Self> {}
+impl<T> LazyRing for T where T: LazySemiring + Sub<Output = T> + Neg<Output = T> {}
 
 /// A [`LazyRing`] plus division — the field-tier operator bound behind `+ - * /`,
 /// implemented by `f64`/`f32`, complex scalars, and `Tensor`. Integer carriers stop at
@@ -71,17 +78,19 @@ pub trait NormedDivisionAlgebra: Arithmetic {
 mod boolean;
 mod complex;
 mod integer;
+mod natural;
 mod real;
 mod real_impl_f32;
 mod real_impl_f64;
 #[cfg(test)]
 mod tests;
 
-/// The `f64`/`f32` reference implementations of the special functions the lazy surface
-/// names (`erf`/`ln_gamma`/`beta_reg`/`bessel_i0e`/…). Re-exported as `euclid::special`.
-pub mod special;
+/// Crate-internal reference implementations of the special functions the lazy surface
+/// names (`erf`/`ln_gamma`/`beta_reg`/`bessel_i0e`/…).
+pub(crate) mod special;
 
 pub use boolean::{LazyBool, LazyCompare};
 pub use complex::{LazyComplex, LazyQuaternion};
 pub use integer::LazyInteger;
+pub use natural::LazyNatural;
 pub use real::LazyReal;

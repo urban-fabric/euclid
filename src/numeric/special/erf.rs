@@ -6,7 +6,7 @@ use super::gamma::gamma_lr;
 use core::f64::consts::PI;
 
 /// The error function `erf(x) = (2/√π) ∫₀ˣ e^{-t²} dt`.
-pub fn erf(x: f64) -> f64 {
+pub(crate) fn erf(x: f64) -> f64 {
     if x == 0.0 {
         0.0
     } else if x > 0.0 {
@@ -17,14 +17,14 @@ pub fn erf(x: f64) -> f64 {
 }
 
 /// The complementary error function `erfc(x) = 1 - erf(x)`.
-pub fn erfc(x: f64) -> f64 {
+pub(crate) fn erfc(x: f64) -> f64 {
     1.0 - erf(x)
 }
 
 /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)`, finite in the right
 /// tail where `erfc` underflows — the stable Gaussian/Wald log-CDF kernel. A continued
 /// fraction carries the large-`x` regime.
-pub fn erfcx(x: f64) -> f64 {
+pub(crate) fn erfcx(x: f64) -> f64 {
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);
     }
@@ -39,7 +39,7 @@ pub fn erfcx(x: f64) -> f64 {
 }
 
 /// The inverse error function: `erf_inv(erf(x)) = x` for `x ∈ (-1, 1)`.
-pub fn erf_inv(x: f64) -> f64 {
+pub(crate) fn erf_inv(x: f64) -> f64 {
     if x <= -1.0 {
         return f64::NEG_INFINITY;
     }

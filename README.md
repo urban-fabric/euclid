@@ -65,13 +65,20 @@ Three top-level modules:
 The number traits, graded by structure so a formula demands exactly the operators it
 uses, no more:
 
-- **`LazyRing`** — `Clone` + `+ - *` and negation, with division *deliberately
-  withheld*. Blanket-implemented for every carrier with the four ring operators.
-  - **`Arithmetic`** refines it with `/` — the field-operator bound (`f64`/`f32`,
-    complex, tensors).
-  - **`LazyInteger`** refines it with the integer surface (the machine-integer lift,
-    Euclidean `div_rem`, and `to_real`) — the `s64`-style count/index/shape dtype.
-    Implemented for `i64`/`i128`.
+- **`LazySemiring`** — `Clone` + `+ *` (with identities `0`/`1`), subtraction and
+  negation *withheld*. Blanket-implemented for every carrier with `Add` and `Mul`.
+  - **`LazyNatural`** refines it with the natural surface (the machine-natural lift,
+    floor `div_rem`, `to_real`, and `to_integer` — the widen into the signed ring where
+    subtraction lives), plus count combinatorics (`factorial`, `ln_factorial`,
+    `binomial`, `ln_binomial`) — the `u64`-style non-negative count/index/shape dtype.
+    Implemented for `u32`/`u64`/`u128`.
+  - **`LazyRing`** refines it with `-` and negation, with division *deliberately
+    withheld*. Blanket-implemented for every carrier with the four ring operators.
+    - **`Arithmetic`** refines it with `/` — the field-operator bound (`f64`/`f32`,
+      complex, tensors).
+    - **`LazyInteger`** refines it with the integer surface (the machine-integer lift,
+      Euclidean `div_rem`, and `to_real`) — the `s64`-style count/index/shape dtype.
+      Implemented for `i64`/`i128`.
 - **`LazyReal`** — the real-number analysis surface: the transcendentals
   (`exp`/`ln`/`sqrt`, trig, `atan2`/`hypot`, hyperbolics), rounding/sign, the
   comparison-free `min`/`max`/`clamp` selectors, a library of lifted constants
@@ -79,8 +86,9 @@ uses, no more:
   **special functions** that probability and statistics reach for —
   `erf`/`erfc`/`erf_inv`/`erfcx`, `ln_gamma`/`digamma`/`trigamma`, the regularized
   incomplete gamma `gamma_lr`/`gamma_ur`, the regularized incomplete beta `beta_reg`,
-  the scaled modified Bessel `bessel_i0e`/`bessel_i1e`, and the stable `ln_1p_exp` /
-  `ln_1m_exp`. Each has a direct tensor-op analogue.
+  the scaled modified Bessel `bessel_i0e`/`bessel_i1e`, `xlogy`, and scalar stable
+  log-domain forms such as `ln_1p_exp`, `ln_1m_exp`, `ln_add_exp`, and `ln_sub_exp`.
+  Each has a direct tensor-op analogue or lowers through those scalar primitives.
 - **`NormedDivisionAlgebra`** — a normed division algebra over ℝ. By
   Frobenius/Hurwitz the associative ones are exactly **ℝ (1D), ℂ (2D), ℍ (4D)**, so one
   matrix/vector kernel runs over all three. It names the real field that magnitudes and
@@ -94,10 +102,13 @@ uses, no more:
   `LazyCompare::Mask` (`bool` eagerly, a `pred` tensor on a backend) and `select`
   consumes it.
 
-The reference `f64`/`f32` implementations of the special functions live under
-[`numeric::special`](src/numeric/special/mod.rs) (Lanczos gamma, Numerical-Recipes
-continued fractions for the incomplete gamma/beta, Giles's inverse-erf rational), and
-are also re-exported as `euclid::special` for backward compatibility.
+The concrete `f64` implementations of the special functions live in the crate-internal
+[`src/numeric/special`](src/numeric/special/mod.rs) tree (Lanczos gamma,
+Numerical-Recipes continued fractions for the incomplete gamma/beta, Giles's inverse-erf
+rational). A parallel internal [`f32`](src/numeric/special/f32/mod.rs) tree mirrors them
+natively in single precision (same algorithms, `f32` throughout, convergence tolerances at
+the `f32` noise floor), so the `f32` `LazyReal` impl evaluates each one without a `f64`
+round-trip. They are not re-exported; the public API is the numeric trait surface.
 
 ### `array` — the rank-graded contracts
 
@@ -153,6 +164,7 @@ euclid ships the **contracts** plus the **reference scalar carriers**:
 
 - `f64` / `f32` implement `Arithmetic`, `LazyReal`, and `NormedDivisionAlgebra`.
 - `i64` / `i128` implement `LazyInteger`.
+- `u32` / `u64` / `u128` implement `LazyNatural`.
 - `bool` implements `LazyBool`.
 
 The array and random contracts are implemented by the backends downstream.

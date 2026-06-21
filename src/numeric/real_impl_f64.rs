@@ -229,6 +229,18 @@ impl LazyReal for f64 {
     fn bessel_i1e(self) -> Self {
         crate::numeric::special::bessel::i1e(self)
     }
+    #[inline]
+    fn xlogy(self, y: Self) -> Self {
+        // 0·ln 0 = 0 (and 0·ln y = 0): short-circuit the absorbing zero so the
+        // multiply never forms 0·(−∞) = NaN.
+        if self == 0.0 { 0.0 } else { self * y.ln() }
+    }
+    #[inline]
+    fn gamma(self) -> Self {
+        // The exact Lanczos reference: more accurate than `exp(ln Γ)` and valid for
+        // negative `x` (via reflection), which the defaulted form is not.
+        crate::numeric::special::gamma::gamma(self)
+    }
 }
 
 impl NormedDivisionAlgebra for f64 {

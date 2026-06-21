@@ -19,7 +19,8 @@
 //! ## The two tiers
 //!
 //! - **Scalar surface** ([`numeric`]) — the analysis and algebra of one number, graded by
-//!   structure: [`LazyRing`] (`+ - *`) refined by [`Arithmetic`] (adds `/`) and
+//!   structure: [`LazySemiring`] (`+ *`, the naturals via [`LazyNatural`]) refined by
+//!   [`LazyRing`] (`+ - *`), in turn refined by [`Arithmetic`] (adds `/`) and
 //!   [`LazyInteger`]; [`LazyReal`] (transcendentals, constants, selectors, special
 //!   functions); [`NormedDivisionAlgebra`] over ℝ/ℂ/ℍ, refined by [`LazyComplex`] and
 //!   [`LazyQuaternion`]; and [`LazyBool`] + [`LazyCompare`], the mask tier.
@@ -60,7 +61,8 @@
 //! - **`bayes`** — closed-form probability and statistics over this surface.
 //!
 //! In-crate, `f64`/`f32` implement the real traits, `i64`/`i128` implement
-//! [`LazyInteger`], and `bool` implements [`LazyBool`].
+//! [`LazyInteger`], `u32`/`u64`/`u128` implement [`LazyNatural`], and `bool` implements
+//! [`LazyBool`].
 
 pub mod array;
 pub mod numeric;
@@ -68,11 +70,9 @@ pub mod random;
 
 pub use array::{LazyMatrix, LazyTensor, LazyVector};
 pub use numeric::{
-    Arithmetic, LazyBool, LazyCompare, LazyComplex, LazyInteger, LazyQuaternion, LazyReal,
-    LazyRing, NormedDivisionAlgebra,
+    Arithmetic, LazyBool, LazyCompare, LazyComplex, LazyInteger, LazyNatural, LazyQuaternion,
+    LazyReal, LazyRing, LazySemiring, NormedDivisionAlgebra,
 };
-// Root alias keeping the historical `euclid::special` path working.
-pub use numeric::special;
 pub use random::{
     KeyedRandomBackend, RandomAlgorithm, RandomProcess, RandomStream, SampleWith,
     TensorRandomStream,
