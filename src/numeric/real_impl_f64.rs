@@ -5,6 +5,7 @@ use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra};
 impl Arithmetic for f64 {}
 
 impl LazyReal for f64 {
+    type Integer = i64;
     #[inline]
     fn scalar(x: f64) -> Self {
         x
@@ -26,7 +27,7 @@ impl LazyReal for f64 {
         f64::abs(*self)
     }
     #[inline]
-    fn powf(&self, p: f64) -> Self {
+    fn powf(&self, p: Self) -> Self {
         f64::powf(*self, p)
     }
     #[inline]
@@ -81,6 +82,18 @@ impl LazyReal for f64 {
         f64::tanh(self)
     }
     #[inline]
+    fn asinh(self) -> Self {
+        f64::asinh(self)
+    }
+    #[inline]
+    fn acosh(self) -> Self {
+        f64::acosh(self)
+    }
+    #[inline]
+    fn atanh(self) -> Self {
+        f64::atanh(self)
+    }
+    #[inline]
     fn hypot(self, other: Self) -> Self {
         f64::hypot(self, other)
     }
@@ -89,8 +102,8 @@ impl LazyReal for f64 {
         f64::cbrt(self)
     }
     #[inline]
-    fn powi(self, n: i32) -> Self {
-        f64::powi(self, n)
+    fn powi(self, n: i64) -> Self {
+        f64::powi(self, n as i32)
     }
     #[inline]
     fn mul_add(self, a: Self, b: Self) -> Self {

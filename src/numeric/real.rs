@@ -1,7 +1,7 @@
 //! The real-number lazy analysis surface [`LazyReal`]. The concrete `Real`
 //! number (the `Copy`, ordered tier) now lives in the `napier` crate.
 
-use super::NormedDivisionAlgebra;
+use super::{LazyInteger, NormedDivisionAlgebra};
 
 /// A real-valued numeric scalar: an [`Arithmetic`](super::Arithmetic) plus the real transcendentals that
 /// inherently-real formulas (probability densities, geometry kernels) are written
@@ -11,6 +11,19 @@ use super::NormedDivisionAlgebra;
 /// its [`conjugate`](NormedDivisionAlgebra::conjugate) is the identity and a kernel generic over
 /// [`NormedDivisionAlgebra`] collapses to the plain real case at a `LazyReal` element.
 pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
+    /// The integer substrate this real's integer powers are indexed by — `i32` for `f32`,
+    /// `i64` for `f64`, an integer-dtype tensor for a tensor backend. The exponent type of
+    /// [`powi`](Self::powi), and the dual of
+    /// [`LazyInteger::Real`](super::LazyInteger::Real): where an integer names the real it
+    /// casts into, a real names the integer that counts its powers.
+    ///
+    /// The machine numbers are width-matched bijections (`f32 ↔ i32`, `f64 ↔ i64`), but the
+    /// bound is deliberately the bare [`LazyInteger`] — **not** `LazyInteger<Real = Self>` —
+    /// because a *differentiable* real has no integer that differentiates back to it
+    /// (autodiff is undefined through an integer dtype), so it borrows a non-differentiable
+    /// integer here. Requiring the round-trip would make such a real un-implementable.
+    type Integer: LazyInteger;
+
     /// Lift a host scalar into this real substrate.
     ///
     /// For `f64` this is the identity and for `f32` it is a narrowing cast. Lazy
@@ -171,8 +184,13 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn sqrt(&self) -> Self;
     /// Absolute value.
     fn abs(&self) -> Self;
-    /// Raise to a real power.
-    fn powf(&self, p: f64) -> Self;
+    /// Raise to a real power, `self^p`.
+    ///
+    /// The exponent is itself a real of this substrate — a lazy backend can pow by a
+    /// value computed in the graph (another node, a device tensor), not just a host
+    /// constant. To raise to a literal exponent, lift it first: `x.powf(x.scalar_like(2.5))`
+    /// (or `T::scalar(2.5)`). Integer exponents have their own [`powi`](Self::powi).
+    fn powf(&self, p: Self) -> Self;
     /// Numerically-stable `ln(1 + e^x)` (softplus / `log1pexp`).
     fn ln_1p_exp(&self) -> Self;
 
@@ -192,6 +210,28 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn sinh(self) -> Self;
     fn cosh(self) -> Self;
     fn tanh(self) -> Self;
+    /// Inverse hyperbolic sine, `asinh(x) = ln(x + √(x² + 1))`.
+    ///
+    /// Defaulted through the existing `ln`/`sqrt` surface so every backend gets it
+    /// for free; the concrete reals (`f64`/`f32`) override with the libm form for
+    /// full accuracy. Like `sinh`/`cosh`/`tanh` it is an elementwise transcendental a
+    /// tensor compiler can lower, so it belongs on this write-once surface — the
+    /// conformal map projections (Transverse Mercator) are written in it.
+    #[inline]
+    fn asinh(self) -> Self {
+        (self.clone() + (self.clone() * self + Self::one()).sqrt()).ln()
+    }
+    /// Inverse hyperbolic cosine, `acosh(x) = ln(x + √(x² − 1))` (for `x ≥ 1`).
+    #[inline]
+    fn acosh(self) -> Self {
+        (self.clone() + (self.clone() * self - Self::one()).sqrt()).ln()
+    }
+    /// Inverse hyperbolic tangent, `atanh(x) = ½·ln((1 + x)/(1 − x))` (for `|x| < 1`).
+    #[inline]
+    fn atanh(self) -> Self {
+        let one = Self::one();
+        ((one.clone() + self.clone()) / (one - self)).ln() * Self::half()
+    }
     /// `(sin, cos)` in one call.
     #[inline]
     fn sin_cos(self) -> (Self, Self) {
@@ -202,8 +242,13 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     /// `√(self² + other²)` without intermediate overflow.
     fn hypot(self, other: Self) -> Self;
     fn cbrt(self) -> Self;
-    /// Integer power.
-    fn powi(self, n: i32) -> Self;
+    /// Integer power, `self^n` — exact repeated multiplication, defined for a negative
+    /// base (unlike [`powf`](Self::powf)). The exponent is a value of the integer
+    /// substrate [`Integer`](Self::Integer), not a host `i32`, so a lazy backend can raise
+    /// to a count it computed in the graph rather than only a compile-time constant. The
+    /// machine reals take it as their width-matched integer (`i32` for `f32`, `i64` for
+    /// `f64`).
+    fn powi(self, n: Self::Integer) -> Self;
     /// `self * a + b` (fused where the target supports it).
     fn mul_add(self, a: Self, b: Self) -> Self;
     fn recip(self) -> Self;

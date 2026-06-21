@@ -5,6 +5,7 @@ use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra};
 impl Arithmetic for f32 {}
 
 impl LazyReal for f32 {
+    type Integer = i32;
     #[inline]
     fn scalar(x: f64) -> Self {
         x as f32
@@ -26,8 +27,8 @@ impl LazyReal for f32 {
         f32::abs(*self)
     }
     #[inline]
-    fn powf(&self, p: f64) -> Self {
-        f32::powf(*self, p as f32)
+    fn powf(&self, p: Self) -> Self {
+        f32::powf(*self, p)
     }
     #[inline]
     fn ln_1p_exp(&self) -> Self {
@@ -77,6 +78,18 @@ impl LazyReal for f32 {
     #[inline]
     fn tanh(self) -> Self {
         f32::tanh(self)
+    }
+    #[inline]
+    fn asinh(self) -> Self {
+        f32::asinh(self)
+    }
+    #[inline]
+    fn acosh(self) -> Self {
+        f32::acosh(self)
+    }
+    #[inline]
+    fn atanh(self) -> Self {
+        f32::atanh(self)
     }
     #[inline]
     fn hypot(self, other: Self) -> Self {
@@ -155,7 +168,7 @@ impl LazyReal for f32 {
         f32::clamp(self, lo, hi)
     }
     // `f32` has no native special functions: evaluate in `f64` and narrow, the same
-    // way `scalar`/`powf` already do.
+    // way `scalar` already narrows a host constant.
     #[inline]
     fn erf(self) -> Self {
         crate::numeric::special::erf::erf(self as f64) as f32

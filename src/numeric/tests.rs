@@ -39,6 +39,43 @@ fn euler_constants_lift_on_every_real_tier() {
     assert!((f32::euler_gamma() - 0.577_215_7).abs() < 1e-6);
 }
 
+/// `powf` now takes its exponent in the same real substrate, so a power law can be
+/// written once over [`LazyReal`] with the exponent itself a value of the surface —
+/// here recovered as `log_b(b) = 1` so the result is just the base. A literal
+/// exponent is lifted with [`scalar_like`](LazyReal::scalar_like).
+fn power_law<T: LazyReal>(base: T, exponent: T) -> T {
+    base.powf(exponent)
+}
+
+#[test]
+fn lazy_real_powf_takes_a_real_exponent() {
+    // Exponent lifted as a `Self`, not an `f64`: the generic surface never sees `f64`.
+    assert!((power_law(2.0_f64, 2.0_f64.scalar_like(10.0)) - 1024.0).abs() < 1e-9);
+    assert!((power_law(2.0_f32, 2.0_f32.scalar_like(10.0)) - 1024.0).abs() < 1e-2);
+    // The exponent can be a computed value of the surface, not just a constant:
+    // x^(ln x / ln x) = x^1 = x.
+    let x = 3.7_f64;
+    assert!((x.powf(x.ln() / x.ln()) - x).abs() < 1e-12);
+}
+
+/// `powi` now takes its exponent from the integer substrate [`LazyReal::Integer`],
+/// not a host `i32`, so an integer power law is write-once over the surface with the
+/// exponent a value of the integer tier (here `T::Integer`, an [`LazyInteger`]).
+fn integer_power_law<T: LazyReal>(base: T, exponent: T::Integer) -> T {
+    base.powi(exponent)
+}
+
+#[test]
+fn lazy_real_powi_takes_an_integer_from_the_integer_tier() {
+    // Exponent is `<f64 as LazyReal>::Integer` (= i64, a `LazyInteger`), never an `i32`.
+    assert!((integer_power_law(2.0_f64, 10) - 1024.0).abs() < 1e-12);
+    assert!((integer_power_law(2.0_f32, 10) - 1024.0).abs() < 1e-3);
+    // Negative bases and exponents — the exact, repeated-multiplication semantics
+    // `powf` cannot give: (-2)^3 = -8, 2^-2 = 0.25.
+    assert_eq!((-2.0_f64).powi(3), -8.0);
+    assert!((2.0_f64.powi(-2) - 0.25).abs() < 1e-12);
+}
+
 #[test]
 fn softplus_is_stable_at_extremes() {
     assert!((f64::ln_1p_exp(&0.0) - core::f64::consts::LN_2).abs() < 1e-12);
@@ -64,6 +101,34 @@ fn lazy_real_carries_trig_and_select_on_f64_and_f32() {
     // The `min`/`max`/`clamp` selectors are on the lazy tier too.
     assert_eq!(LazyReal::max(LazyReal::min(3.0_f64, 5.0), 1.0), 3.0);
     assert_eq!(LazyReal::clamp(2.0_f32, 0.0, 1.0), 1.0);
+}
+
+/// `asinh`/`atanh` written once over [`LazyReal`] — the inverse hyperbolics the
+/// conformal map projections (Transverse Mercator) are written in. The native
+/// `f64`/`f32` overrides must agree with the `ln`/`sqrt` default, and each must
+/// invert its forward partner.
+fn asinh_then_sinh<T: LazyReal>(x: T) -> T {
+    x.asinh().sinh()
+}
+
+/// The default (`ln`/`sqrt`) spelling of `asinh`, to check the native override
+/// agrees with it. Mirrors the trait default so the two paths can be compared.
+fn asinh_via_ln<T: LazyReal>(x: T) -> T {
+    (x.clone() + (x.clone() * x + T::one()).sqrt()).ln()
+}
+
+#[test]
+fn lazy_real_inverse_hyperbolics_invert_and_match_default() {
+    // sinh∘asinh = id and tanh∘atanh = id on both concrete reals.
+    assert!((asinh_then_sinh(1.3_f64) - 1.3).abs() < 1e-12);
+    assert!((asinh_then_sinh(1.3_f32) - 1.3).abs() < 1e-5);
+    assert!((0.4_f64.atanh().tanh() - 0.4).abs() < 1e-12);
+    // acosh∘cosh = id for x ≥ 0.
+    assert!((2.0_f64.cosh().acosh() - 2.0).abs() < 1e-12);
+
+    // The native libm override agrees with the `ln`/`sqrt` default impl.
+    assert!((1.3_f64.asinh() - asinh_via_ln(1.3_f64)).abs() < 1e-12);
+    assert!((1.3_f32.asinh() - asinh_via_ln(1.3_f32)).abs() < 1e-5);
 }
 
 /// The Normal CDF `Φ(z) = ½·erfc(−z/√2)`, written once over [`LazyReal`]: it
@@ -114,10 +179,14 @@ fn ring_step<I: LazyInteger>(n: I, k: I) -> I {
 }
 
 #[test]
-fn lazy_ring_formula_runs_on_i64_and_i128() {
-    // (10 − 3)·(3 + 1) = 28, on both signed integer carriers.
+fn lazy_ring_formula_runs_on_i32_i64_and_i128() {
+    // (10 − 3)·(3 + 1) = 28, on every signed integer carrier.
+    assert_eq!(ring_step(10_i32, 3), 28);
     assert_eq!(ring_step(10_i64, 3), 28);
     assert_eq!(ring_step(10_i128, 3), 28);
+    // The width-matched cast into the real surface: i32 → f32, i64 → f64.
+    assert_eq!(3_i32.to_real(), 3.0_f32);
+    assert_eq!(3_i64.to_real(), 3.0_f64);
     // The integer surface: lift, sign, abs, Euclidean div/rem.
     assert_eq!(i64::from_i64(7), 7);
     assert_eq!(LazyInteger::signum(-7_i64), -1);

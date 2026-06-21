@@ -8,8 +8,9 @@
 //! `Integer` is a `Ring`, not a
 //! `Field`. Only the **signed** integers (a true additive
 //! group) qualify; the unsigned naturals are a semiring, so — as with the algebra
-//! [`Integer`] — this is implemented for `i64`/`i128`, the same convention XLA/JAX
-//! follow when they default index/count arrays to the signed `s32`/`s64`.
+//! [`Integer`] — this is implemented for `i32`/`i64`/`i128`, the same convention XLA/JAX
+//! follow when they default index/count arrays to the signed `s32`/`s64`. Each is
+//! width-matched to the real it casts into: `i32 → f32`, `i64`/`i128 → f64`.
 //!
 //! It is the dtype a lazy backend uses for count / index / shape data (an XLA `s64`
 //! tensor): the operators lower to integer `Add`/`Sub`/`Mul`, `div_rem` to `Div`/`Rem`,
@@ -23,12 +24,12 @@ use super::{LazyReal, LazyRing};
 /// absolute value, and Euclidean division-with-remainder. The lazy peer of the concrete
 /// `Integer`.
 ///
-/// Implemented by `i64`/`i128`; the seam a lazy integer **tensor** (an XLA `s64` array)
-/// slots into, so a discrete-statistics formula written over counts runs on every
+/// Implemented by `i32`/`i64`/`i128`; the seam a lazy integer **tensor** (an XLA `s64`
+/// array) slots into, so a discrete-statistics formula written over counts runs on every
 /// backend.
 pub trait LazyInteger: LazyRing {
-    /// The real surface this integer casts into — `f64` for the machine integers, a
-    /// float-dtype tensor for a tensor backend. Mirrors
+    /// The real surface this integer casts into — `f32` for `i32`, `f64` for `i64`/`i128`,
+    /// a float-dtype tensor for a tensor backend. Mirrors
     /// [`NormedDivisionAlgebra::RealPart`](super::NormedDivisionAlgebra::RealPart): the
     /// real field associated to the carrier.
     type Real: LazyReal;
@@ -66,6 +67,30 @@ pub trait LazyInteger: LazyRing {
     /// division, **not** the field `÷` a [`LazyRing`] lacks. Truncates toward zero, so
     /// `self == quotient * rhs + remainder` (XLA `Div` paired with `Rem`).
     fn div_rem(self, rhs: Self) -> (Self, Self);
+}
+
+impl LazyInteger for i32 {
+    type Real = f32;
+    #[inline]
+    fn from_i64(x: i64) -> Self {
+        x as i32
+    }
+    #[inline]
+    fn to_real(&self) -> f32 {
+        *self as f32
+    }
+    #[inline]
+    fn signum(self) -> Self {
+        i32::signum(self)
+    }
+    #[inline]
+    fn abs(self) -> Self {
+        i32::abs(self)
+    }
+    #[inline]
+    fn div_rem(self, rhs: Self) -> (Self, Self) {
+        (self / rhs, self % rhs)
+    }
 }
 
 impl LazyInteger for i64 {
