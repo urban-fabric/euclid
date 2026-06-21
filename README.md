@@ -80,14 +80,15 @@ uses, no more:
       Euclidean `div_rem`, and `to_real`) — the `s64`-style count/index/shape dtype.
       Implemented for `i64`/`i128`.
 - **`LazyReal`** — the real-number analysis surface: the transcendentals
-  (`exp`/`ln`/`sqrt`, trig, `atan2`/`hypot`, hyperbolics), rounding/sign, the
+  (`exp`/`ln`/`ln_1p`/`exp_m1`/`sqrt`, trig, `atan2`/`hypot`, hyperbolics), rounding/sign, the
   comparison-free `min`/`max`/`clamp` selectors, a library of lifted constants
   (`pi`, `e`, `half_ln_tau`, `euler_gamma`, the log-base factors, …), and the
   **special functions** that probability and statistics reach for —
   `erf`/`erfc`/`erf_inv`/`erfcx`, `ln_gamma`/`digamma`/`trigamma`, the regularized
   incomplete gamma `gamma_lr`/`gamma_ur`, the regularized incomplete beta `beta_reg`,
-  the scaled modified Bessel `bessel_i0e`/`bessel_i1e`, `xlogy`, and scalar stable
-  log-domain forms such as `ln_1p_exp`, `ln_1m_exp`, `ln_add_exp`, and `ln_sub_exp`.
+  the scaled modified Bessel `bessel_i0e`/`bessel_i1e`, `xlogy`/`xlog1py`, and scalar stable
+  log-domain forms such as `ln_1m`, `ln_1p_exp`, `ln_1m_exp`, `ln_exp_m1`,
+  `ln_sigmoid`, `ln_1m_sigmoid`, `logit`, `ln_add_exp`, and `ln_sub_exp`.
   Each has a direct tensor-op analogue or lowers through those scalar primitives.
 - **`NormedDivisionAlgebra`** — a normed division algebra over ℝ. By
   Frobenius/Hurwitz the associative ones are exactly **ℝ (1D), ℂ (2D), ℍ (4D)**, so one

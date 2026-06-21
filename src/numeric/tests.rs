@@ -68,6 +68,38 @@ fn lazy_real_powi_takes_an_integer_from_the_integer_tier() {
 }
 
 #[test]
+fn scalar_stable_operations_handle_cancellation_and_tails() {
+    let tiny = 1e-16_f64;
+    assert_eq!((1.0 + tiny).ln(), 0.0);
+    assert!((<f64 as LazyReal>::ln_1p(&tiny) - tiny).abs() < 1e-30);
+    assert_eq!(tiny.exp() - 1.0, 0.0);
+    assert!((<f64 as LazyReal>::exp_m1(&tiny) - tiny).abs() < 1e-30);
+    assert!((tiny.ln_1m() + tiny).abs() < 1e-30);
+
+    let small = 1e-16_f64;
+    assert!(small.ln_exp_m1().is_finite());
+    assert!((small.ln_exp_m1() - small.ln()).abs() < 1e-12);
+
+    let big = 1000.0_f64;
+    assert_eq!(big.sigmoid(), 1.0);
+    assert_eq!((-big).sigmoid(), 0.0);
+    assert!((big.ln_1m_sigmoid() + big).abs() < 1e-12);
+    assert!(((-big).ln_sigmoid() + big).abs() < 1e-12);
+
+    let p = 1.0_f64 - 1e-12;
+    assert!((p.logit().sigmoid() - p).abs() < 1e-15);
+
+    assert_eq!(0.0_f64.xlog1py(-1.0), 0.0);
+    assert!((2.0_f64.xlog1py(tiny) - 2.0 * tiny).abs() < 1e-30);
+    assert!((2.0_f64.xlog1my(tiny) + 2.0 * tiny).abs() < 1e-30);
+
+    let tiny32 = 1e-8_f32;
+    assert_eq!((1.0_f32 + tiny32).ln(), 0.0);
+    assert!((<f32 as LazyReal>::ln_1p(&tiny32) - tiny32).abs() < 1e-12);
+    assert!((<f32 as LazyReal>::exp_m1(&tiny32) - tiny32).abs() < 1e-12);
+}
+
+#[test]
 fn softplus_is_stable_at_extremes() {
     assert!((f64::ln_1p_exp(&0.0) - core::f64::consts::LN_2).abs() < 1e-12);
     let big = 50.0_f64;

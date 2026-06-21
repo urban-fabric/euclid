@@ -19,6 +19,14 @@ impl LazyReal for f64 {
         f64::ln(*self)
     }
     #[inline]
+    fn ln_1p(&self) -> Self {
+        f64::ln_1p(*self)
+    }
+    #[inline]
+    fn exp_m1(&self) -> Self {
+        f64::exp_m1(*self)
+    }
+    #[inline]
     fn sqrt(&self) -> Self {
         f64::sqrt(*self)
     }
@@ -234,6 +242,11 @@ impl LazyReal for f64 {
         // 0·ln 0 = 0 (and 0·ln y = 0): short-circuit the absorbing zero so the
         // multiply never forms 0·(−∞) = NaN.
         if self == 0.0 { 0.0 } else { self * y.ln() }
+    }
+    #[inline]
+    fn xlog1py(self, y: Self) -> Self {
+        // 0·ln(1 + y) = 0, including y = −1 where the logarithm is −∞.
+        if self == 0.0 { 0.0 } else { self * y.ln_1p() }
     }
     #[inline]
     fn gamma(self) -> Self {

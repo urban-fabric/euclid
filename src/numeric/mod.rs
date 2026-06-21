@@ -2,10 +2,10 @@
 //!
 //! - **Lazy** ([`Arithmetic`] → [`LazyReal`]/[`LazyComplex`]) — the elementwise analysis
 //!   surface over `+ - * /`, `Clone` not `Copy`: transcendentals, rounding/sign, the
-//!   comparison-free `min`/`max`/`clamp` selectors, `conj`/magnitude, and scalar-literal
-//!   lifting. Every op lowers to a tensor compiler (`Sin`/`Max`/`Select`/…), so a pure
-//!   formula runs on every backend. Nothing here returns a scalar `bool` or needs the
-//!   concrete number line.
+//!   comparison-free `min`/`max`/`clamp` selectors, stable scalar log-domain helpers,
+//!   `conj`/magnitude, and scalar-literal lifting. Every op lowers to a tensor compiler
+//!   (`Sin`/`Max`/`Select`/…), so a pure formula runs on every backend. Nothing here returns
+//!   a scalar `bool` or needs the concrete number line.
 //! - **Semiring** ([`LazySemiring`] → [`LazyNatural`]) — the carriers with `+ *` but no
 //!   subtraction, the naturals (a `u64` non-negative count/index/shape array). One rung
 //!   below the ring; cross into the signed integers via [`LazyNatural::to_integer`] when a

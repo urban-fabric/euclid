@@ -22,8 +22,9 @@
 //!   structure: [`LazySemiring`] (`+ *`, the naturals via [`LazyNatural`]) refined by
 //!   [`LazyRing`] (`+ - *`), in turn refined by [`Arithmetic`] (adds `/`) and
 //!   [`LazyInteger`]; [`LazyReal`] (transcendentals, constants, selectors, special
-//!   functions); [`NormedDivisionAlgebra`] over ℝ/ℂ/ℍ, refined by [`LazyComplex`] and
-//!   [`LazyQuaternion`]; and [`LazyBool`] + [`LazyCompare`], the mask tier.
+//!   functions, and stable scalar log-domain helpers); [`NormedDivisionAlgebra`] over
+//!   ℝ/ℂ/ℍ, refined by [`LazyComplex`] and [`LazyQuaternion`]; and [`LazyBool`] +
+//!   [`LazyCompare`], the mask tier.
 //! - **Array contracts** ([`array`](mod@array)) — the rank-graded peers: [`LazyVector`]
 //!   (rank 1), [`LazyMatrix`] (rank 2: matmul + the SPD quantities), [`LazyTensor`]
 //!   (rank n: shape, reshape, reductions, contraction). [`LazyTensor`] sits on

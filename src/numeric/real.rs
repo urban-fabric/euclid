@@ -161,6 +161,10 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn exp(&self) -> Self;
     /// Natural logarithm.
     fn ln(&self) -> Self;
+    /// Natural logarithm of `1 + x`, accurate when `x` is near zero.
+    fn ln_1p(&self) -> Self;
+    /// `e^x − 1`, accurate when `x` is near zero.
+    fn exp_m1(&self) -> Self;
     /// Square root.
     fn sqrt(&self) -> Self;
     /// Absolute value.
@@ -295,7 +299,59 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     /// expose as `xlogy`).
     fn xlogy(self, y: Self) -> Self;
 
+    /// `x · ln(1 + y)` with the same absorbing-zero convention as [`xlogy`](Self::xlogy):
+    /// `0 · ln(0) = 0` when `y = -1`, and `0 · ln(1 + y) = 0` for any `y`.
+    ///
+    /// This is a **trait primitive**, not a defaulted `x * y.ln_1p()`: honoring the
+    /// absorbing-zero case needs a value-dependent select that the comparison-free real
+    /// surface cannot express.
+    fn xlog1py(self, y: Self) -> Self;
+
     // --- stable composites (defaulted) ---
+
+    /// Stable `ln(1 − x)`, accurate when `x` is near zero; defined for `x ≤ 1`.
+    #[inline]
+    fn ln_1m(&self) -> Self {
+        (-self.clone()).ln_1p()
+    }
+
+    /// Stable `ln(e^x − 1)`, the inverse of [`ln_1p_exp`](Self::ln_1p_exp) on positive
+    /// inputs. Defined for `x > 0`.
+    #[inline]
+    fn ln_exp_m1(&self) -> Self {
+        self.clone() + (-self.clone()).ln_1m_exp()
+    }
+
+    /// Stable logistic sigmoid `1 / (1 + e^{-x})`, evaluated without overflowing the
+    /// intermediate exponential.
+    #[inline]
+    fn sigmoid(&self) -> Self {
+        self.clone().min(Self::zero()).exp() / (Self::one() + (-self.clone().abs()).exp())
+    }
+
+    /// Stable `ln(sigmoid(x)) = -ln(1 + e^{-x})`.
+    #[inline]
+    fn ln_sigmoid(&self) -> Self {
+        -(-self.clone()).ln_1p_exp()
+    }
+
+    /// Stable `ln(1 − sigmoid(x)) = -ln(1 + e^x)`.
+    #[inline]
+    fn ln_1m_sigmoid(&self) -> Self {
+        -self.ln_1p_exp()
+    }
+
+    /// Stable logit, `ln(p / (1 − p))`, using [`ln_1m`](Self::ln_1m) for the complement.
+    #[inline]
+    fn logit(&self) -> Self {
+        self.clone().ln() - self.ln_1m()
+    }
+
+    /// `x · ln(1 − y)` with the same absorbing-zero convention as [`xlogy`](Self::xlogy).
+    #[inline]
+    fn xlog1my(self, y: Self) -> Self {
+        self.xlog1py(-y)
+    }
 
     /// Stable pairwise `ln(eᵃ + eᵇ) = max(a, b) + ln(1 + e^{−|a−b|})`.
     #[inline]
