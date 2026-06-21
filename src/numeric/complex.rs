@@ -1,19 +1,13 @@
-//! The complex/quaternion lazy traits: [`LazyComplex`] and [`LazyQuaternion`].
-//! The concrete `Complex` number (the `Copy` tier) now lives in the `napier` crate.
+//! The complex/quaternion lazy traits: [`LazyComplex`] and [`LazyQuaternion`]. The concrete
+//! `Complex` number (the `Copy` tier) lives in the `napier` crate.
 
 use super::NormedDivisionAlgebra;
 
-/// A complex-valued numeric scalar: a [`NormedDivisionAlgebra`] that additionally exposes its
-/// imaginary part. Implemented by genuinely-complex types — `Complex{32,64}` and a
-/// complex-dtype `Tensor` — **not** by the real scalars (`f64`/`f32` are [`LazyReal`](super::LazyReal)s).
-///
-/// The real field ([`RealPart`](NormedDivisionAlgebra::RealPart)), `conjugate`, `magnitude`, and
-/// `norm_sqr` all come from [`NormedDivisionAlgebra`]; this trait adds only the **imaginary**
-/// component, with `re`/`conj` as the idiomatic complex spellings of
-/// [`real_part`](NormedDivisionAlgebra::real_part)/[`conjugate`](NormedDivisionAlgebra::conjugate).
-///
-/// Construction from explicit `(re, im)` parts is **not** here; it lives on the
-/// concrete complex constructors (e.g. `Complex64::new`, `Tensor::complex_from_parts`).
+/// A complex-valued numeric scalar: a [`NormedDivisionAlgebra`] that adds the imaginary
+/// part. Implemented by genuinely-complex types (`Complex{32,64}`, a complex `Tensor`), not
+/// the real scalars. The real field, `conjugate`, `magnitude`, and `norm_sqr` come from
+/// [`NormedDivisionAlgebra`]; `re`/`conj` are the idiomatic complex spellings. Construction
+/// from `(re, im)` lives on the concrete constructors, not here.
 pub trait LazyComplex: NormedDivisionAlgebra {
     /// Imaginary part.
     fn im(&self) -> Self::RealPart;
@@ -28,14 +22,10 @@ pub trait LazyComplex: NormedDivisionAlgebra {
     }
 }
 
-/// A **quaternion** numeric scalar (4D): a [`NormedDivisionAlgebra`] that exposes its
-/// three imaginary components `i`, `j`, `k` (`q = w + x·i + y·j + z·k`). The real part
-/// `w`, conjugate, magnitude, and `norm_sqr` come from [`NormedDivisionAlgebra`]; this
-/// trait adds only the imaginary basis. Implemented by `Quaternion{32,64}`.
-///
-/// ℍ is **non-commutative** (`i·j = k` but `j·i = −k`), so it is a *division ring*, not a
-/// `Field` — it carries the numeric/division-algebra structure
-/// here, but not the commutative-field algebra (and so not, yet, the matrix kernels).
+/// A **quaternion** numeric scalar (4D): a [`NormedDivisionAlgebra`] adding the three
+/// imaginary components of `q = w + x·i + y·j + z·k`. Implemented by `Quaternion{32,64}`.
+/// ℍ is non-commutative (`i·j = k`, `j·i = −k`), so a division ring rather than a `Field` —
+/// it carries the division-algebra structure here, but not the matrix kernels.
 pub trait LazyQuaternion: NormedDivisionAlgebra {
     /// The `i` (first imaginary) component.
     fn i(&self) -> Self::RealPart;

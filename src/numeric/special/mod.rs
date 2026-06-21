@@ -1,16 +1,9 @@
-//! Special functions — the concrete `f64` reference implementations behind the
-//! [`LazyReal`](crate::numeric::LazyReal) special-function methods.
-//!
-//! Every entry here is an *elementwise* analytic function with a direct tensor-op
-//! analogue (`Erf`/`Lgamma`/`Digamma`/`Igamma`/`RegularizedIncompleteBeta`, …), so
-//! the same `LazyReal` method that runs `f64` on the CPU lowers to the matching op
-//! on a tensor backend. The standard algorithms are used throughout: Lanczos for
-//! the gamma function, Numerical-Recipes continued fractions for the incomplete
-//! gamma/beta, and Giles's rational approximation for the inverse error function.
-//!
-//! Composite quantities built *on top of* these primitives (log-beta, factorials,
-//! the multivariate gamma/beta, log-sum-exp) live with their consumers rather than
-//! here.
+//! Special functions — the `f64` reference implementations behind the
+//! [`LazyReal`](crate::numeric::LazyReal) special-function methods, each with a direct
+//! tensor-op analogue (`Erf`/`Lgamma`/`Igamma`/…). Standard algorithms throughout: Lanczos
+//! for gamma, Numerical-Recipes continued fractions for the incomplete gamma/beta, Giles's
+//! approximation for the inverse error function. Composite quantities (log-beta, factorials,
+//! log-sum-exp) live with their consumers.
 
 pub mod bessel;
 pub mod beta;

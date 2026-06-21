@@ -1,41 +1,29 @@
-//! The real-number lazy analysis surface [`LazyReal`]. The concrete `Real`
-//! number (the `Copy`, ordered tier) now lives in the `napier` crate.
+//! The real-number lazy analysis surface [`LazyReal`]. The concrete `Real` number (the
+//! `Copy`, ordered tier) lives in the `napier` crate.
 
 use super::{LazyInteger, NormedDivisionAlgebra};
 
-/// A real-valued numeric scalar: an [`Arithmetic`](super::Arithmetic) plus the real transcendentals that
-/// inherently-real formulas (probability densities, geometry kernels) are written
-/// in.
+/// A real-valued numeric scalar: an [`Arithmetic`](super::Arithmetic) plus the real
+/// transcendentals inherently-real formulas (densities, geometry kernels) are written in.
 ///
-/// `LazyReal: NormedDivisionAlgebra<RealPart = Self>` — a real scalar's real field is itself, so
-/// its [`conjugate`](NormedDivisionAlgebra::conjugate) is the identity and a kernel generic over
-/// [`NormedDivisionAlgebra`] collapses to the plain real case at a `LazyReal` element.
+/// `LazyReal: NormedDivisionAlgebra<RealPart = Self>` — a real scalar's real field is
+/// itself, so its `conjugate` is the identity and a [`NormedDivisionAlgebra`] kernel
+/// collapses to the plain real case here.
 pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
-    /// The integer substrate this real's integer powers are indexed by — `i32` for `f32`,
-    /// `i64` for `f64`, an integer-dtype tensor for a tensor backend. The exponent type of
-    /// [`powi`](Self::powi), and the dual of
-    /// [`LazyInteger::Real`](super::LazyInteger::Real): where an integer names the real it
-    /// casts into, a real names the integer that counts its powers.
-    ///
-    /// The machine numbers are width-matched bijections (`f32 ↔ i32`, `f64 ↔ i64`), but the
-    /// bound is deliberately the bare [`LazyInteger`] — **not** `LazyInteger<Real = Self>` —
-    /// because a *differentiable* real has no integer that differentiates back to it
-    /// (autodiff is undefined through an integer dtype), so it borrows a non-differentiable
-    /// integer here. Requiring the round-trip would make such a real un-implementable.
+    /// The integer substrate indexing this real's integer powers — `i32` for `f32`, `i64`
+    /// for `f64`, an integer tensor for a tensor backend; the exponent type of
+    /// [`powi`](Self::powi). The bound is the bare [`LazyInteger`], not
+    /// `LazyInteger<Real = Self>`: a differentiable real has no integer differentiating
+    /// back to it, so requiring the round-trip would make it un-implementable.
     type Integer: LazyInteger;
 
-    /// Lift a host scalar into this real substrate.
-    ///
-    /// For `f64` this is the identity and for `f32` it is a narrowing cast. Lazy
-    /// graph backends should represent it as a scalar constant node, ideally
-    /// interned or otherwise cheap to reuse.
+    /// Lift a host scalar into this real substrate (identity for `f64`, a narrowing cast
+    /// for `f32`). Lazy backends should represent it as a constant node, ideally interned.
     fn scalar(x: f64) -> Self;
 
-    /// Lift a host scalar using `self` as graph/device/shape context.
-    ///
-    /// The default is a scalar constant. Tensor or expression backends may
-    /// override this when constants need to live in the same arena, dtype, device,
-    /// or broadcast context as an existing value.
+    /// Lift a host scalar using `self` as graph/device/shape context. Defaults to
+    /// [`scalar`](Self::scalar); backends override when constants must share an existing
+    /// value's arena, dtype, device, or broadcast context.
     #[inline]
     fn scalar_like(&self, x: f64) -> Self {
         Self::scalar(x)
@@ -125,11 +113,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
         Self::scalar(0.5 * core::f64::consts::TAU.ln())
     }
 
-    /// Euler's number `e`.
-    ///
-    /// The base of the natural exponential — the fixed point the whole analysis
-    /// surface (`exp`/`ln`) is written around. Naming it directly lets a lazy
-    /// backend intern the constant instead of recovering it as `T::one().exp()`.
+    /// Euler's number `e`. Named directly so a lazy backend can intern it rather than
+    /// recover it as `T::one().exp()`.
     #[inline]
     fn e() -> Self {
         Self::scalar(core::f64::consts::E)
@@ -165,12 +150,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
         Self::scalar(core::f64::consts::LOG10_2)
     }
 
-    /// The Euler–Mascheroni constant `γ ≈ 0.5772…`.
-    ///
-    /// The limit of `Σ_{k≤n} 1/k − ln n`; it is `−ψ(1)` (the additive constant of
-    /// the digamma function) and the additive term in the closed-form entropies of
-    /// the Gumbel, Weibull, and Gamma families. It is not a `core` float constant,
-    /// so it is lifted from its decimal expansion.
+    /// The Euler–Mascheroni constant `γ ≈ 0.5772…` (`= −ψ(1)`); the additive term in the
+    /// Gumbel/Weibull/Gamma entropies. Not a `core` constant, so lifted from its digits.
     #[inline]
     fn euler_gamma() -> Self {
         Self::scalar(0.577_215_664_901_532_9)
@@ -184,22 +165,16 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn sqrt(&self) -> Self;
     /// Absolute value.
     fn abs(&self) -> Self;
-    /// Raise to a real power, `self^p`.
-    ///
-    /// The exponent is itself a real of this substrate — a lazy backend can pow by a
-    /// value computed in the graph (another node, a device tensor), not just a host
-    /// constant. To raise to a literal exponent, lift it first: `x.powf(x.scalar_like(2.5))`
-    /// (or `T::scalar(2.5)`). Integer exponents have their own [`powi`](Self::powi).
+    /// Raise to a real power, `self^p`. The exponent is itself a real of this substrate, so
+    /// a lazy backend can pow by a graph-computed value; lift a literal with
+    /// `x.powf(x.scalar_like(2.5))`. Integer exponents have their own [`powi`](Self::powi).
     fn powf(&self, p: Self) -> Self;
     /// Numerically-stable `ln(1 + e^x)` (softplus / `log1pexp`).
     fn ln_1p_exp(&self) -> Self;
 
     // --- trigonometry ---
-    // Elementwise transcendentals. Every backend that can run a formula can run
-    // these too — a tensor compiler lowers them to `Sin`/`Cos`/`Atan2`/… — so they
-    // belong on the write-once surface, not only on the concrete `Real` tier.
-    // (These take `self` by value to match the concrete `Real` signatures they were
-    // promoted from; the `Clone` bound lets a caller keep the input when needed.)
+    // Elementwise transcendentals a tensor compiler lowers to `Sin`/`Cos`/`Atan2`/…; taken
+    // by value to match the concrete `Real` signatures (the `Clone` bound keeps the input).
     fn sin(self) -> Self;
     fn cos(self) -> Self;
     fn tan(self) -> Self;
@@ -210,13 +185,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn sinh(self) -> Self;
     fn cosh(self) -> Self;
     fn tanh(self) -> Self;
-    /// Inverse hyperbolic sine, `asinh(x) = ln(x + √(x² + 1))`.
-    ///
-    /// Defaulted through the existing `ln`/`sqrt` surface so every backend gets it
-    /// for free; the concrete reals (`f64`/`f32`) override with the libm form for
-    /// full accuracy. Like `sinh`/`cosh`/`tanh` it is an elementwise transcendental a
-    /// tensor compiler can lower, so it belongs on this write-once surface — the
-    /// conformal map projections (Transverse Mercator) are written in it.
+    /// Inverse hyperbolic sine, `asinh(x) = ln(x + √(x² + 1))`. Defaulted through
+    /// `ln`/`sqrt` so every backend gets it; `f64`/`f32` override with the libm form.
     #[inline]
     fn asinh(self) -> Self {
         (self.clone() + (self.clone() * self + Self::one()).sqrt()).ln()
@@ -242,12 +212,10 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     /// `√(self² + other²)` without intermediate overflow.
     fn hypot(self, other: Self) -> Self;
     fn cbrt(self) -> Self;
-    /// Integer power, `self^n` — exact repeated multiplication, defined for a negative
-    /// base (unlike [`powf`](Self::powf)). The exponent is a value of the integer
-    /// substrate [`Integer`](Self::Integer), not a host `i32`, so a lazy backend can raise
-    /// to a count it computed in the graph rather than only a compile-time constant. The
-    /// machine reals take it as their width-matched integer (`i32` for `f32`, `i64` for
-    /// `f64`).
+    /// Integer power, `self^n` — exact repeated multiplication, defined for negative bases
+    /// (unlike [`powf`](Self::powf)). The exponent is a value of the [`Integer`](Self::Integer)
+    /// substrate (`i32` for `f32`, `i64` for `f64`), so a backend can raise to a graph-computed
+    /// count.
     fn powi(self, n: Self::Integer) -> Self;
     /// `self * a + b` (fused where the target supports it).
     fn mul_add(self, a: Self, b: Self) -> Self;
@@ -270,22 +238,17 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn to_degrees(self) -> Self;
 
     // --- elementwise select (NaN-aware on the concrete reals) ---
-    // The comparison-free `select` primitives: a tensor backend lowers these to
-    // `Max`/`Min`/`Clamp`, so piecewise / support-indicator kernels stay portable
-    // without a `bool`-returning comparison the lazy tier cannot express.
+    // Comparison-free selectors lowering to `Max`/`Min`/`Clamp`, so piecewise kernels stay
+    // portable without a `bool`-returning comparison.
     fn min(self, other: Self) -> Self;
     fn max(self, other: Self) -> Self;
     fn clamp(self, lo: Self, hi: Self) -> Self;
 
     // --- special functions ---
-    // The elementwise analytic functions a probability/statistics formula reaches
-    // for once it leaves pure algebra: the error function, the gamma family, and the
-    // regularized incomplete gamma/beta CDF kernels. Each has a direct tensor-op
-    // analogue (`Erf`/`Lgamma`/`Digamma`/`Igamma`/`RegularizedIncompleteBeta`, …), so
-    // a backend lowers them the same way it lowers `exp`/`sin`. The concrete `f64`/
-    // `f32` reference implementations live in [`crate::numeric::special`]. Where a function
-    // takes auxiliary parameters, `self` is the *evaluation point* (the lazy
-    // variable) and the parameters follow.
+    // The analytic functions a probability formula reaches for past pure algebra. Each has
+    // a direct tensor-op analogue (`Erf`/`Lgamma`/`Igamma`/…); the `f64`/`f32` reference
+    // impls live in [`crate::numeric::special`]. `self` is always the evaluation point, with
+    // any parameters following.
 
     /// The error function `erf(x)`.
     fn erf(self) -> Self;
@@ -309,15 +272,13 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn beta_reg(self, a: Self, b: Self) -> Self;
 
     /// Numerically-stable `ln(1 − e^x)` (`log1mexp`), the complement of
-    /// [`ln_1p_exp`](Self::ln_1p_exp); defined for `x < 0`. The stable Gamma /
-    /// exponential / Normal log-CDF complements are written through it.
+    /// [`ln_1p_exp`](Self::ln_1p_exp); defined for `x < 0`.
     fn ln_1m_exp(&self) -> Self;
-    /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)` — the
-    /// stable kernel of a Gaussian / Wald log-CDF tail.
+    /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)` — the stable
+    /// kernel of a Gaussian / Wald log-CDF tail.
     fn erfcx(self) -> Self;
-    /// The exponentially-scaled modified Bessel `I₀ᵉ(x) = e^{−|x|} I₀(x)`. From it
-    /// `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`, the directional
-    /// normalizers, follow without overflow.
+    /// The exponentially-scaled modified Bessel `I₀ᵉ(x) = e^{−|x|} I₀(x)`, the overflow-free
+    /// route to `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`.
     fn bessel_i0e(self) -> Self;
     /// The exponentially-scaled modified Bessel `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
     fn bessel_i1e(self) -> Self;

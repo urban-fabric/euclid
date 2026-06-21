@@ -1,15 +1,9 @@
-//! Modified **Bessel functions of the first kind**, `I₀` and `I₁`, their
-//! exponentially-scaled forms `I₀ᵉ`/`I₁ᵉ` (`Iₙᵉ(x) = e^{−|x|} Iₙ(x)`), the stable
-//! ratio `I₁/I₀`, and a stable `ln I₀`.
-//!
-//! These are the normalising constants and moments of directional distributions
-//! (the von Mises density is `e^{κ cos θ} / (2π I₀(κ))`, and its circular variance
-//! is `1 − I₁(κ)/I₀(κ)`). The scaled `I₀ᵉ`/`I₁ᵉ` are the concrete `f64` reference
-//! behind the [`LazyReal`](crate::numeric::LazyReal) `bessel_i0e`/`bessel_i1e`
-//! methods, which a tensor backend lowers to its `BesselI0e`/`BesselI1e` ops; from
-//! them `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ` follow without overflow.
-//! Implemented with the Abramowitz & Stegun polynomial approximations
-//! (≈ 1e-7 relative accuracy).
+//! Modified **Bessel functions of the first kind** `I₀`/`I₁`, their exponentially-scaled
+//! forms `Iₙᵉ(x) = e^{−|x|} Iₙ(x)`, the stable ratio `I₁/I₀`, and a stable `ln I₀` — the
+//! normalizers and moments of directional distributions (von Mises). The scaled forms back
+//! the [`LazyReal`](crate::numeric::LazyReal) `bessel_i0e`/`bessel_i1e` methods and give
+//! `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ` without overflow. Abramowitz & Stegun
+//! polynomial approximations (≈ 1e-7 relative accuracy).
 
 use core::f64::consts::PI;
 
@@ -90,9 +84,8 @@ pub fn i1e(x: f64) -> f64 {
     }
 }
 
-/// The ratio `I₁(x)/I₀(x) ∈ [0, 1)` for `x ≥ 0` — the von Mises mean resultant
-/// length. Stable for large `x`: the shared `eˣ/√x` growth factor cancels, so it
-/// never overflows (unlike `i1(x)/i0(x)` computed separately).
+/// The ratio `I₁(x)/I₀(x) ∈ [0, 1)` for `x ≥ 0` (the von Mises mean resultant length).
+/// Stable for large `x`: the shared `eˣ/√x` growth factor cancels, so it never overflows.
 pub fn i1_over_i0(x: f64) -> f64 {
     let ax = x.abs();
     if ax < 3.75 {
@@ -128,16 +121,10 @@ fn ln_add_exp(a: f64, b: f64) -> f64 {
     hi + (lo - hi).exp().ln_1p()
 }
 
-/// `ln I_ν(x)` — the **modified Bessel function of the first kind of real order**
-/// `ν ≥ 0`, argument `x ≥ 0`, in log space.
-///
-/// Evaluated from the ascending series `I_ν(x) = Σ_m (x/2)^{2m+ν} / (m! Γ(ν+m+1))`
-/// accumulated by **log-sum-exp** over its terms, so it never overflows and stays
-/// accurate for *any* order and argument (unlike the `eˣ/√x` asymptotic, which fails
-/// once `x` is no longer ≫ `ν²`). The term count grows with the series peak
-/// `m* ≈ (√(x²+ν²) − ν)/2`, which is modest for realistic concentrations.
-///
-/// Returns `0` for `x = 0, ν = 0` and `−∞` for `x = 0, ν > 0`.
+/// `ln I_ν(x)` — modified Bessel of the first kind, real order `ν ≥ 0`, argument `x ≥ 0`,
+/// in log space. Accumulates the ascending series `Σ_m (x/2)^{2m+ν} / (m! Γ(ν+m+1))` by
+/// log-sum-exp, so it never overflows and stays accurate for any order/argument. Returns `0`
+/// for `x = ν = 0` and `−∞` for `x = 0, ν > 0`.
 #[must_use]
 pub fn ln_iv(nu: f64, x: f64) -> f64 {
     debug_assert!(nu >= 0.0 && x >= 0.0, "ln_iv needs ν ≥ 0, x ≥ 0");
@@ -145,8 +132,8 @@ pub fn ln_iv(nu: f64, x: f64) -> f64 {
         return if nu == 0.0 { 0.0 } else { f64::NEG_INFINITY };
     }
     let ln_half_x = (0.5 * x).ln();
-    let ln_x2_4 = 2.0 * ln_half_x; // ln(x²/4) — the term-ratio numerator
-    // Accumulate ln Σ aₘ with a₀ = 1 (ln a₀ = 0) and aₘ/aₘ₋₁ = (x²/4)/(m(ν+m)).
+    let ln_x2_4 = 2.0 * ln_half_x; // ln(x²/4), the term-ratio numerator
+    // Accumulate ln Σ aₘ with a₀ = 1 and aₘ/aₘ₋₁ = (x²/4)/(m(ν+m)).
     let m_peak = 0.5 * ((x * x + nu * nu).sqrt() - nu);
     let mut ln_term = 0.0;
     let mut ln_sum = 0.0;
@@ -155,11 +142,11 @@ pub fn ln_iv(nu: f64, x: f64) -> f64 {
         ln_term += ln_x2_4 - m.ln() - (nu + m).ln();
         ln_sum = ln_add_exp(ln_sum, ln_term);
         if m > m_peak && ln_term < ln_sum - 38.0 {
-            break; // past the peak and contributing below f64 precision
+            break; // past the peak, below f64 precision
         }
         m += 1.0;
         if m > 1.0e7 {
-            break; // safety backstop (never reached for realistic κ)
+            break; // safety backstop
         }
     }
     nu.mul_add(ln_half_x, ln_sum) - ln_gamma(nu + 1.0)

@@ -1,42 +1,26 @@
-//! The integer lazy ring surface [`LazyInteger`] — the ring-tier (no field
-//! division) peer of [`LazyReal`](super::LazyReal).
+//! The integer lazy ring surface [`LazyInteger`] — the ring-tier (no division) peer of
+//! [`LazyReal`](super::LazyReal).
 //!
-//! Where [`Arithmetic`](super::Arithmetic) is the *field* substrate (`+ - * /`),
-//! integers form a **ring**: `+ - *` and Euclidean [`div_rem`](LazyInteger::div_rem),
-//! but no multiplicative inverse. `LazyInteger` is therefore a
-//! [`LazyRing`](super::LazyRing) — it drops `Div` — exactly as the concrete
-//! `Integer` is a `Ring`, not a
-//! `Field`. Only the **signed** integers (a true additive
-//! group) qualify; the unsigned naturals are a semiring, so — as with the algebra
-//! [`Integer`] — this is implemented for `i32`/`i64`/`i128`, the same convention XLA/JAX
-//! follow when they default index/count arrays to the signed `s32`/`s64`. Each is
-//! width-matched to the real it casts into: `i32 → f32`, `i64`/`i128 → f64`.
-//!
-//! It is the dtype a lazy backend uses for count / index / shape data (an XLA `s64`
-//! tensor): the operators lower to integer `Add`/`Sub`/`Mul`, `div_rem` to `Div`/`Rem`,
-//! and [`to_real`](LazyInteger::to_real) to `ConvertElementType s64→f64` — the single
-//! cast a discrete log-density takes before it meets the real analysis surface.
+//! Integers form a ring: `+ - *` and Euclidean [`div_rem`](LazyInteger::div_rem), but no
+//! inverse, so `LazyInteger` is a [`LazyRing`](super::LazyRing) without `Div`. Only signed
+//! integers qualify (the naturals are a semiring), so it is implemented for
+//! `i32`/`i64`/`i128` — XLA/JAX's signed `s32`/`s64` convention — each width-matched to the
+//! real it casts into (`i32 → f32`, `i64`/`i128 → f64`). This is the dtype a backend uses
+//! for count/index/shape data.
 
 use super::{LazyReal, LazyRing};
 
-/// A lazy ring of integers: a [`LazyRing`] (`+ - *`, no `÷`) with the integer-specific
-/// surface — the machine-integer lift, the cast into the real analysis surface, sign /
-/// absolute value, and Euclidean division-with-remainder. The lazy peer of the concrete
-/// `Integer`.
-///
-/// Implemented by `i32`/`i64`/`i128`; the seam a lazy integer **tensor** (an XLA `s64`
-/// array) slots into, so a discrete-statistics formula written over counts runs on every
-/// backend.
+/// A lazy ring of integers: a [`LazyRing`] plus the integer surface — machine-integer lift,
+/// the cast into the real analysis surface, sign/abs, and Euclidean division-with-remainder.
+/// Implemented by `i32`/`i64`/`i128`, and the seam an integer tensor (an XLA `s64` array)
+/// slots into.
 pub trait LazyInteger: LazyRing {
-    /// The real surface this integer casts into — `f32` for `i32`, `f64` for `i64`/`i128`,
-    /// a float-dtype tensor for a tensor backend. Mirrors
-    /// [`NormedDivisionAlgebra::RealPart`](super::NormedDivisionAlgebra::RealPart): the
-    /// real field associated to the carrier.
+    /// The real surface this integer casts into — `f32` for `i32`, `f64` for `i64`/`i128`.
+    /// Mirrors [`NormedDivisionAlgebra::RealPart`](super::NormedDivisionAlgebra::RealPart).
     type Real: LazyReal;
 
-    /// Lift a machine integer into this integer substrate — the integer analogue of
-    /// [`LazyReal::scalar`](super::LazyReal::scalar). A lazy backend represents it as an
-    /// integer constant node.
+    /// Lift a machine integer into this substrate — the integer analogue of
+    /// [`LazyReal::scalar`](super::LazyReal::scalar).
     fn from_i64(x: i64) -> Self;
 
     /// `0`, the additive identity.
@@ -51,10 +35,9 @@ pub trait LazyInteger: LazyRing {
         Self::from_i64(1)
     }
 
-    /// Cast into the real analysis surface (XLA `ConvertElementType`). The boundary a
-    /// discrete formula crosses **once**: counts stay exact integers through `n − k` /
-    /// `k + 1`, then cross here to meet `ln` / `beta_reg` / `gamma_ur`. Casting an
-    /// integer beyond `2^53` to an `f64` real rounds, exactly as the hardware cast does.
+    /// Cast into the real analysis surface (XLA `ConvertElementType`) — the boundary a
+    /// discrete formula crosses once, after exact integer arithmetic and before `ln` /
+    /// `beta_reg` / … . Beyond `2^53` the `f64` cast rounds, as the hardware does.
     fn to_real(&self) -> Self::Real;
 
     /// The sign as one of `-1`, `0`, `1` (XLA `Sign`).
@@ -63,9 +46,8 @@ pub trait LazyInteger: LazyRing {
     /// The absolute value (XLA `Abs`).
     fn abs(self) -> Self;
 
-    /// Euclidean division with remainder `(quotient, remainder)` — the integers'
-    /// division, **not** the field `÷` a [`LazyRing`] lacks. Truncates toward zero, so
-    /// `self == quotient * rhs + remainder` (XLA `Div` paired with `Rem`).
+    /// Euclidean division with remainder `(quotient, remainder)`, truncating toward zero so
+    /// `self == quotient * rhs + remainder` (XLA `Div`+`Rem`) — not the field `÷`.
     fn div_rem(self, rhs: Self) -> (Self, Self);
 }
 

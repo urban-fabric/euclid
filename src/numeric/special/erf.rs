@@ -1,9 +1,6 @@
-//! The error function family — `erf`, `erfc`, and the inverse `erf_inv` — the
-//! workhorses of the Normal CDF (`Φ(x) = ½ erfc(-x/√2)`) and quantile.
-//!
-//! `erf`/`erfc` reduce to the regularized incomplete gamma `P(½, x²)`, which is
-//! accurate across the whole range; `erf_inv` uses Giles's rational approximation
-//! refined by one Newton step.
+//! The error function family — `erf`, `erfc`, `erf_inv` — behind the Normal CDF
+//! (`Φ(x) = ½ erfc(-x/√2)`) and quantile. `erf`/`erfc` reduce to the regularized incomplete
+//! gamma `P(½, x²)`; `erf_inv` uses Giles's rational approximation plus one Newton step.
 
 use super::gamma::gamma_lr;
 use core::f64::consts::PI;
@@ -24,10 +21,9 @@ pub fn erfc(x: f64) -> f64 {
     1.0 - erf(x)
 }
 
-/// The **scaled** complementary error function `erfcx(x) = e^{x²}·erfc(x)`, finite
-/// in the right tail where `erfc` underflows and `e^{x²}` overflows. It is the
-/// stable kernel of a Gaussian/Wald log-CDF tail; a continued fraction carries the
-/// large-`x` regime.
+/// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)`, finite in the right
+/// tail where `erfc` underflows — the stable Gaussian/Wald log-CDF kernel. A continued
+/// fraction carries the large-`x` regime.
 pub fn erfcx(x: f64) -> f64 {
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);

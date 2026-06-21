@@ -1,10 +1,6 @@
-//! The gamma function family: `ln_gamma` / `gamma` (Lanczos), the regularized
-//! lower/upper incomplete gamma `gamma_lr` / `gamma_ur` (used by the Poisson, Gamma,
-//! and chi-squared CDFs), and the polygamma functions `digamma` / `trigamma`.
-//!
-//! These are the concrete `f64` reference implementations behind the
-//! [`LazyReal`](crate::numeric::LazyReal) special-function methods; a tensor
-//! backend lowers the same methods to its own `Lgamma`/`Digamma`/`Igamma` ops.
+//! The gamma function family: `ln_gamma`/`gamma` (Lanczos), the regularized lower/upper
+//! incomplete gamma `gamma_lr`/`gamma_ur` (the Poisson/Gamma/chi-squared CDF kernels), and
+//! the polygamma `digamma`/`trigamma`.
 
 use core::f64::consts::PI;
 
@@ -132,8 +128,6 @@ pub fn digamma(mut x: f64) -> f64 {
 }
 
 /// The trigamma function `ψ₁(x) = d²/dx² ln Γ(x)` — the derivative of [`digamma`].
-/// Used in exponential-family / Dirichlet parameter estimation and several
-/// distribution entropies.
 pub fn trigamma(x: f64) -> f64 {
     if x <= 0.0 && x == x.floor() {
         return f64::INFINITY;

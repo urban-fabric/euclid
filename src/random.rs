@@ -1,11 +1,9 @@
 //! Backend-neutral random-source contracts over the lazy numeric/array tier.
 //!
-//! The default random-number primitives that work over euclid's *lazy* numbers:
-//! traits for drawing `Uniform(0, 1)`, standard-normal, and gamma variates as lazy
-//! scalars / vectors / matrices / tensors. They are intentionally independent of
-//! host `rand`: an eager adapter wraps a `rand::Rng`, while an XLA adapter maps the
-//! same requests to keyed random tensor ops. The associated scalar/vector/matrix/
-//! tensor types are euclid's own lazy-array contracts, so nothing here names dense
+//! Traits for drawing `Uniform(0, 1)`, standard-normal, and gamma variates as lazy
+//! scalars/vectors/matrices/tensors, independent of host `rand`: an eager adapter wraps a
+//! `rand::Rng`, an XLA adapter maps the same requests to keyed random tensor ops. The
+//! associated types are euclid's own lazy-array contracts, so nothing here names dense
 //! storage or a concrete backend.
 
 use crate::array::{LazyMatrix, LazyTensor, LazyVector};
@@ -24,19 +22,17 @@ pub enum RandomAlgorithm {
 
 /// A lazy backend random stream for scalar, vector, and matrix real draws.
 ///
-/// Eager implementations usually mutate a host PRNG. XLA-style implementations can model the
-/// mutation as advancing/splitting an owned key inside the stream object while returning tensor
-/// values for [`Vector`](Self::Vector) and [`Matrix`](Self::Matrix). The associated vector and
-/// matrix types are euclid lazy-array contracts, so this trait does not mention dense storage.
+/// Eager implementations usually mutate a host PRNG; XLA-style ones advance/split an owned
+/// key inside the stream object. The associated types are euclid lazy-array contracts.
 pub trait RandomStream {
     /// The backend real value.
     type Scalar: LazyReal;
-    /// A one-dimensional draw result in the backend's vector representation.
+    /// A one-dimensional draw result.
     type Vector: LazyVector<Scalar = Self::Scalar>;
-    /// A two-dimensional draw result in the backend's matrix representation.
+    /// A two-dimensional draw result.
     type Matrix: LazyMatrix<Scalar = Self::Scalar, Vector = Self::Vector>;
 
-    /// The random-bit algorithm used by this stream when the backend exposes one.
+    /// The random-bit algorithm, when the backend exposes one.
     fn algorithm(&self) -> RandomAlgorithm {
         RandomAlgorithm::Default
     }
@@ -59,10 +55,8 @@ pub trait RandomStream {
     fn standard_gamma(&mut self, shape: Self::Scalar) -> Self::Scalar;
 }
 
-/// A lazy random stream that can draw arbitrary-rank tensors.
-///
-/// `maxwell::Tensor` can implement this directly. Eager dense linear algebra usually implements
-/// [`RandomStream`] instead because it has distinct scalar/vector/matrix concrete types.
+/// A lazy random stream that can draw arbitrary-rank tensors. `maxwell::Tensor` implements
+/// this directly; eager dense backends implement [`RandomStream`] instead (distinct types).
 pub trait TensorRandomStream: RandomStream {
     type Tensor: LazyTensor + LazyReal;
 
@@ -77,10 +71,8 @@ pub trait SampleWith<R: RandomStream + ?Sized> {
     fn sample_with(&self, rng: &mut R) -> Self::Output;
 }
 
-/// Stateless/keyed lazy random backend surface for graph-oriented implementations.
-///
-/// This is the XLA-shaped sibling of [`RandomStream`]: each operation takes and returns an
-/// explicit key so callers can model reproducible graph state without host mutation.
+/// The XLA-shaped sibling of [`RandomStream`]: each operation takes and returns an explicit
+/// key, modeling reproducible graph state without host mutation.
 pub trait KeyedRandomBackend {
     type Key;
     type Scalar: LazyReal;
