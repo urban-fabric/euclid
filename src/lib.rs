@@ -2,7 +2,7 @@
 //!
 //! Domain-neutral numeric foundations for the urban-fabric math stack.
 //!
-//! euclid defines lazy trait contracts for scalar, array, random, and unit-aware math.
+//! euclid defines lazy trait contracts for scalar, interpolation, array, random, and unit-aware math.
 //! It has no external dependencies. The crate includes the contracts, the `f64`/`f32`
 //! reference scalar implementations, integer/natural/bool scalar carriers, and lazy
 //! physical-unit wrappers.
@@ -21,6 +21,7 @@
 //! ## Modules
 //!
 //! - [`numeric`] defines scalar algebra, real analysis, masks, and special functions.
+//! - [`interpolate`] defines scalar-parameterized interpolation.
 //! - [`array`](mod@array) defines [`LazyVector`], [`LazyMatrix`], and [`LazyTensor`].
 //! - [`random`] defines stream-shaped and keyed random-source contracts.
 //! - [`units`] defines lazy physical quantities over any [`LazyReal`] carrier.
@@ -32,7 +33,7 @@
 //!
 //! // Standard-normal log-density, generic over the lazy real surface.
 //! fn standard_normal_logpdf<T: LazyReal>(x: T) -> T {
-//!     let x2 = x.clone() * x;
+//!     let x2 = x.square();
 //!     -(T::half() * x2) - T::half_ln_tau()
 //! }
 //!
@@ -40,19 +41,22 @@
 //! assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
 //! ```
 //!
-//! In this crate, `f64`/`f32` implement the real traits; `i32`/`i64`/`i128`
-//! implement [`LazyInteger`]; `u32`/`u64`/`u128` implement [`LazyNatural`]; and
-//! `bool` implements [`LazyBool`].
+//! In this crate, `f64`/`f32` implement the real and interpolation traits;
+//! `i32`/`i64`/`i128` implement [`LazyInteger`]; `u32`/`u64`/`u128` implement
+//! [`LazyNatural`]; and `bool` implements [`LazyBool`].
 
 pub mod array;
+pub mod interpolate;
 pub mod numeric;
 pub mod random;
 pub mod units;
 
 pub use array::{LazyMatrix, LazyTensor, LazyVector};
+pub use interpolate::{Interpolate, sample, sample_at};
 pub use numeric::{
-    Arithmetic, LazyBool, LazyCompare, LazyComplex, LazyInteger, LazyNatural, LazyQuaternion,
-    LazyReal, LazyRing, LazySemiring, NormedDivisionAlgebra,
+    Arithmetic, InnerProductSpace, LazyBool, LazyCompare, LazyComplex, LazyInteger, LazyNatural,
+    LazyQuaternion, LazyReal, LazyRing, LazySemiring, NormedDivisionAlgebra, NormedVectorSpace,
+    VectorSpace,
 };
 pub use random::{
     KeyedRandomBackend, RandomAlgorithm, RandomProcess, RandomStream, SampleWith,

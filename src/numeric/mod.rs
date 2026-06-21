@@ -10,6 +10,8 @@
 //! - [`LazyReal`]: real analysis, lifted constants, square/powers, rounding/sign
 //!   operations, comparison-free selectors, masks, special functions, and stable log-domain
 //!   helpers.
+//! - [`VectorSpace`], [`InnerProductSpace`], and [`NormedVectorSpace`]:
+//!   scalar multiplication, dot products, and norms over a real field.
 //! - [`NormedDivisionAlgebra`], [`LazyComplex`], and [`LazyQuaternion`]: conjugation,
 //!   magnitude, real part, and complex/quaternionic construction.
 //! - [`LazyBool`] and [`LazyCompare`]: mask algebra, comparisons, `select`, and lazy
@@ -41,6 +43,46 @@ impl<T> LazyRing for T where T: LazySemiring + Sub<Output = T> + Neg<Output = T>
 /// implemented by `f64`/`f32`, complex scalars, and `Tensor`. Integer carriers stop at
 /// [`LazyRing`]/[`LazyInteger`]. (Constant lifting lives on [`LazyReal`].)
 pub trait Arithmetic: LazyRing + Div<Output = Self> {}
+
+/// A module over a real scalar field: addition/subtraction plus multiplication by a scalar.
+///
+/// Real, complex, quaternion, and tensor carriers are all vector spaces over their real
+/// field. Euclid implements this blanketly for every [`NormedDivisionAlgebra`], using
+/// [`NormedDivisionAlgebra::RealPart`] as the scalar field. That means real numbers are
+/// one-dimensional vector spaces over themselves, complex numbers are two-dimensional
+/// vector spaces over their real part, and quaternions are four-dimensional vector spaces
+/// over their real part.
+pub trait VectorSpace: LazyRing {
+    /// The real scalar field this vector space is over.
+    type Scalar: LazyReal;
+
+    /// The additive identity.
+    fn zero() -> Self;
+
+    /// Scalar multiplication.
+    fn scale(self, factor: Self::Scalar) -> Self;
+}
+
+/// A [`VectorSpace`] with an inner product.
+///
+/// This is a required-method contract. Implementers choose the numerics for the dot product;
+/// euclid does not define it as repeated multiplication and addition.
+pub trait InnerProductSpace: VectorSpace {
+    /// The inner product in the vector space's scalar field.
+    fn dot(self, rhs: Self) -> Self::Scalar;
+}
+
+/// An [`InnerProductSpace`] with explicit norm operations.
+///
+/// Both methods are required so an implementation can use the numerically stable path for its
+/// representation instead of inheriting `dot(x, x)` or `sqrt(dot(x, x))`.
+pub trait NormedVectorSpace: InnerProductSpace {
+    /// The squared norm.
+    fn norm_squared(self) -> Self::Scalar;
+
+    /// The norm.
+    fn norm(self) -> Self::Scalar;
+}
 
 /// A **normed division algebra over ℝ** — the number abstraction the array contracts
 /// ([`LazyVector`](crate::array::LazyVector), [`LazyMatrix`](crate::array::LazyMatrix),
@@ -79,6 +121,48 @@ pub trait NormedDivisionAlgebra: Arithmetic {
     }
     /// The magnitude `|x|`.
     fn magnitude(&self) -> Self::RealPart;
+}
+
+impl<T> VectorSpace for T
+where
+    T: NormedDivisionAlgebra,
+{
+    type Scalar = T::RealPart;
+
+    #[inline]
+    fn zero() -> Self {
+        T::field_zero()
+    }
+
+    #[inline]
+    fn scale(self, factor: Self::Scalar) -> Self {
+        self * T::from_real(factor)
+    }
+}
+
+impl<T> InnerProductSpace for T
+where
+    T: NormedDivisionAlgebra,
+{
+    #[inline]
+    fn dot(self, rhs: Self) -> Self::Scalar {
+        (self.conjugate() * rhs).real_part()
+    }
+}
+
+impl<T> NormedVectorSpace for T
+where
+    T: NormedDivisionAlgebra,
+{
+    #[inline]
+    fn norm_squared(self) -> Self::Scalar {
+        self.norm_sqr()
+    }
+
+    #[inline]
+    fn norm(self) -> Self::Scalar {
+        self.magnitude()
+    }
 }
 
 mod boolean;

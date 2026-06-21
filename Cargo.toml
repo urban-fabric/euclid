@@ -5,7 +5,7 @@ edition = "2024"
 license = "Proprietary"
 authors = ["Raymond Mead"]
 rust-version = "1.95"
-description = "Domain-neutral lazy numeric contracts: scalar algebra and analysis, rank-graded array traits, random-source traits, and lazy physical quantities."
+description = "Domain-neutral lazy numeric contracts: scalar algebra and analysis, interpolation, rank-graded array traits, random-source traits, and lazy physical quantities."
 repository = "https://github.com/urban-fabric/euclid"
 
 # euclid is the dependency-free foundations crate: lazy trait contracts, f64/f32

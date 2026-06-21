@@ -2,8 +2,8 @@
 
 Domain-neutral numeric foundations for the urban-fabric math stack.
 
-euclid defines the lazy numeric contracts used by scalar, array, random, and
-unit-aware math code. A formula written against these traits can evaluate on
+euclid defines the lazy numeric contracts used by scalar, interpolation, array,
+random, and unit-aware math code. A formula written against these traits can evaluate on
 `f64`/`f32` or be represented by graph/tensor values. euclid keeps the contract
 surface small and mathematical: it describes the operations a formula may use,
 not storage layout, runtime state, or concrete array implementations.
@@ -37,7 +37,7 @@ use euclid::LazyReal;
 
 /// Standard-normal log-density, generic over the lazy real surface.
 fn standard_normal_logpdf<T: LazyReal>(x: T) -> T {
-    let x2 = x.clone() * x;
+    let x2 = x.square();
     -(T::half() * x2) - T::half_ln_tau()
 }
 
@@ -50,6 +50,7 @@ assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
 | module | purpose |
 |--------|---------|
 | [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, masks, and special functions |
+| [`interpolate`](src/interpolate.rs) | scalar-parameterized interpolation and sampling helpers |
 | [`array`](src/array/mod.rs) | rank-graded vector, matrix, and tensor contracts |
 | [`random`](src/random.rs) | random-source contracts over euclid scalar and array types |
 | [`units`](src/units/mod.rs) | lazy physical quantities over any `LazyReal` carrier |
@@ -68,6 +69,11 @@ The numeric surface is graded by algebraic structure.
 - `LazyReal`: real analysis over `Arithmetic`: lifted constants,
   transcendentals, square/powers, rounding/sign operations, comparison-free
   selectors, masks, special functions, and stable log-domain helpers.
+- `VectorSpace`: addition/subtraction plus scalar multiplication over a real
+  field.
+- `InnerProductSpace`: explicit inner products over a `VectorSpace`.
+- `NormedVectorSpace`: explicit squared norm and norm operations over an
+  `InnerProductSpace`.
 - `NormedDivisionAlgebra`: the real/complex/quaternionic surface used by vector
   and matrix algebra: conjugation, magnitude, real part, and real-axis lifting.
 - `LazyComplex` and `LazyQuaternion`: construction and component access for the
@@ -103,6 +109,15 @@ linear algebra share one contract. `dot` is Hermitian, `cholesky` is the
 Hermitian positive-definite factorization, and real-valued results such as
 `norm`, `logdet_spd`, and `mahalanobis_squared` return the scalar's real part.
 
+## Interpolation
+
+`Interpolate` defines scalar-parameterized interpolation with explicit `lerp`
+and `midpoint` methods. euclid does not derive midpoint from `lerp`; each
+implementation supplies the numerics it wants.
+
+The module also provides `sample_at` for natural-number sample indices and
+`sample` for endpoint-inclusive uniform samples.
+
 ## Random Traits
 
 The random module defines stream-shaped and keyed random APIs:
@@ -129,8 +144,9 @@ requires the `LazyReal` surface.
 
 ## Implemented Here
 
-- `f64` and `f32` implement `Arithmetic`, `LazyReal`, and
-  `NormedDivisionAlgebra`.
+- `f64` and `f32` implement `Arithmetic`, `LazyReal`,
+  `NormedDivisionAlgebra`, `VectorSpace`, `InnerProductSpace`,
+  `NormedVectorSpace`, and `Interpolate`.
 - `i32`, `i64`, and `i128` implement `LazyInteger`.
 - `u32`, `u64`, and `u128` implement `LazyNatural`.
 - `bool` implements `LazyBool`.

@@ -8,10 +8,41 @@ fn shifted_quadratic<T: LazyReal>(x: T) -> T {
     x.clone() * x.clone() + half * x
 }
 
+fn vector_space_midpoint<V: VectorSpace>(a: V, b: V) -> V {
+    let half = V::Scalar::half();
+    (a + b).scale(half)
+}
+
+fn inner_product_energy<V: InnerProductSpace>(x: V) -> V::Scalar {
+    x.clone().dot(x)
+}
+
 #[test]
 fn real_formula_runs_on_f64_and_f32() {
     assert!((shifted_quadratic(2.5_f64) - 7.5).abs() < 1e-12);
     assert!((shifted_quadratic(2.5_f32) - 7.5).abs() < 1e-5);
+}
+
+#[test]
+fn scalar_carriers_are_vector_spaces_over_their_real_part() {
+    assert_eq!(<f64 as VectorSpace>::zero(), 0.0);
+    assert_eq!(<f32 as VectorSpace>::zero(), 0.0);
+    assert_eq!(VectorSpace::scale(3.0_f64, 2.0), 6.0);
+    assert_eq!(VectorSpace::scale(3.0_f32, 2.0), 6.0);
+    assert_eq!(vector_space_midpoint(2.0_f64, 6.0), 4.0);
+    assert_eq!(vector_space_midpoint(2.0_f32, 6.0), 4.0);
+}
+
+#[test]
+fn scalar_carriers_are_inner_product_and_normed_spaces() {
+    assert_eq!(InnerProductSpace::dot(3.0_f64, 4.0), 12.0);
+    assert_eq!(InnerProductSpace::dot(3.0_f32, 4.0), 12.0);
+    assert_eq!(inner_product_energy(-3.0_f64), 9.0);
+    assert_eq!(inner_product_energy(-3.0_f32), 9.0);
+    assert_eq!(NormedVectorSpace::norm_squared(-3.0_f64), 9.0);
+    assert_eq!(NormedVectorSpace::norm_squared(-3.0_f32), 9.0);
+    assert_eq!(NormedVectorSpace::norm(-3.0_f64), 3.0);
+    assert_eq!(NormedVectorSpace::norm(-3.0_f32), 3.0);
 }
 
 #[test]
