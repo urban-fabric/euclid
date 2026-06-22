@@ -49,7 +49,8 @@
 //! Cross-dimensional operations are verbs suffixed by the *operand's* dimension: `times_<operand>`
 //! is `self * operand`, `per_<operand>` is `self / operand`. Pure powers get `squared` / `cubed`,
 //! and reciprocal pairs (`time ⇄ frequency`, `resistance ⇄ conductance`) are named semantically.
-//! Same-unit ratios collapse to the raw carrier through [`LinearQuantity::ratio`].
+//! Same-unit ratios collapse to the raw carrier through [`LinearQuantity::ratio`], and a
+//! [`Dimensionless`] factor scales a dimensioned quantity through [`LinearQuantity::scale`].
 //!
 //! Quantities are scalar-valued: a length carries one `T`, where `T` can be a host scalar,
 //! expression, or graph scalar. Values are `Clone`, comparisons return masks through

@@ -1,11 +1,10 @@
 //! Thermal dimensions: [`Temperature`], [`HeatCapacity`], [`ThermalConductivity`].
 //!
 //! [`Temperature`] is the SI base dimension `[Θ]`, and — unlike every other dimension here — it
-//! is an **absolute** scalar: it implements [`ScalarQuantity`] but not
-//! [`LinearQuantity`], because adding two absolute temperatures or scaling
-//! one is not meaningful (only differences are). The `energy = heat capacity × temperature`
-//! relation therefore lives on [`HeatCapacity`] / [`Energy`], which accept the
-//! temperature operand as an *interval* in the carrier's units.
+//! is an **absolute** scalar: it implements [`ScalarQuantity`] but not [`LinearQuantity`], because
+//! adding two absolute temperatures or scaling one is not meaningful (only differences are). The
+//! `energy = heat capacity × temperature` relation therefore lives on [`HeatCapacity`] /
+//! [`Energy`], which accept the temperature operand as an *interval* in the carrier's units.
 
 use super::{Energy, LinearQuantity, ScalarQuantity};
 

@@ -65,7 +65,7 @@ pub use numeric::{
     Arithmetic, Boolean, Compare, Complex, Element, Integer, Natural, NormedDivisionAlgebra,
     Quaternion, Real, Ring, Semiring,
 };
-pub use random::{RandomKey, RandomSampler};
+pub use random::{CountSampler, GammaSampler, RandomKey, RandomSampler};
 pub use spec::{Cast, DType, HasTensorSpec, TensorSpec};
 pub use tensor::Tensor;
 pub use units::{

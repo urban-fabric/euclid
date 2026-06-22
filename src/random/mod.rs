@@ -13,4 +13,4 @@ mod key;
 mod sampler;
 
 pub use key::RandomKey;
-pub use sampler::RandomSampler;
+pub use sampler::{CountSampler, GammaSampler, RandomSampler};
