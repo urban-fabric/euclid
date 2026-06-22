@@ -18,16 +18,16 @@
 //!   [`Real::scalar_like`].
 //! - Comparisons return masks, consumed by [`Compare::select`] or
 //!   [`Compare::if_then_else`].
-//! - Use matrix operations such as `solve_spd`, `logdet_spd`, and
-//!   `mahalanobis_squared` instead of forming an inverse.
 //!
 //! ## Modules
 //!
 //! - [`numeric`] defines scalar algebra, real analysis, interpolation, masks, and special
 //!   functions.
-//! - [`array`](mod@array) defines [`Vector`], [`Matrix`], and [`Tensor`].
+//! - [`tensor`](mod@tensor) defines the rank-graded [`Tensor`] (a vector is a rank-1 tensor, a
+//!   matrix a rank-2 tensor).
 //! - [`random`] defines JAX-style keyed random-source contracts.
-//! - [`units`] defines physical quantities over any [`Real`] carrier.
+//! - [`units`] defines physical-dimension contracts (`Length`, `Time`, `Speed`, `Area`,
+//!   `Angle`) over any [`Real`] carrier.
 //!
 //! ## Example
 //!
@@ -48,28 +48,26 @@
 //! `i32`/`i64`/`i128` implement [`Integer`]; `u32`/`u64`/`u128` implement
 //! [`Natural`]; and `bool` implements [`Boolean`].
 
-pub mod array;
 pub mod control_flow;
 pub mod numeric;
 pub mod random;
 pub mod spec;
+pub mod tensor;
 pub mod units;
 
-pub use array::{Matrix, Tensor, Vector};
 pub use control_flow::ControlFlow;
 pub use numeric::{
     Arithmetic, Boolean, Compare, Complex, Element, InnerProductSpace, Integer, Interpolate,
     Natural, NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, Ring, Semiring,
-    VectorSpace, sample, sample_at,
+    VectorSpace,
 };
 pub use random::{
-    GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomMatVec,
-    KeyedRandomMatVecDistributions, KeyedRandomProcess, KeyedRandomScalar,
-    KeyedRandomScalarDistributions, KeyedRandomTensor, KeyedRandomTensorDistributions,
-    RandomAlgorithm, RandomDType, SampleWithKey,
+    GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomProcess,
+    KeyedRandomScalar, KeyedRandomScalarDistributions, KeyedRandomTensor,
+    KeyedRandomTensorDistributions, RandomAlgorithm, RandomDType, SampleWithKey,
 };
 pub use spec::{Cast, DType, HasTensorSpec, TensorSpec};
+pub use tensor::Tensor;
 pub use units::{
-    Angle, Dimension, Km, LinearQuantity, Meters, Quantity, ScalarQuantity, Seconds, SpeedMs,
-    SquareMeters,
+    Angle, Area, Dimension, Length, LinearQuantity, Quantity, ScalarQuantity, Speed, Time,
 };

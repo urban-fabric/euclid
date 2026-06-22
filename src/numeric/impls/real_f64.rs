@@ -279,19 +279,11 @@ impl Real for f64 {
     fn xlogy(self, y: Self) -> Self {
         // 0·ln 0 = 0 (and 0·ln y = 0): short-circuit the absorbing zero so the
         // multiply never forms 0·(−∞) = NaN.
-        if self == 0.0 {
-            0.0
-        } else {
-            self * y.ln()
-        }
+        if self == 0.0 { 0.0 } else { self * y.ln() }
     }
     fn xlog1py(self, y: Self) -> Self {
         // 0·ln(1 + y) = 0, including y = −1 where the logarithm is −∞.
-        if self == 0.0 {
-            0.0
-        } else {
-            self * y.ln_1p()
-        }
+        if self == 0.0 { 0.0 } else { self * y.ln_1p() }
     }
     fn ln_1m(&self) -> Self {
         (-*self).ln_1p()

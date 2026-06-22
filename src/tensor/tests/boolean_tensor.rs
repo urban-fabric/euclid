@@ -1,6 +1,6 @@
 use super::ToyTensor;
-use crate::array::Tensor;
 use crate::numeric::{Boolean, Element};
+use crate::tensor::Tensor;
 
 #[derive(Clone, Debug, PartialEq)]
 struct ToyBooleanTensor {

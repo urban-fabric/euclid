@@ -1,6 +1,6 @@
 //! Supporting `f64` numeric impls outside the main `Real` block.
 
-use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra};
+use crate::numeric::{Arithmetic, Element, Interpolate, NormedDivisionAlgebra, Real};
 
 impl Element for f64 {
     #[inline]
@@ -14,6 +14,20 @@ impl Element for f64 {
 }
 
 impl Arithmetic for f64 {}
+
+impl Interpolate for f64 {
+    type Scalar = f64;
+
+    #[inline]
+    fn lerp(self, target: Self, t: Self::Scalar) -> Self {
+        self + (target - self) * t
+    }
+
+    #[inline]
+    fn midpoint(self, target: Self) -> Self {
+        self + (target - self) * Self::half()
+    }
+}
 
 pub(super) fn powi_i64(base: f64, exponent: i64) -> f64 {
     let mut n = exponent.unsigned_abs();
@@ -30,11 +44,7 @@ pub(super) fn powi_i64(base: f64, exponent: i64) -> f64 {
         }
     }
 
-    if exponent < 0 {
-        acc.recip()
-    } else {
-        acc
-    }
+    if exponent < 0 { acc.recip() } else { acc }
 }
 
 impl NormedDivisionAlgebra for f64 {

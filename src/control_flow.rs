@@ -2,7 +2,7 @@ use crate::numeric::Compare;
 
 /// Explicit scalar graph-control-flow contract.
 ///
-/// Array carriers expose rank-specific control-flow traits in [`crate::array`].
+/// Array carriers expose rank-specific control-flow traits in [`crate::tensor`].
 /// This trait is the scalar counterpart for carriers that can represent graph
 /// conditionals and loops over scalar values.
 pub trait ControlFlow: Compare {
@@ -23,13 +23,4 @@ pub trait ControlFlow: Compare {
     where
         C: Fn(&Self) -> Self::Mask,
         B: Fn(Self) -> Self;
-}
-
-/// Branchless conditional over any comparable carrier.
-#[inline]
-pub fn where_cond<T>(mask: &T::Mask, on_true: T, on_false: T) -> T
-where
-    T: Compare,
-{
-    T::select(mask, on_true, on_false)
 }

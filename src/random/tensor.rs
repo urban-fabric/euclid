@@ -1,13 +1,12 @@
-use crate::array::Tensor;
 use crate::numeric::{Boolean, Integer, Natural, Real};
+use crate::tensor::Tensor;
 
 use super::{GraphRandomBackend, KeyedRandomScalar, RandomDType};
 
 /// Explicit-key tensor random draws.
 ///
-/// Implement this for arbitrary-rank backends. It is independent of
-/// [`super::KeyedRandomMatVec`], so tensor-only systems do not need to expose separate vector or
-/// matrix carriers.
+/// Implement this for arbitrary-rank backends. It is the only array random surface — rank-1 and
+/// rank-2 draws are just tensor draws with the corresponding shape.
 pub trait KeyedRandomTensor: KeyedRandomScalar {
     /// An arbitrary-rank real draw result.
     type Tensor: Tensor + Real;
@@ -28,6 +27,11 @@ pub trait KeyedRandomTensor: KeyedRandomScalar {
     fn bits_u64_tensor(key: &Self::Key, shape: &[usize]) -> Self::UIntTensor;
 
     /// Draw raw uniformly-random words with an explicit bit width.
+    ///
+    /// The provided default dispatches the two common widths to
+    /// [`bits_u32_tensor`](Self::bits_u32_tensor)/[`bits_u64_tensor`](Self::bits_u64_tensor);
+    /// a backend that needs other widths overrides this method.
+    #[allow(clippy::panic)] // default-only guard: backends with other widths override this.
     fn random_bits_tensor(key: &Self::Key, bit_width: u32, shape: &[usize]) -> Self::UIntTensor {
         match bit_width {
             32 => Self::bits_u32_tensor(key, shape),

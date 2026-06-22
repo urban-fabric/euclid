@@ -57,11 +57,7 @@ pub(crate) fn i1(x: f64) -> f64 {
     } else {
         (ax.exp() / ax.sqrt()) * i1_asymp(3.75 / ax)
     };
-    if x < 0.0 {
-        -result
-    } else {
-        result
-    }
+    if x < 0.0 { -result } else { result }
 }
 
 /// The **exponentially-scaled** `I₀ᵉ(x) = e^{−|x|} I₀(x)`, finite for all `x` where
@@ -82,11 +78,7 @@ pub(crate) fn i1e(x: f64) -> f64 {
         i1(x) * (-ax).exp()
     } else {
         let r = i1_asymp(3.75 / ax) / ax.sqrt();
-        if x < 0.0 {
-            -r
-        } else {
-            r
-        }
+        if x < 0.0 { -r } else { r }
     }
 }
 

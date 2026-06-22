@@ -12,7 +12,7 @@
 /// The elementwise Boolean algebra of masks — `∧`/`∨`/`⊕`/`¬`. `bool` for host values,
 /// carrier masks for expression/tensor values. A boolean is a tensor element, so it is a
 /// [`Element`](super::Element) (its `0`/`1` are `false`/`true`) — which also lets a
-/// boolean [`Tensor`](crate::array::Tensor) be built with `zeros`. It is not a ring,
+/// boolean [`Tensor`](crate::tensor::Tensor) be built with `zeros`. It is not a ring,
 /// though (`∨` has no additive inverse), so it is not a [`Ring`](super::Ring).
 pub trait Boolean: super::Element {
     /// Logical AND (`∧`).
@@ -68,7 +68,7 @@ pub trait Compare: Clone {
 
     /// Iterative control flow: repeatedly advance a loop-carried state `C` by `body`
     /// while `cond` holds — the scalar analog of
-    /// [`TensorControlFlow::while_loop`](crate::array::TensorControlFlow::while_loop),
+    /// [`TensorControlFlow::while_loop`](crate::tensor::TensorControlFlow::while_loop),
     /// and the counterpart of [`select`](Self::select) for loops rather than branches.
     ///
     /// `cond` maps the carried state to the [`Mask`](Self::Mask) "keep iterating"

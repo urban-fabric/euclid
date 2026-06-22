@@ -33,10 +33,7 @@ pub trait KeyedRandomBackend {
 
     /// Deterministically split `key` into a row-major array of child keys.
     fn split_shape(key: &Self::Key, shape: &[usize]) -> Vec<Self::Key> {
-        let count = shape
-            .iter()
-            .try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
-            .expect("random split shape element count overflow");
+        let count = shape.iter().copied().fold(1usize, usize::saturating_mul);
         Self::split(key, count)
     }
 
@@ -77,10 +74,7 @@ pub trait GraphRandomBackend: KeyedRandomBackend {
 
     /// Split a graph key into a row-major array of graph keys.
     fn graph_split_shape(key: &Self::GraphKey, shape: &[usize]) -> Vec<Self::GraphKey> {
-        let count = shape
-            .iter()
-            .try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
-            .expect("graph random split shape element count overflow");
+        let count = shape.iter().copied().fold(1usize, usize::saturating_mul);
         Self::graph_split(key, count)
     }
 

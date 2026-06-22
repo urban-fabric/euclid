@@ -31,11 +31,7 @@ impl Compare for f64 {
     }
     #[inline]
     fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask {
-            on_true
-        } else {
-            on_false
-        }
+        if *mask { on_true } else { on_false }
     }
     #[inline]
     fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
@@ -76,11 +72,7 @@ impl Compare for f32 {
     }
     #[inline]
     fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask {
-            on_true
-        } else {
-            on_false
-        }
+        if *mask { on_true } else { on_false }
     }
     #[inline]
     fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C

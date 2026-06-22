@@ -1,6 +1,6 @@
 //! Supporting `f32` numeric impls outside the main `Real` block.
 
-use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra};
+use crate::numeric::{Arithmetic, Element, Interpolate, NormedDivisionAlgebra, Real};
 
 impl Element for f32 {
     #[inline]
@@ -14,6 +14,20 @@ impl Element for f32 {
 }
 
 impl Arithmetic for f32 {}
+
+impl Interpolate for f32 {
+    type Scalar = f32;
+
+    #[inline]
+    fn lerp(self, target: Self, t: Self::Scalar) -> Self {
+        self + (target - self) * t
+    }
+
+    #[inline]
+    fn midpoint(self, target: Self) -> Self {
+        self + (target - self) * Self::half()
+    }
+}
 
 impl NormedDivisionAlgebra for f32 {
     type RealPart = f32;

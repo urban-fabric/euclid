@@ -1,10 +1,16 @@
-//! Physical quantities over any [`Real`] carrier.
+//! Physical-dimension contracts over any [`Real`] carrier.
 //!
-//! The unit wrappers are scalar-valued: a `Meters<T>` contains one `T`, where `T` can be
-//! a host scalar, expression, or graph scalar. They are not vector or matrix wrappers.
+//! Like the rest of euclid, `units` ships *contracts*, not concrete types. A quantity is any
+//! [`Real`]-backed carrier that implements [`Quantity`]; the dimension traits ([`Length`],
+//! [`Time`], [`Speed`], [`Area`], [`Angle`]) refine it with the operations that dimension
+//! supports, including the cross-dimensional algebra (`length × length = area`,
+//! `length / time = speed`, …) expressed through associated quantity types. euclid does not
+//! ship a `Meters`/`Seconds` struct; a consumer defines its own unit carriers and implements
+//! these traits for them.
 //!
-//! The wrappers are generic over the [`Real`] surface: values are `Clone`, comparisons return
-//! masks through [`Compare`], and host literals are lifted through
+//! Quantities are scalar-valued: a length carries one `T`, where `T` can be a host scalar,
+//! expression, or graph scalar. Values are `Clone`, comparisons return masks through
+//! [`Compare`], and host literals are lifted through
 //! [`Real::scalar`]/[`scalar_like`](Real::scalar_like).
 
 use crate::{Compare, Element, Real};
@@ -25,7 +31,7 @@ pub enum Dimension {
 
 impl Dimension {
     /// Const-evaluable equality. The derived `PartialEq` cannot run in `const` context,
-    /// where a unit's `UnitOfMeasure` impl asserts that its runtime dimension matches its
+    /// where a unit's [`Quantity`] impl can assert that its runtime dimension matches its
     /// type-level marker.
     pub const fn same(self, other: Self) -> bool {
         self as u8 == other as u8
@@ -94,9 +100,26 @@ pub trait ScalarQuantity: Quantity {
 
 impl<Q: Quantity> ScalarQuantity for Q {}
 
-/// A quantity that behaves like a displacement/vector — negation, scaling, interpolation.
-/// Opt-in per unit (an absolute scalar such as a temperature does **not** implement it).
+/// A quantity that behaves like a displacement/vector — addition, negation, scaling,
+/// interpolation. Opt-in per unit (an absolute scalar such as a temperature does **not**
+/// implement it). The `+`/`-`/scale operations are provided over the carrier, so a consumer's
+/// unit type gets them for free without hand-writing `core::ops` impls.
 pub trait LinearQuantity: ScalarQuantity {
+    /// Same-unit sum.
+    fn add(self, other: Self) -> Self {
+        Self::from_raw(self.raw() + other.raw())
+    }
+
+    /// Same-unit difference.
+    fn sub(self, other: Self) -> Self {
+        Self::from_raw(self.raw() - other.raw())
+    }
+
+    /// Negation.
+    fn neg(self) -> Self {
+        Self::from_raw(-self.raw())
+    }
+
     fn abs(self) -> Self {
         Self::from_raw(self.raw().abs())
     }
@@ -130,10 +153,125 @@ pub trait LinearQuantity: ScalarQuantity {
     }
 }
 
-mod dimensional;
-mod measures;
+/// A length-dimensioned quantity. Carries the cross-dimensional algebra
+/// `length × length = area`, `length / time = speed`, and `length / speed = time` through its
+/// associated [`Area`], [`Speed`], and [`Time`] partner quantities.
+pub trait Length: LinearQuantity {
+    /// The area produced by `length × length`.
+    type Area: Area<Repr = Self::Repr>;
+    /// The time that pairs with this length and speed.
+    type Time: Time<Repr = Self::Repr>;
+    /// The speed produced by `length / time`.
+    type Speed: Speed<Repr = Self::Repr>;
+
+    /// `length × length = area`.
+    fn times(self, width: Self) -> Self::Area;
+    /// `length / time = speed`.
+    fn per(self, elapsed: Self::Time) -> Self::Speed;
+    /// `length / speed = time`.
+    fn over(self, speed: Self::Speed) -> Self::Time;
+
+    /// `length²` — [`times`](Self::times) with a copy of `self`.
+    fn squared(self) -> Self::Area {
+        self.clone().times(self)
+    }
+}
+
+/// A time-dimensioned quantity. `time × speed = length`.
+pub trait Time: LinearQuantity {
+    /// The length produced by `time × speed`.
+    type Length: Length<Repr = Self::Repr>;
+    /// The speed that pairs with this time.
+    type Speed: Speed<Repr = Self::Repr>;
+
+    /// `time × speed = length`.
+    fn times(self, speed: Self::Speed) -> Self::Length;
+}
+
+/// A speed-dimensioned quantity. `speed × time = length`.
+pub trait Speed: LinearQuantity {
+    /// The length produced by `speed × time`.
+    type Length: Length<Repr = Self::Repr>;
+    /// The time that pairs with this speed.
+    type Time: Time<Repr = Self::Repr>;
+
+    /// `speed × time = length`.
+    fn times(self, elapsed: Self::Time) -> Self::Length;
+}
+
+/// An area-dimensioned quantity. `area / length = length`.
+pub trait Area: LinearQuantity {
+    /// The length produced by `area / length`.
+    type Length: Length<Repr = Self::Repr>;
+
+    /// `area / length = length`.
+    fn over(self, side: Self::Length) -> Self::Length;
+}
+
+/// An angle-dimensioned quantity, carried in radians. Every operation is provided over the
+/// [`Real`] carrier, so a consumer's angle type only implements [`Quantity`] and
+/// [`LinearQuantity`].
+pub trait Angle: LinearQuantity {
+    /// Wrap a carrier value already in radians.
+    fn from_radians(radians: Self::Repr) -> Self {
+        Self::from_raw(radians)
+    }
+
+    /// Wrap a carrier value in degrees, converting to radians.
+    fn from_degrees(degrees: Self::Repr) -> Self {
+        Self::from_raw(degrees.to_radians())
+    }
+
+    /// `π` radians (a half turn).
+    fn half_turn() -> Self {
+        Self::from_raw(Self::Repr::pi())
+    }
+
+    /// `2π` radians (a full turn).
+    fn full_turn() -> Self {
+        Self::from_raw(Self::Repr::tau())
+    }
+
+    /// The angle in radians.
+    fn radians(&self) -> Self::Repr {
+        self.raw()
+    }
+
+    /// The angle in degrees.
+    fn degrees(&self) -> Self::Repr {
+        self.raw().to_degrees()
+    }
+
+    /// Sine of the angle.
+    fn sin(&self) -> Self::Repr {
+        self.raw().sin()
+    }
+
+    /// Cosine of the angle.
+    fn cos(&self) -> Self::Repr {
+        self.raw().cos()
+    }
+
+    /// Tangent of the angle.
+    fn tan(&self) -> Self::Repr {
+        self.raw().tan()
+    }
+
+    /// Normalize into `[0, 2π)`.
+    fn normalized_unsigned(self) -> Self {
+        Self::from_raw(self.raw().rem_euclid(Self::Repr::tau()))
+    }
+
+    /// Normalize into `(-π, π]`.
+    fn normalized_signed(self) -> Self {
+        let tau = Self::Repr::tau();
+        let pi = Self::Repr::pi();
+        let r = self.raw().rem_euclid(tau.clone());
+        let shifted = r.clone() - tau;
+        let over_pi = r.gt(&pi);
+        Self::from_raw(<Self::Repr as Compare>::select(&over_pi, shifted, r))
+    }
+}
 
 #[cfg(test)]
 mod tests;
-
-pub use measures::{Angle, Km, Meters, Seconds, SpeedMs, SquareMeters};

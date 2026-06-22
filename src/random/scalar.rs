@@ -26,6 +26,11 @@ pub trait KeyedRandomScalar: KeyedRandomBackend {
     fn bits_u64_scalar(key: &Self::Key) -> Self::UInt;
 
     /// Draw one raw uniformly-random word with an explicit bit width.
+    ///
+    /// The provided default dispatches the two common widths to
+    /// [`bits_u32_scalar`](Self::bits_u32_scalar)/[`bits_u64_scalar`](Self::bits_u64_scalar);
+    /// a backend that needs other widths overrides this method.
+    #[allow(clippy::panic)] // default-only guard: backends with other widths override this.
     fn random_bits_scalar(key: &Self::Key, bit_width: u32) -> Self::UInt {
         match bit_width {
             32 => Self::bits_u32_scalar(key),

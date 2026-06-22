@@ -6,12 +6,12 @@ use crate::numeric::{Boolean, Compare, Element, NormedDivisionAlgebra, Real, Rin
 /// refinement: additive reductions and contractions require [`Ring`], a real tensor
 /// also implements [`Real`], a complex one [`Complex`](crate::numeric::Complex),
 /// an integer one [`Integer`](crate::numeric::Integer), and a boolean tensor can
-/// implement [`Boolean`](crate::numeric::Boolean). A rank-1 tensor over a field is also
-/// a [`Vector`](crate::array::Vector), a rank-2 one a [`Matrix`](crate::array::Matrix).
+/// implement [`Boolean`](crate::numeric::Boolean). A vector is just a rank-1 tensor and a
+/// matrix a rank-2 tensor; there are no separate vector/matrix contracts.
 ///
 /// The bound is [`Clone`], not [`Ring`], so shape/reshape/control-flow carry no
-/// arithmetic demand; [`sum`](Tensor::sum), [`matmul`](Tensor::matmul),
-/// [`max`](Tensor::max), and the rank-1/2 linear algebra ask for the algebra they need.
+/// arithmetic demand; [`sum`](Tensor::sum), [`matmul`](Tensor::matmul), and
+/// [`max`](Tensor::max) ask for the algebra they need.
 /// Axis naming, mask representation, broadcast/gather/scatter details, and precision policy
 /// are outside this contract.
 pub trait Tensor: Clone {
@@ -124,10 +124,10 @@ pub trait Tensor: Clone {
     /// Functional dynamic update of a rectangular slice.
     fn dynamic_update_slice(&self, update: &Self, start_indices: &[Self::Index]) -> Self;
 
-    /// Vector scatter-update: `out[indices[i]] = updates[i]`.
+    /// 1-D scatter-update: `out[indices[i]] = updates[i]`.
     fn scatter_update_1d(&self, indices: &Self::Index, updates: &Self) -> Self;
 
-    /// Vector scatter-add: `out[indices[i]] += updates[i]`.
+    /// 1-D scatter-add: `out[indices[i]] += updates[i]`.
     fn scatter_add_1d(&self, indices: &Self::Index, updates: &Self) -> Self
     where
         Self: Ring;

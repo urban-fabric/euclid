@@ -225,9 +225,8 @@ pub trait TensorWindow: Tensor {
 }
 
 /// N-dimensional convolution — the structured contraction behind every convolutional network.
-/// A convolution is a sum of products, so it asks for [`Ring`]; like
-/// [`MatrixDecompose`](crate::array::MatrixDecompose) it sits outside the core because not
-/// every carrier supplies it.
+/// A convolution is a sum of products, so it asks for [`Ring`]; like the other capability
+/// extensions it sits outside the core because not every carrier supplies it.
 pub trait TensorConv: Tensor {
     /// General batched, grouped, dilated convolution (`jax.lax.conv_general_dilated` /
     /// XLA `ConvGeneralDilated`). `self` is the input and `rhs` the kernel; the dimension

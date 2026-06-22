@@ -4,7 +4,7 @@
 //!
 //! - [`Element`]: the canonical constants `0` and `1` every carrier defines directly — the
 //!   tier booleans, naturals, integers, and the real/complex/quaternion division algebras all
-//!   unify into, so any of them can be a [`Tensor`](crate::array::Tensor) element.
+//!   unify into, so any of them can be a [`Tensor`](crate::tensor::Tensor) element.
 //! - [`Semiring`] and [`Natural`]: `+`, `*`, identities, natural-number lifting,
 //!   Euclidean division, and count combinatorics.
 //! - [`Ring`] and [`Integer`]: subtraction, negation, signed integer lifting,
@@ -15,9 +15,8 @@
 //!   helpers.
 //! - [`VectorSpace`], [`InnerProductSpace`], and [`NormedVectorSpace`]:
 //!   scalar multiplication, dot products, and norms over a real field.
-//! - [`Interpolate`]: scalar-parameterized interpolation (`lerp`/`midpoint`) plus the
-//!   [`sample`]/[`sample_at`] helpers, kept separate from [`VectorSpace`] so a carrier can
-//!   supply a stable or domain-specific path.
+//! - [`Interpolate`]: scalar-parameterized interpolation (`lerp`/`midpoint`), kept separate
+//!   from [`VectorSpace`] so a carrier can supply a stable or domain-specific path.
 //! - [`NormedDivisionAlgebra`], [`Complex`], and [`Quaternion`]: conjugation,
 //!   magnitude, real part, and complex/quaternionic construction.
 //! - [`Boolean`] and [`Compare`]: mask algebra, comparisons, `select`, and carrier-level
@@ -29,7 +28,7 @@
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
 /// The carrier's canonical constants — the additive identity `0` and the multiplicative
-/// identity `1`. The tier every [`Tensor`](crate::array::Tensor) element kind unifies
+/// identity `1`. The tier every [`Tensor`](crate::tensor::Tensor) element kind unifies
 /// into: booleans (`0`/`1` are `false`/`true`), naturals, integers, and the real/complex/
 /// quaternion division algebras all implement it, so structural tensor constructors and
 /// reductions can name a zero/one for any of them through one bound.
@@ -107,10 +106,9 @@ pub trait NormedVectorSpace: InnerProductSpace {
     fn norm(self) -> Self::Scalar;
 }
 
-/// A **normed division algebra over ℝ** — the number abstraction the array contracts
-/// ([`Vector`](crate::array::Vector), [`Matrix`](crate::array::Matrix),
-/// [`Tensor`](crate::array::Tensor)) are generic over. By Frobenius/Hurwitz the
-/// associative ones are exactly ℝ, ℂ, ℍ, so one matrix/vector kernel runs over all three.
+/// A **normed division algebra over ℝ** — the number abstraction the
+/// [`Tensor`](crate::tensor::Tensor) array contract is generic over. By Frobenius/Hurwitz the
+/// associative ones are exactly ℝ, ℂ, ℍ, so one tensor kernel runs over all three.
 ///
 /// It names the real field magnitudes, norms, and SPD quantities live in (`Self` for a
 /// real number, the real part otherwise), the `conjugate` every Hermitian formula needs,
@@ -151,6 +149,6 @@ pub(crate) mod special;
 pub use boolean::{Boolean, Compare};
 pub use complex::{Complex, Quaternion};
 pub use integer::Integer;
-pub use interpolate::{sample, sample_at, Interpolate};
+pub use interpolate::Interpolate;
 pub use natural::Natural;
 pub use real::Real;

@@ -12,14 +12,12 @@
 
 mod dtype;
 mod key;
-mod matvec;
 mod process;
 mod scalar;
 mod tensor;
 
 pub use dtype::{RandomAlgorithm, RandomDType};
 pub use key::{GraphRandomBackend, KeyedRandomBackend};
-pub use matvec::{KeyedRandomMatVec, KeyedRandomMatVecDistributions};
 pub use process::{KeyedRandomProcess, SampleWithKey};
 pub use scalar::{KeyedRandomScalar, KeyedRandomScalarDistributions};
 pub use tensor::{GraphRandomTensor, KeyedRandomTensor, KeyedRandomTensorDistributions};
