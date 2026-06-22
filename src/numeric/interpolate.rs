@@ -1,9 +1,9 @@
 //! Scalar-parameterized interpolation contracts.
 //!
-//! Interpolation is separate from [`VectorSpace`](super::VectorSpace): some values
-//! interpolate linearly, while others need a domain-specific path or a numerically stable
-//! formula. The trait therefore requires both `lerp` and `midpoint` instead of deriving one
-//! from the other. It is deliberately **opt-in** rather than a blanket impl over
+//! Interpolation is kept separate from the algebra tiers: some values interpolate linearly,
+//! while others need a domain-specific path or a numerically stable formula. The trait
+//! therefore requires both `lerp` and `midpoint` instead of deriving one from the other. It is
+//! deliberately **opt-in** rather than a blanket impl over
 //! [`NormedDivisionAlgebra`](super::NormedDivisionAlgebra): the affine `lerp` is the wrong
 //! interpolation for some division algebras (a unit quaternion wants `slerp`), and a blanket
 //! impl would prevent any carrier from supplying a stabler or domain-specific path. The `f64`

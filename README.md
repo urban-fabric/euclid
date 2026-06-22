@@ -79,11 +79,6 @@ has the operation you need.
 - `Real`: real analysis over `Arithmetic`: lifted constants, powers,
   transcendentals, rounding/sign operations, masks, selectors, special
   functions, and stable log-domain helpers.
-- `VectorSpace`: addition/subtraction plus scalar multiplication over a real
-  field.
-- `InnerProductSpace`: explicit inner products over a `VectorSpace`.
-- `NormedVectorSpace`: explicit squared norm and norm operations over an
-  `InnerProductSpace`.
 - `NormedDivisionAlgebra`: the real/complex/quaternionic surface used by tensor
   algebra: conjugation, magnitude, real part, and real-axis lifting.
 - `Complex` and `Quaternion`: construction and component access for the

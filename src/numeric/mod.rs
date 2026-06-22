@@ -13,10 +13,8 @@
 //! - [`Real`]: real analysis, lifted constants, square/powers, rounding/sign
 //!   operations, comparison-free selectors, masks, special functions, and stable log-domain
 //!   helpers.
-//! - [`VectorSpace`], [`InnerProductSpace`], and [`NormedVectorSpace`]:
-//!   scalar multiplication, dot products, and norms over a real field.
 //! - [`Interpolate`]: scalar-parameterized interpolation (`lerp`/`midpoint`), kept separate
-//!   from [`VectorSpace`] so a carrier can supply a stable or domain-specific path.
+//!   from the algebra tiers so a carrier can supply a stable or domain-specific path.
 //! - [`NormedDivisionAlgebra`], [`Complex`], and [`Quaternion`]: conjugation,
 //!   magnitude, real part, and complex/quaternionic construction.
 //! - [`Boolean`] and [`Compare`]: mask algebra, comparisons, `select`, and carrier-level
@@ -67,49 +65,6 @@ impl<T> Ring for T where T: Semiring + Sub<Output = T> + Neg<Output = T> {}
 /// implemented by `f64`/`f32`, complex scalars, and `Tensor`. Integer carriers stop at
 /// [`Ring`]/[`Integer`]. (Constant lifting lives on [`Real`].)
 pub trait Arithmetic: Ring + Div<Output = Self> {}
-
-/// A module over a real scalar field: an additive abelian group plus multiplication by a scalar.
-///
-/// The supertrait bound is the additive group only — [`Element`] (for the `0` vector) plus
-/// `+`/`-`/negation — **not** [`Ring`]. A vector space has no vector×vector product; requiring
-/// [`Ring`] would wrongly force one (that is an *algebra*, a ring that is also a vector space).
-///
-/// Real, complex, quaternion, and tensor carriers are all vector spaces over their real
-/// field — ℝ one-dimensional over itself, ℂ two-dimensional, ℍ four-dimensional. This is a
-/// required-method contract: an implementer supplies `scale` over its
-/// [`Scalar`](Self::Scalar) field. (euclid does not derive it from
-/// [`NormedDivisionAlgebra`]; a carrier that wants the standard division-algebra structure
-/// implements `scale` as `self * Self::from_real(factor)`.)
-pub trait VectorSpace:
-    Element + Add<Output = Self> + Sub<Output = Self> + Neg<Output = Self>
-{
-    /// The real scalar field this vector space is over.
-    type Scalar: Real;
-
-    /// Scalar multiplication. (The additive identity is the `0` vector, [`Element::zero`].)
-    fn scale(self, factor: Self::Scalar) -> Self;
-}
-
-/// A [`VectorSpace`] with an inner product.
-///
-/// This is a required-method contract. Implementers choose the numerics for the dot product;
-/// euclid does not define it as repeated multiplication and addition.
-pub trait InnerProductSpace: VectorSpace {
-    /// The inner product in the vector space's scalar field.
-    fn dot(self, rhs: Self) -> Self::Scalar;
-}
-
-/// An [`InnerProductSpace`] with explicit norm operations.
-///
-/// Both methods are required so an implementation can use the numerically stable path for its
-/// representation instead of inheriting `dot(x, x)` or `sqrt(dot(x, x))`.
-pub trait NormedVectorSpace: InnerProductSpace {
-    /// The squared norm.
-    fn norm_squared(self) -> Self::Scalar;
-
-    /// The norm.
-    fn norm(self) -> Self::Scalar;
-}
 
 /// A **normed division algebra over ℝ** — the number abstraction the
 /// [`Tensor`](crate::tensor::Tensor) array contract is generic over. By Frobenius/Hurwitz the

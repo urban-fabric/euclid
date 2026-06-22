@@ -57,9 +57,8 @@ pub mod units;
 
 pub use control_flow::ControlFlow;
 pub use numeric::{
-    Arithmetic, Boolean, Compare, Complex, Element, InnerProductSpace, Integer, Interpolate,
-    Natural, NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, Ring, Semiring,
-    VectorSpace,
+    Arithmetic, Boolean, Compare, Complex, Element, Integer, Interpolate, Natural,
+    NormedDivisionAlgebra, Quaternion, Real, Ring, Semiring,
 };
 pub use random::{
     GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomProcess,
