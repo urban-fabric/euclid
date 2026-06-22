@@ -68,7 +68,11 @@ impl<T> Ring for T where T: Semiring + Sub<Output = T> + Neg<Output = T> {}
 /// [`Ring`]/[`Integer`]. (Constant lifting lives on [`Real`].)
 pub trait Arithmetic: Ring + Div<Output = Self> {}
 
-/// A module over a real scalar field: addition/subtraction plus multiplication by a scalar.
+/// A module over a real scalar field: an additive abelian group plus multiplication by a scalar.
+///
+/// The supertrait bound is the additive group only — [`Element`] (for the `0` vector) plus
+/// `+`/`-`/negation — **not** [`Ring`]. A vector space has no vector×vector product; requiring
+/// [`Ring`] would wrongly force one (that is an *algebra*, a ring that is also a vector space).
 ///
 /// Real, complex, quaternion, and tensor carriers are all vector spaces over their real
 /// field — ℝ one-dimensional over itself, ℂ two-dimensional, ℍ four-dimensional. This is a
@@ -76,12 +80,13 @@ pub trait Arithmetic: Ring + Div<Output = Self> {}
 /// [`Scalar`](Self::Scalar) field. (euclid does not derive it from
 /// [`NormedDivisionAlgebra`]; a carrier that wants the standard division-algebra structure
 /// implements `scale` as `self * Self::from_real(factor)`.)
-pub trait VectorSpace: Ring {
+pub trait VectorSpace:
+    Element + Add<Output = Self> + Sub<Output = Self> + Neg<Output = Self>
+{
     /// The real scalar field this vector space is over.
     type Scalar: Real;
 
-    /// Scalar multiplication. (The additive identity is [`Element::zero`], inherited
-    /// through [`Ring`]: [`Semiring`]: [`Element`].)
+    /// Scalar multiplication. (The additive identity is the `0` vector, [`Element::zero`].)
     fn scale(self, factor: Self::Scalar) -> Self;
 }
 
