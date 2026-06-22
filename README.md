@@ -57,7 +57,8 @@ assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
 
 | module | purpose |
 |--------|---------|
-| [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, interpolation, masks, and special functions |
+| [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, masks, and special functions |
+| [`interpolate`](src/interpolate.rs) | scalar-parameterized interpolation (`lerp`/`midpoint`) |
 | [`tensor`](src/tensor/mod.rs) | the rank-graded `Tensor` contract |
 | [`random`](src/random/mod.rs) | JAX-style keyed random-source contracts |
 | [`units`](src/units/mod.rs) | physical-dimension contracts over any `Real` carrier |
@@ -119,7 +120,7 @@ Consumers provide implementations for the carrier types they want to use.
 
 ## Interpolation
 
-`Interpolate`, part of the `numeric` module, defines scalar-parameterized
+`Interpolate`, its own top-level module, defines scalar-parameterized
 interpolation with explicit `lerp` and `midpoint` methods. `midpoint` is
 explicit because some carriers need a different implementation than
 `lerp(a, b, 0.5)`.

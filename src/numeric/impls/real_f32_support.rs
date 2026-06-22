@@ -1,6 +1,7 @@
 //! Supporting `f32` numeric impls outside the main `Real` block.
 
-use crate::numeric::{Arithmetic, Element, Interpolate, NormedDivisionAlgebra, Real};
+use crate::interpolate::Interpolate;
+use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra, Real};
 
 impl Element for f32 {
     #[inline]

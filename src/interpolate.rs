@@ -4,12 +4,12 @@
 //! while others need a domain-specific path or a numerically stable formula. The trait
 //! therefore requires both `lerp` and `midpoint` instead of deriving one from the other. It is
 //! deliberately **opt-in** rather than a blanket impl over
-//! [`NormedDivisionAlgebra`](super::NormedDivisionAlgebra): the affine `lerp` is the wrong
-//! interpolation for some division algebras (a unit quaternion wants `slerp`), and a blanket
-//! impl would prevent any carrier from supplying a stabler or domain-specific path. The `f64`
-//! and `f32` reference impls live in [`impls`](super::impls).
+//! [`NormedDivisionAlgebra`](crate::numeric::NormedDivisionAlgebra): the affine `lerp` is the
+//! wrong interpolation for some division algebras (a unit quaternion wants `slerp`), and a
+//! blanket impl would prevent any carrier from supplying a stabler or domain-specific path. The
+//! `f64` and `f32` reference impls live in the numeric `impls` module.
 
-use super::Real;
+use crate::numeric::Real;
 
 /// Values that can interpolate between two points using a real scalar parameter.
 pub trait Interpolate: Clone {

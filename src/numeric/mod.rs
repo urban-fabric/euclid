@@ -13,8 +13,6 @@
 //! - [`Real`]: real analysis, lifted constants, square/powers, rounding/sign
 //!   operations, comparison-free selectors, masks, special functions, and stable log-domain
 //!   helpers.
-//! - [`Interpolate`]: scalar-parameterized interpolation (`lerp`/`midpoint`), kept separate
-//!   from the algebra tiers so a carrier can supply a stable or domain-specific path.
 //! - [`NormedDivisionAlgebra`], [`Complex`], and [`Quaternion`]: conjugation,
 //!   magnitude, real part, and complex/quaternionic construction.
 //! - [`Boolean`] and [`Compare`]: mask algebra, comparisons, `select`, and carrier-level
@@ -96,7 +94,6 @@ mod boolean;
 mod complex;
 mod impls;
 mod integer;
-mod interpolate;
 mod natural;
 mod real;
 #[cfg(test)]
@@ -109,6 +106,5 @@ pub(crate) mod special;
 pub use boolean::{Boolean, Compare};
 pub use complex::{Complex, Quaternion};
 pub use integer::Integer;
-pub use interpolate::Interpolate;
 pub use natural::Natural;
 pub use real::Real;

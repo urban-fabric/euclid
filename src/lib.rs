@@ -21,8 +21,8 @@
 //!
 //! ## Modules
 //!
-//! - [`numeric`] defines scalar algebra, real analysis, interpolation, masks, and special
-//!   functions.
+//! - [`numeric`] defines scalar algebra, real analysis, masks, and special functions.
+//! - [`interpolate`] defines scalar-parameterized interpolation (`lerp`/`midpoint`).
 //! - [`tensor`](mod@tensor) defines the rank-graded [`Tensor`] (a vector is a rank-1 tensor, a
 //!   matrix a rank-2 tensor).
 //! - [`random`] defines JAX-style keyed random-source contracts.
@@ -49,6 +49,7 @@
 //! [`Natural`]; and `bool` implements [`Boolean`].
 
 pub mod control_flow;
+pub mod interpolate;
 pub mod numeric;
 pub mod random;
 pub mod spec;
@@ -56,9 +57,10 @@ pub mod tensor;
 pub mod units;
 
 pub use control_flow::ControlFlow;
+pub use interpolate::Interpolate;
 pub use numeric::{
-    Arithmetic, Boolean, Compare, Complex, Element, Integer, Interpolate, Natural,
-    NormedDivisionAlgebra, Quaternion, Real, Ring, Semiring,
+    Arithmetic, Boolean, Compare, Complex, Element, Integer, Natural, NormedDivisionAlgebra,
+    Quaternion, Real, Ring, Semiring,
 };
 pub use random::{
     GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomProcess,
