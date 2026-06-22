@@ -57,8 +57,7 @@ assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
 
 | module | purpose |
 |--------|---------|
-| [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, masks, and special functions |
-| [`interpolate`](src/interpolate.rs) | scalar-parameterized interpolation and sampling helpers |
+| [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, interpolation, masks, and special functions |
 | [`array`](src/array/mod.rs) | rank-graded vector, matrix, and tensor contracts |
 | [`random`](src/random.rs) | JAX-style keyed random-source contracts |
 | [`units`](src/units/mod.rs) | physical quantities over any `Real` carrier |
@@ -138,11 +137,12 @@ to use.
 
 ## Interpolation
 
-`Interpolate` defines scalar-parameterized interpolation with explicit `lerp`
-and `midpoint` methods. `midpoint` is explicit because some carriers need a
-different implementation than `lerp(a, b, 0.5)`.
+`Interpolate`, part of the `numeric` module, defines scalar-parameterized
+interpolation with explicit `lerp` and `midpoint` methods. `midpoint` is
+explicit because some carriers need a different implementation than
+`lerp(a, b, 0.5)`.
 
-The module also provides `sample_at` for natural-number sample indices and
+`numeric` also provides `sample_at` for natural-number sample indices and
 `sample` for endpoint-inclusive uniform samples.
 
 ## Random Traits

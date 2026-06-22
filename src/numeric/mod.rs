@@ -15,6 +15,9 @@
 //!   helpers.
 //! - [`VectorSpace`], [`InnerProductSpace`], and [`NormedVectorSpace`]:
 //!   scalar multiplication, dot products, and norms over a real field.
+//! - [`Interpolate`]: scalar-parameterized interpolation (`lerp`/`midpoint`) plus the
+//!   [`sample`]/[`sample_at`] helpers, kept separate from [`VectorSpace`] so a carrier can
+//!   supply a stable or domain-specific path.
 //! - [`NormedDivisionAlgebra`], [`Complex`], and [`Quaternion`]: conjugation,
 //!   magnitude, real part, and complex/quaternionic construction.
 //! - [`Boolean`] and [`Compare`]: mask algebra, comparisons, `select`, and carrier-level
@@ -135,6 +138,7 @@ mod boolean;
 mod complex;
 mod impls;
 mod integer;
+mod interpolate;
 mod natural;
 mod real;
 #[cfg(test)]
@@ -147,5 +151,6 @@ pub(crate) mod special;
 pub use boolean::{Boolean, Compare};
 pub use complex::{Complex, Quaternion};
 pub use integer::Integer;
+pub use interpolate::{sample, sample_at, Interpolate};
 pub use natural::Natural;
 pub use real::Real;

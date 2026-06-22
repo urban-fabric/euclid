@@ -23,8 +23,8 @@
 //!
 //! ## Modules
 //!
-//! - [`numeric`] defines scalar algebra, real analysis, masks, and special functions.
-//! - [`interpolate`] defines scalar-parameterized interpolation.
+//! - [`numeric`] defines scalar algebra, real analysis, interpolation, masks, and special
+//!   functions.
 //! - [`array`](mod@array) defines [`Vector`], [`Matrix`], and [`Tensor`].
 //! - [`random`] defines JAX-style keyed random-source contracts.
 //! - [`units`] defines physical quantities over any [`Real`] carrier.
@@ -51,7 +51,6 @@
 pub mod array;
 pub mod control_flow;
 pub mod execute;
-pub mod interpolate;
 pub mod numeric;
 pub mod random;
 pub mod spec;
@@ -60,10 +59,10 @@ pub mod units;
 pub use array::{Matrix, Tensor, Vector};
 pub use control_flow::ControlFlow;
 pub use execute::{Compile, Compiled, Parameter, Traced, TypedParameter};
-pub use interpolate::{sample, sample_at, Interpolate};
 pub use numeric::{
-    Arithmetic, Boolean, Compare, Complex, Element, InnerProductSpace, Integer, Natural,
-    NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, Ring, Semiring, VectorSpace,
+    Arithmetic, Boolean, Compare, Complex, Element, InnerProductSpace, Integer, Interpolate,
+    Natural, NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, Ring, Semiring,
+    VectorSpace, sample, sample_at,
 };
 pub use random::{
     GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomMatVec,

@@ -53,18 +53,6 @@ impl<T: Real> Neg for Meters<T> {
     }
 }
 
-impl<T: Real> AddAssign for Meters<T> {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() + rhs.0;
-    }
-}
-
-impl<T: Real> SubAssign for Meters<T> {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() - rhs.0;
-    }
-}
-
 /// Scale by a bare carrier factor (`length * gain`).
 impl<T: Real> Mul<T> for Meters<T> {
     type Output = Self;
@@ -123,18 +111,6 @@ impl<T: Real> Neg for Km<T> {
     }
 }
 
-impl<T: Real> AddAssign for Km<T> {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() + rhs.0;
-    }
-}
-
-impl<T: Real> SubAssign for Km<T> {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() - rhs.0;
-    }
-}
-
 /// Scale by a bare carrier factor.
 impl<T: Real> Mul<T> for Km<T> {
     type Output = Self;
@@ -149,7 +125,7 @@ const M_PER_KM: f64 = 1_000.0;
 impl<T: Real> Km<T> {
     /// Convert to meters, lifting the `1000` factor into the carrier.
     pub fn to_meters(self) -> Meters<T> {
-        let factor = self.0.scalar_like(M_PER_KM);
+        let factor = self.0.scalar(M_PER_KM);
         Meters(self.0 * factor)
     }
 }

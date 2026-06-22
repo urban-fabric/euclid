@@ -53,18 +53,6 @@ impl<T: Real> Neg for Seconds<T> {
     }
 }
 
-impl<T: Real> AddAssign for Seconds<T> {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() + rhs.0;
-    }
-}
-
-impl<T: Real> SubAssign for Seconds<T> {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() - rhs.0;
-    }
-}
-
 /// Scale by a bare carrier factor.
 impl<T: Real> Mul<T> for Seconds<T> {
     type Output = Self;

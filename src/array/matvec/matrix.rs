@@ -1,4 +1,4 @@
-use super::{vector::Vector, RealPart};
+use super::vector::Vector;
 use crate::array::control_flow;
 use crate::numeric::{Compare, Element, NormedDivisionAlgebra};
 
@@ -59,9 +59,9 @@ pub trait Matrix: Clone {
     /// (`Σ⁻¹µ`, GP/conditional means) needs it.
     fn solve_spd_vec(self, rhs: Self::Vector) -> Self::Vector;
     /// `ln det Σ` for Hermitian-PD `Σ` — real (an HPD determinant is a positive real).
-    fn logdet_spd(self) -> RealPart<Self::Scalar>;
+    fn logdet_spd(self) -> <Self::Scalar as NormedDivisionAlgebra>::RealPart;
     /// The squared Mahalanobis distance `δᴴ Σ⁻¹ δ` — real even over ℂ (a Hermitian form).
-    fn mahalanobis_squared(&self, delta: &Self::Vector) -> RealPart<Self::Scalar>;
+    fn mahalanobis_squared(&self, delta: &Self::Vector) -> <Self::Scalar as NormedDivisionAlgebra>::RealPart;
 
     // --- matrix control flow ------------------------------------------------
 

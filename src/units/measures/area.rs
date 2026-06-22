@@ -53,18 +53,6 @@ impl<T: Real> Neg for SquareMeters<T> {
     }
 }
 
-impl<T: Real> AddAssign for SquareMeters<T> {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() + rhs.0;
-    }
-}
-
-impl<T: Real> SubAssign for SquareMeters<T> {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() - rhs.0;
-    }
-}
-
 /// Scale by a bare carrier factor.
 impl<T: Real> Mul<T> for SquareMeters<T> {
     type Output = Self;

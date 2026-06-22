@@ -14,7 +14,3 @@ mod vector;
 
 pub use matrix::{Matrix, MatrixControlFlow, MatrixDecompose};
 pub use vector::{Vector, VectorControlFlow};
-
-/// The real field of a scalar `S` — `S` itself for a real scalar, its real part for a
-/// complex one. Where norms, log-determinant, and Mahalanobis distance live.
-type RealPart<S> = <S as NormedDivisionAlgebra>::RealPart;
