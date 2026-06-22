@@ -2,8 +2,8 @@
 //!
 //! Each unit is a thin newtype over a [`Real`] carrier `T` with the same shape: the
 //! struct, its `Quantity`/`LinearQuantity` impls, and the additive operator set
-//! (`Add`/`Sub`/`Neg`/`AddAssign`/`SubAssign`, plus carrier scaling `Mul<T>`). The operator
-//! impls are written out per unit because Rust's orphan rule forbids a blanket
+//! (`Add`/`Sub`/`Neg`, plus carrier scaling `Mul<T>`). The operator impls are written
+//! out per unit because Rust's orphan rule forbids a blanket
 //! `impl<Q: LinearQuantity> Add for Q`. Cross-unit products (length × length = area, …)
 //! live in [`dimensional`](super::dimensional).
 

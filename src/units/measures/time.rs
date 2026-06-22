@@ -1,4 +1,4 @@
-use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
+use core::ops::{Add, Mul, Neg, Sub};
 
 use crate::units::{Dimension, LinearQuantity, Quantity};
 use crate::Real;

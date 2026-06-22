@@ -34,15 +34,6 @@ fn linear_ops_over_f64() {
 }
 
 #[test]
-fn assign_ops() {
-    let mut a = m(10.0);
-    a += m(5.0);
-    assert!((a.clone().value() - 15.0).abs() < EPS);
-    a -= m(2.0);
-    assert!((a.value() - 13.0).abs() < EPS);
-}
-
-#[test]
 fn selectors_and_masks_collapse_to_bool() {
     let a = m(2.0);
     let b = m(5.0);

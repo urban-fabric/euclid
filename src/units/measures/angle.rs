@@ -1,4 +1,4 @@
-use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
+use core::ops::{Add, Mul, Neg, Sub};
 
 use crate::units::{Dimension, LinearQuantity, Quantity};
 use crate::Real;
@@ -121,18 +121,6 @@ impl<T: Real> Neg for Angle<T> {
     type Output = Self;
     fn neg(self) -> Self {
         Self(-self.0)
-    }
-}
-
-impl<T: Real> AddAssign for Angle<T> {
-    fn add_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() + rhs.0;
-    }
-}
-
-impl<T: Real> SubAssign for Angle<T> {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.0 = self.0.clone() - rhs.0;
     }
 }
 

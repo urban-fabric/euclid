@@ -50,7 +50,6 @@
 
 pub mod array;
 pub mod control_flow;
-pub mod execute;
 pub mod numeric;
 pub mod random;
 pub mod spec;
@@ -58,7 +57,6 @@ pub mod units;
 
 pub use array::{Matrix, Tensor, Vector};
 pub use control_flow::ControlFlow;
-pub use execute::{Compile, Compiled, Parameter, Traced, TypedParameter};
 pub use numeric::{
     Arithmetic, Boolean, Compare, Complex, Element, InnerProductSpace, Integer, Interpolate,
     Natural, NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, Ring, Semiring,

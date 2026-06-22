@@ -12,5 +12,7 @@ use crate::numeric::NormedDivisionAlgebra;
 mod matrix;
 mod vector;
 
+type RealPart<T> = <T as NormedDivisionAlgebra>::RealPart;
+
 pub use matrix::{Matrix, MatrixControlFlow, MatrixDecompose};
 pub use vector::{Vector, VectorControlFlow};

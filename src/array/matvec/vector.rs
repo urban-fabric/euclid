@@ -12,30 +12,20 @@ pub trait Vector: Clone {
         self.len() == 0
     }
 
-    // --- constructors ---
     /// A vector filled with `value`.
     fn full(len: usize, value: Self::Scalar) -> Self;
     /// The all-zeros vector.
-    fn zeros(len: usize) -> Self {
-        Self::full(len, Self::Scalar::zero())
-    }
+    fn zeros(len: usize) -> Self;
     /// A vector with the same length as `self`, filled with `value`.
-    fn full_like(&self, value: Self::Scalar) -> Self {
-        Self::full(self.len(), value)
-    }
+    fn full_like(&self, value: Self::Scalar) -> Self;
     /// An all-zeros vector with the same length as `self`.
-    fn zeros_like(&self) -> Self {
-        Self::zeros(self.len())
-    }
-
-    // --- vector space ---
+    fn zeros_like(&self) -> Self;
     fn add(self, other: Self) -> Self;
     fn sub(self, other: Self) -> Self;
     fn scale(self, factor: Self::Scalar) -> Self;
     /// Elementwise (Hadamard) product.
     fn hadamard(self, other: Self) -> Self;
 
-    // --- inner product / norms ---
     /// The Hermitian inner product `Σ conj(aᵢ)·bᵢ` (the ordinary `Σ aᵢ·bᵢ` for real vectors).
     fn dot(&self, other: &Self) -> Self::Scalar;
     fn sum(&self) -> Self::Scalar;
@@ -43,8 +33,6 @@ pub trait Vector: Clone {
     fn norm_squared(&self) -> RealPart<Self::Scalar>;
     /// `√(Σ |aᵢ|²)` — real even over ℂ.
     fn norm(&self) -> RealPart<Self::Scalar>;
-
-    // --- vector control flow ------------------------------------------------
 
     /// Elementwise vector conditional: `mask ? on_true : on_false`.
     ///

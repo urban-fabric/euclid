@@ -1,6 +1,5 @@
 use super::vector::Vector;
-use crate::array::control_flow;
-use crate::numeric::{Compare, Element, NormedDivisionAlgebra};
+use crate::numeric::{Compare, NormedDivisionAlgebra};
 
 /// **Rank 2.** Dense linear algebra over a scalar field (real or complex), centered on
 /// Hermitian-positive-definite results. The trait exposes stable operations
@@ -14,17 +13,12 @@ pub trait Matrix: Clone {
     /// `(rows, cols)`.
     fn shape(&self) -> (usize, usize);
 
-    // --- constructors ---
-    // Context-free, like `Real::scalar`. These let generic algorithms (`A \ I`,
-    // `AᴴA + λI`, …) compose without dropping to a concrete type.
     /// The `n×n` identity matrix.
     fn identity(n: usize) -> Self;
     /// A matrix filled with `value`.
     fn full(rows: usize, cols: usize, value: Self::Scalar) -> Self;
     /// An all-zeros `rows×cols` matrix.
-    fn zeros(rows: usize, cols: usize) -> Self {
-        Self::full(rows, cols, Self::Scalar::zero())
-    }
+    fn zeros(rows: usize, cols: usize) -> Self;
     /// A matrix with the same shape as `self`, filled with `value`.
     fn full_like(&self, value: Self::Scalar) -> Self {
         let (rows, cols) = self.shape();
@@ -63,26 +57,13 @@ pub trait Matrix: Clone {
     /// The squared Mahalanobis distance `δᴴ Σ⁻¹ δ` — real even over ℂ (a Hermitian form).
     fn mahalanobis_squared(&self, delta: &Self::Vector) -> <Self::Scalar as NormedDivisionAlgebra>::RealPart;
 
-    // --- matrix control flow ------------------------------------------------
-
-    /// Elementwise matrix conditional: `mask ? on_true : on_false`.
-    ///
-    /// This is the matrix-level spelling of [`Compare::select`]. Implementations
-    /// with matrix masks lower this to an elementwise select/where operation.
-    fn where_cond(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
-    where
-        Self: Compare,
-    {
-        control_flow::where_cond(mask, on_true, on_false)
-    }
-
     /// Alias for [`where_cond`](Self::where_cond), named like an ordinary conditional
     /// expression.
     fn if_then_else(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
     where
         Self: Compare,
     {
-        Self::where_cond(mask, on_true, on_false)
+        <Self as Compare>::if_then_else(mask, on_true, on_false)
     }
 }
 

@@ -1,4 +1,4 @@
-use core::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
+use core::ops::{Add, Mul, Neg, Sub};
 
 use crate::units::{Dimension, LinearQuantity, Quantity};
 use crate::Real;
@@ -125,7 +125,7 @@ const M_PER_KM: f64 = 1_000.0;
 impl<T: Real> Km<T> {
     /// Convert to meters, lifting the `1000` factor into the carrier.
     pub fn to_meters(self) -> Meters<T> {
-        let factor = self.0.scalar(M_PER_KM);
+        let factor = T::scalar(M_PER_KM);
         Meters(self.0 * factor)
     }
 }
