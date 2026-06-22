@@ -1,6 +1,7 @@
 //! Electromagnetic dimensions: [`ElectricCurrent`], [`ElectricCharge`], [`Voltage`],
 //! [`Resistance`], [`Conductance`], [`Capacitance`], [`Inductance`], [`MagneticFlux`],
-//! [`MagneticFluxDensity`], [`ElectricField`].
+//! [`MagneticFluxDensity`], [`ElectricField`], [`CurrentDensity`], [`MagneticFieldStrength`],
+//! [`Permittivity`], [`Permeability`], [`Resistivity`], [`Conductivity`].
 //!
 //! These carry the circuit and field algebra — Ohm's law (`current × resistance = voltage`),
 //! electrical power (`voltage × current = power`), `charge = current × time`, capacitor and
@@ -10,7 +11,8 @@
 use super::{Area, Energy, Force, Length, LinearQuantity, Power, Time};
 
 /// An electric-current dimensioned quantity (`[I]`, the SI base dimension, the ampere).
-/// `current × time = charge`, `current × resistance = voltage`, `current × voltage = power`.
+/// `current × time = charge`, `current × resistance = voltage`, `current × voltage = power`,
+/// `current / area = current density`.
 pub trait ElectricCurrent: LinearQuantity {
     /// The time that pairs with this current.
     type Time: Time<Repr = Self::Repr>;
@@ -26,6 +28,10 @@ pub trait ElectricCurrent: LinearQuantity {
     type Inductance: Inductance<Repr = Self::Repr>;
     /// The magnetic flux produced by `current × inductance`.
     type MagneticFlux: MagneticFlux<Repr = Self::Repr>;
+    /// The area that pairs with this current.
+    type Area: Area<Repr = Self::Repr>;
+    /// The current density produced by `current / area`.
+    type CurrentDensity: CurrentDensity<Repr = Self::Repr>;
 
     /// `current × time = charge`.
     fn times_time(self, elapsed: Self::Time) -> Self::ElectricCharge;
@@ -35,6 +41,8 @@ pub trait ElectricCurrent: LinearQuantity {
     fn times_voltage(self, voltage: Self::Voltage) -> Self::Power;
     /// `current × inductance = magnetic flux`.
     fn times_inductance(self, inductance: Self::Inductance) -> Self::MagneticFlux;
+    /// `current / area = current density`.
+    fn per_area(self, area: Self::Area) -> Self::CurrentDensity;
 }
 
 /// An electric-charge dimensioned quantity (`[T I]`, the coulomb). `charge / time = current`,
@@ -229,4 +237,103 @@ pub trait ElectricField: LinearQuantity {
     fn times_length(self, length: Self::Length) -> Self::Voltage;
     /// `field × charge = force`.
     fn times_charge(self, charge: Self::ElectricCharge) -> Self::Force;
+}
+
+/// A current-density dimensioned quantity (`[L⁻² I]`, amperes per square metre). `current density ×
+/// area = current`.
+pub trait CurrentDensity: LinearQuantity {
+    /// The area that pairs with this current density.
+    type Area: Area<Repr = Self::Repr>;
+    /// The current produced by `current density × area`.
+    type ElectricCurrent: ElectricCurrent<Repr = Self::Repr>;
+
+    /// `current density × area = current`.
+    fn times_area(self, area: Self::Area) -> Self::ElectricCurrent;
+}
+
+/// A magnetic-field-strength (magnetizing field, `H`) dimensioned quantity (`[L⁻¹ I]`, amperes per
+/// metre). `field strength × length = current` (Ampère's circuital law),
+/// `field strength × permeability = magnetic flux density` (`B = μH`).
+pub trait MagneticFieldStrength: LinearQuantity {
+    /// The length that pairs with this field strength.
+    type Length: Length<Repr = Self::Repr>;
+    /// The current produced by `field strength × length`.
+    type ElectricCurrent: ElectricCurrent<Repr = Self::Repr>;
+    /// The permeability that pairs with this field strength.
+    type Permeability: Permeability<Repr = Self::Repr>;
+    /// The magnetic flux density produced by `field strength × permeability`.
+    type MagneticFluxDensity: MagneticFluxDensity<Repr = Self::Repr>;
+
+    /// `field strength × length = current` (Ampère's circuital law).
+    fn times_length(self, length: Self::Length) -> Self::ElectricCurrent;
+    /// `field strength × permeability = magnetic flux density` (`B = μH`).
+    fn times_permeability(self, permeability: Self::Permeability) -> Self::MagneticFluxDensity;
+}
+
+/// A permittivity dimensioned quantity (`[L⁻³ M⁻¹ T⁴ I²]`, farads per metre). The electric
+/// constant of a medium. `permittivity × length = capacitance`.
+pub trait Permittivity: LinearQuantity {
+    /// The length that pairs with this permittivity.
+    type Length: Length<Repr = Self::Repr>;
+    /// The capacitance produced by `permittivity × length`.
+    type Capacitance: Capacitance<Repr = Self::Repr>;
+
+    /// `permittivity × length = capacitance` (the parallel-plate relation, per unit aspect ratio).
+    fn times_length(self, length: Self::Length) -> Self::Capacitance;
+}
+
+/// A permeability dimensioned quantity (`[L M T⁻² I⁻²]`, henries per metre). The magnetic constant
+/// of a medium. `permeability × length = inductance`, `permeability × field strength = magnetic
+/// flux density` (`B = μH`).
+pub trait Permeability: LinearQuantity {
+    /// The length that pairs with this permeability.
+    type Length: Length<Repr = Self::Repr>;
+    /// The inductance produced by `permeability × length`.
+    type Inductance: Inductance<Repr = Self::Repr>;
+    /// The magnetic field strength that pairs with this permeability.
+    type MagneticFieldStrength: MagneticFieldStrength<Repr = Self::Repr>;
+    /// The magnetic flux density produced by `permeability × field strength`.
+    type MagneticFluxDensity: MagneticFluxDensity<Repr = Self::Repr>;
+
+    /// `permeability × length = inductance` (per unit aspect ratio).
+    fn times_length(self, length: Self::Length) -> Self::Inductance;
+    /// `permeability × field strength = magnetic flux density` (`B = μH`).
+    fn times_field_strength(
+        self,
+        field_strength: Self::MagneticFieldStrength,
+    ) -> Self::MagneticFluxDensity;
+}
+
+/// An (electrical) resistivity dimensioned quantity (`[L³ M T⁻³ I⁻²]`, ohm-metres). The bulk
+/// resistance of a material, independent of geometry. `resistivity × current density = electric
+/// field` (the field form of Ohm's law, `E = ρJ`), and the reciprocal `1 / resistivity =
+/// conductivity`.
+pub trait Resistivity: LinearQuantity {
+    /// The current density that pairs with this resistivity.
+    type CurrentDensity: CurrentDensity<Repr = Self::Repr>;
+    /// The electric field produced by `resistivity × current density`.
+    type ElectricField: ElectricField<Repr = Self::Repr>;
+    /// The conductivity that is this resistivity's reciprocal.
+    type Conductivity: Conductivity<Repr = Self::Repr>;
+
+    /// `resistivity × current density = electric field` (`E = ρJ`).
+    fn times_current_density(self, current_density: Self::CurrentDensity) -> Self::ElectricField;
+    /// `1 / resistivity = conductivity`.
+    fn conductivity(self) -> Self::Conductivity;
+}
+
+/// An (electrical) conductivity dimensioned quantity (`[L⁻³ M⁻¹ T³ I²]`, siemens per metre). The
+/// reciprocal of [`Resistivity`]. `conductivity × electric field = current density` (`J = σE`).
+pub trait Conductivity: LinearQuantity {
+    /// The electric field that pairs with this conductivity.
+    type ElectricField: ElectricField<Repr = Self::Repr>;
+    /// The current density produced by `conductivity × electric field`.
+    type CurrentDensity: CurrentDensity<Repr = Self::Repr>;
+    /// The resistivity that is this conductivity's reciprocal.
+    type Resistivity: Resistivity<Repr = Self::Repr>;
+
+    /// `conductivity × electric field = current density` (`J = σE`).
+    fn times_electric_field(self, field: Self::ElectricField) -> Self::CurrentDensity;
+    /// `1 / conductivity = resistivity`.
+    fn resistivity(self) -> Self::Resistivity;
 }

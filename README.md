@@ -151,6 +151,18 @@ those with the cross-dimensional algebra (`length × length = area`,
 consumer defines its own `Meters`/`Seconds` carriers and implements these
 traits; euclid does not ship them.
 
+The trait surface covers the seven SI base dimensions, all 22 SI named derived
+units, and a broad set of further derived quantities, grouped by domain:
+`geometry`, `kinematics`, `mechanics` (including mass flow rate, kinematic
+viscosity, specific energy, energy density, action), `electromagnetism`
+(including current density, field strength, permittivity, permeability,
+resistivity, conductivity), `thermal` (including specific heat capacity, thermal
+resistance, heat flux), `photometry` (including luminance), `chemistry`
+(including molar energy, molar volume, molality), and `radiology` (the
+becquerel, gray, and sievert). Commensurable-but-distinct names (energy vs.
+torque, absorbed dose vs. dose equivalent vs. specific energy) are tracked
+separately by name while sharing a base-dimension signature.
+
 ## Implemented Here
 
 - `f64` and `f32` implement `Element`, `Arithmetic`, `Real`,

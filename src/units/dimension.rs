@@ -44,6 +44,11 @@ pub enum Dimension {
     MomentOfInertia,
     DynamicViscosity,
     SurfaceTension,
+    MassFlowRate,
+    KinematicViscosity,
+    SpecificEnergy,
+    EnergyDensity,
+    Action,
 
     // --- electromagnetic ---
     ElectricCharge,
@@ -55,19 +60,37 @@ pub enum Dimension {
     MagneticFlux,
     MagneticFluxDensity,
     ElectricField,
+    CurrentDensity,
+    MagneticFieldStrength,
+    Permittivity,
+    Permeability,
+    Resistivity,
+    Conductivity,
 
     // --- thermal ---
     HeatCapacity,
     ThermalConductivity,
+    SpecificHeatCapacity,
+    ThermalResistance,
+    HeatFlux,
 
     // --- photometric ---
     LuminousFlux,
     Illuminance,
+    Luminance,
 
     // --- chemical ---
     CatalyticActivity,
     Concentration,
     MolarMass,
+    MolarEnergy,
+    MolarVolume,
+    Molality,
+
+    // --- radiological ---
+    Radioactivity,
+    AbsorbedDose,
+    DoseEquivalent,
 
     // --- pure number ---
     Dimensionless,
@@ -129,6 +152,11 @@ impl Dimension {
             Self::MomentOfInertia => [2, 1, 0, 0, 0, 0, 0],
             Self::DynamicViscosity => [-1, 1, -1, 0, 0, 0, 0],
             Self::SurfaceTension => [0, 1, -2, 0, 0, 0, 0],
+            Self::MassFlowRate => [0, 1, -1, 0, 0, 0, 0],
+            Self::KinematicViscosity => [2, 0, -1, 0, 0, 0, 0],
+            Self::SpecificEnergy => [2, 0, -2, 0, 0, 0, 0],
+            Self::EnergyDensity => [-1, 1, -2, 0, 0, 0, 0],
+            Self::Action => [2, 1, -1, 0, 0, 0, 0],
 
             Self::ElectricCharge => [0, 0, 1, 1, 0, 0, 0],
             Self::Voltage => [2, 1, -3, -1, 0, 0, 0],
@@ -139,16 +167,33 @@ impl Dimension {
             Self::MagneticFlux => [2, 1, -2, -1, 0, 0, 0],
             Self::MagneticFluxDensity => [0, 1, -2, -1, 0, 0, 0],
             Self::ElectricField => [1, 1, -3, -1, 0, 0, 0],
+            Self::CurrentDensity => [-2, 0, 0, 1, 0, 0, 0],
+            Self::MagneticFieldStrength => [-1, 0, 0, 1, 0, 0, 0],
+            Self::Permittivity => [-3, -1, 4, 2, 0, 0, 0],
+            Self::Permeability => [1, 1, -2, -2, 0, 0, 0],
+            Self::Resistivity => [3, 1, -3, -2, 0, 0, 0],
+            Self::Conductivity => [-3, -1, 3, 2, 0, 0, 0],
 
             Self::HeatCapacity => [2, 1, -2, 0, -1, 0, 0],
             Self::ThermalConductivity => [1, 1, -3, 0, -1, 0, 0],
+            Self::SpecificHeatCapacity => [2, 0, -2, 0, -1, 0, 0],
+            Self::ThermalResistance => [-2, -1, 3, 0, 1, 0, 0],
+            Self::HeatFlux => [0, 1, -3, 0, 0, 0, 0],
 
             Self::LuminousFlux => [0, 0, 0, 0, 0, 0, 1],
             Self::Illuminance => [-2, 0, 0, 0, 0, 0, 1],
+            Self::Luminance => [-2, 0, 0, 0, 0, 0, 1],
 
             Self::CatalyticActivity => [0, 0, -1, 0, 0, 1, 0],
             Self::Concentration => [-3, 0, 0, 0, 0, 1, 0],
             Self::MolarMass => [0, 1, 0, 0, 0, -1, 0],
+            Self::MolarEnergy => [2, 1, -2, 0, 0, -1, 0],
+            Self::MolarVolume => [3, 0, 0, 0, 0, -1, 0],
+            Self::Molality => [0, -1, 0, 0, 0, 1, 0],
+
+            Self::Radioactivity => [0, 0, -1, 0, 0, 0, 0],
+            Self::AbsorbedDose => [2, 0, -2, 0, 0, 0, 0],
+            Self::DoseEquivalent => [2, 0, -2, 0, 0, 0, 0],
 
             Self::Dimensionless => [0, 0, 0, 0, 0, 0, 0],
         }

@@ -75,6 +75,11 @@ markers!(
     MomentOfInertia,
     DynamicViscosity,
     SurfaceTension,
+    MassFlowRate,
+    KinematicViscosity,
+    SpecificEnergy,
+    EnergyDensity,
+    Action,
     // electromagnetic
     ElectricCharge,
     Voltage,
@@ -85,16 +90,33 @@ markers!(
     MagneticFlux,
     MagneticFluxDensity,
     ElectricField,
+    CurrentDensity,
+    MagneticFieldStrength,
+    Permittivity,
+    Permeability,
+    Resistivity,
+    Conductivity,
     // thermal
     HeatCapacity,
     ThermalConductivity,
+    SpecificHeatCapacity,
+    ThermalResistance,
+    HeatFlux,
     // photometric
     LuminousFlux,
     Illuminance,
+    Luminance,
     // chemical
     CatalyticActivity,
     Concentration,
     MolarMass,
+    MolarEnergy,
+    MolarVolume,
+    Molality,
+    // radiological
+    Radioactivity,
+    AbsorbedDose,
+    DoseEquivalent,
     // pure number
     Dimensionless,
 );

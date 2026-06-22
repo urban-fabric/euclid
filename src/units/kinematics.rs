@@ -7,7 +7,7 @@
 //! [`geometry`](super::geometry) module docs for the `times_<operand>` / `per_<operand>` naming
 //! convention shared across the units module.
 
-use super::{Angle, Area, Force, LinearQuantity, Length, Mass, Volume};
+use super::{Angle, Area, Force, Length, LinearQuantity, Mass, Volume};
 
 /// A time-dimensioned quantity (`[T]`). `time × speed = length`, `time × acceleration = speed`,
 /// and the reciprocal `1 / time = frequency`.

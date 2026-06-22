@@ -12,14 +12,18 @@
 #![allow(clippy::float_cmp)]
 
 use super::{
-    Acceleration, AmountOfSubstance, Angle, AngularAcceleration, AngularMomentum, AngularVelocity,
-    Area, BaseExponents, Capacitance, CatalyticActivity, Concentration, Conductance, Density,
-    Dimension, Dimensioned, Dimensionless, DynamicViscosity, ElectricCharge, ElectricCurrent,
-    ElectricField, Energy, Force, Frequency, HeatCapacity, Illuminance, Inductance, Jerk, Length,
-    LinearQuantity, LuminousFlux, LuminousIntensity, MagneticFlux, MagneticFluxDensity, Mass,
-    MolarMass, MomentOfInertia, Momentum, Power, Pressure, Quantity, Resistance, ScalarQuantity,
-    SolidAngle, Speed, SurfaceTension, Temperature, ThermalConductivity, Time, Torque, Voltage,
-    Volume, VolumetricFlowRate, dim,
+    AbsorbedDose, Acceleration, Action, AmountOfSubstance, Angle, AngularAcceleration,
+    AngularMomentum, AngularVelocity, Area, BaseExponents, Capacitance, CatalyticActivity,
+    Concentration, Conductance, Conductivity, CurrentDensity, Density, Dimension, Dimensioned,
+    Dimensionless, DoseEquivalent, DynamicViscosity, ElectricCharge, ElectricCurrent,
+    ElectricField, Energy, EnergyDensity, Force, Frequency, HeatCapacity, HeatFlux, Illuminance,
+    Inductance, Jerk, KinematicViscosity, Length, LinearQuantity, Luminance, LuminousFlux,
+    LuminousIntensity, MagneticFieldStrength, MagneticFlux, MagneticFluxDensity, Mass,
+    MassFlowRate, Molality, MolarEnergy, MolarMass, MolarVolume, MomentOfInertia, Momentum,
+    Permeability, Permittivity, Power, Pressure, Quantity, Radioactivity, Resistance, Resistivity,
+    ScalarQuantity, SolidAngle, SpecificEnergy, SpecificHeatCapacity, Speed, SurfaceTension,
+    Temperature, ThermalConductivity, ThermalResistance, Time, Torque, Voltage, Volume,
+    VolumetricFlowRate, dim,
 };
 
 const EPS: f64 = 1e-9;
@@ -159,6 +163,11 @@ linear_carrier!(Den, Dimension::Density, "kg/m^3");
 linear_carrier!(Inr, Dimension::MomentOfInertia, "kg.m^2");
 linear_carrier!(Vsc, Dimension::DynamicViscosity, "Pa.s");
 linear_carrier!(Srf, Dimension::SurfaceTension, "N/m");
+linear_carrier!(Mfr, Dimension::MassFlowRate, "kg/s");
+linear_carrier!(Kvs, Dimension::KinematicViscosity, "m^2/s");
+linear_carrier!(SpE, Dimension::SpecificEnergy, "J/kg");
+linear_carrier!(EnD, Dimension::EnergyDensity, "J/m^3");
+linear_carrier!(Act, Dimension::Action, "J.s");
 
 // electromagnetism
 linear_carrier!(Chg, Dimension::ElectricCharge, "C");
@@ -170,19 +179,37 @@ linear_carrier!(Ind, Dimension::Inductance, "H");
 linear_carrier!(Flx, Dimension::MagneticFlux, "Wb");
 linear_carrier!(Fld, Dimension::MagneticFluxDensity, "T");
 linear_carrier!(EFd, Dimension::ElectricField, "V/m");
+linear_carrier!(CrD, Dimension::CurrentDensity, "A/m^2");
+linear_carrier!(Hfs, Dimension::MagneticFieldStrength, "A/m");
+linear_carrier!(Pmt, Dimension::Permittivity, "F/m");
+linear_carrier!(Pmb, Dimension::Permeability, "H/m");
+linear_carrier!(Rsv, Dimension::Resistivity, "ohm.m");
+linear_carrier!(Cdv, Dimension::Conductivity, "S/m");
 
 // thermal
 linear_carrier!(Hcp, Dimension::HeatCapacity, "J/K");
 linear_carrier!(Tcd, Dimension::ThermalConductivity, "W/(m.K)");
+linear_carrier!(Shc, Dimension::SpecificHeatCapacity, "J/(kg.K)");
+linear_carrier!(Thr, Dimension::ThermalResistance, "K/W");
+linear_carrier!(Hfx, Dimension::HeatFlux, "W/m^2");
 
 // photometry
 linear_carrier!(LFl, Dimension::LuminousFlux, "lm");
 linear_carrier!(Ilm, Dimension::Illuminance, "lx");
+linear_carrier!(Lmn, Dimension::Luminance, "cd/m^2");
 
 // chemistry
 linear_carrier!(Cat, Dimension::CatalyticActivity, "kat");
 linear_carrier!(Cnc, Dimension::Concentration, "mol/m^3");
 linear_carrier!(Mlr, Dimension::MolarMass, "kg/mol");
+linear_carrier!(MlE, Dimension::MolarEnergy, "J/mol");
+linear_carrier!(MlV, Dimension::MolarVolume, "m^3/mol");
+linear_carrier!(Mlt, Dimension::Molality, "mol/kg");
+
+// radiology
+linear_carrier!(Rdy, Dimension::Radioactivity, "Bq");
+linear_carrier!(AbD, Dimension::AbsorbedDose, "Gy");
+linear_carrier!(DsE, Dimension::DoseEquivalent, "Sv");
 
 // dimensionless
 linear_carrier!(Rat, Dimension::Dimensionless, "");
@@ -236,6 +263,8 @@ impl Area for Ar {
 impl Volume for Vol {
     type Length = Len;
     type Area = Ar;
+    type AmountOfSubstance = Amt;
+    type MolarVolume = MlV;
     fn per_length(self, height: Len) -> Ar {
         Ar(self.0 / height.0)
     }
@@ -244,6 +273,9 @@ impl Volume for Vol {
     }
     fn edge(self) -> Len {
         Len(self.0.cbrt())
+    }
+    fn per_amount(self, amount: Amt) -> MlV {
+        MlV(self.0 / amount.0)
     }
 }
 
@@ -424,6 +456,8 @@ impl Mass for Mas {
     type Area = Ar;
     type MolarMass = Mlr;
     type AmountOfSubstance = Amt;
+    type Time = Tim;
+    type MassFlowRate = Mfr;
     fn times_acceleration(self, accel: Acc) -> Frc {
         Frc(self.0 * accel.0)
     }
@@ -438,6 +472,9 @@ impl Mass for Mas {
     }
     fn per_amount(self, amount: Amt) -> Mlr {
         Mlr(self.0 / amount.0)
+    }
+    fn per_time(self, elapsed: Tim) -> Mfr {
+        Mfr(self.0 / elapsed.0)
     }
 }
 
@@ -510,6 +547,10 @@ impl Energy for Eng {
     type Voltage = Vlt;
     type Temperature = Tmp;
     type HeatCapacity = Hcp;
+    type Mass = Mas;
+    type SpecificEnergy = SpE;
+    type AmountOfSubstance = Amt;
+    type MolarEnergy = MlE;
     fn per_length(self, distance: Len) -> Frc {
         Frc(self.0 / distance.0)
     }
@@ -531,6 +572,12 @@ impl Energy for Eng {
     fn per_temperature(self, temperature: Tmp) -> Hcp {
         Hcp(self.0 / temperature.0)
     }
+    fn per_mass(self, mass: Mas) -> SpE {
+        SpE(self.0 / mass.0)
+    }
+    fn per_amount(self, amount: Amt) -> MlE {
+        MlE(self.0 / amount.0)
+    }
 }
 
 impl Power for Pwr {
@@ -540,8 +587,13 @@ impl Power for Pwr {
     type Speed = Spd;
     type ElectricCurrent = Cur;
     type Voltage = Vlt;
+    type Area = Ar;
+    type HeatFlux = Hfx;
     fn times_time(self, elapsed: Tim) -> Eng {
         Eng(self.0 * elapsed.0)
+    }
+    fn per_area(self, area: Ar) -> Hfx {
+        Hfx(self.0 / area.0)
     }
     fn per_force(self, force: Frc) -> Spd {
         Spd(self.0 / force.0)
@@ -666,6 +718,65 @@ impl SurfaceTension for Srf {
     }
 }
 
+impl MassFlowRate for Mfr {
+    type Time = Tim;
+    type Mass = Mas;
+    type Speed = Spd;
+    type Force = Frc;
+    type Density = Den;
+    type VolumetricFlowRate = Flow;
+    fn times_time(self, elapsed: Tim) -> Mas {
+        Mas(self.0 * elapsed.0)
+    }
+    fn times_speed(self, speed: Spd) -> Frc {
+        Frc(self.0 * speed.0)
+    }
+    fn per_density(self, density: Den) -> Flow {
+        Flow(self.0 / density.0)
+    }
+}
+
+impl KinematicViscosity for Kvs {
+    type Density = Den;
+    type DynamicViscosity = Vsc;
+    type Length = Len;
+    type Speed = Spd;
+    fn times_density(self, density: Den) -> Vsc {
+        Vsc(self.0 * density.0)
+    }
+    fn per_length(self, length: Len) -> Spd {
+        Spd(self.0 / length.0)
+    }
+}
+
+impl SpecificEnergy for SpE {
+    type Mass = Mas;
+    type Energy = Eng;
+    fn times_mass(self, mass: Mas) -> Eng {
+        Eng(self.0 * mass.0)
+    }
+}
+
+impl EnergyDensity for EnD {
+    type Volume = Vol;
+    type Energy = Eng;
+    fn times_volume(self, volume: Vol) -> Eng {
+        Eng(self.0 * volume.0)
+    }
+}
+
+impl Action for Act {
+    type Time = Tim;
+    type Energy = Eng;
+    type Frequency = Frq;
+    fn per_time(self, elapsed: Tim) -> Eng {
+        Eng(self.0 / elapsed.0)
+    }
+    fn times_frequency(self, frequency: Frq) -> Eng {
+        Eng(self.0 * frequency.0)
+    }
+}
+
 // --- electromagnetism impls ----------------------------------------------------------------
 
 impl ElectricCurrent for Cur {
@@ -676,6 +787,8 @@ impl ElectricCurrent for Cur {
     type Power = Pwr;
     type Inductance = Ind;
     type MagneticFlux = Flx;
+    type Area = Ar;
+    type CurrentDensity = CrD;
     fn times_time(self, elapsed: Tim) -> Chg {
         Chg(self.0 * elapsed.0)
     }
@@ -687,6 +800,9 @@ impl ElectricCurrent for Cur {
     }
     fn times_inductance(self, inductance: Ind) -> Flx {
         Flx(self.0 * inductance.0)
+    }
+    fn per_area(self, area: Ar) -> CrD {
+        CrD(self.0 / area.0)
     }
 }
 
@@ -840,6 +956,72 @@ impl ElectricField for EFd {
     }
 }
 
+impl CurrentDensity for CrD {
+    type Area = Ar;
+    type ElectricCurrent = Cur;
+    fn times_area(self, area: Ar) -> Cur {
+        Cur(self.0 * area.0)
+    }
+}
+
+impl MagneticFieldStrength for Hfs {
+    type Length = Len;
+    type ElectricCurrent = Cur;
+    type Permeability = Pmb;
+    type MagneticFluxDensity = Fld;
+    fn times_length(self, length: Len) -> Cur {
+        Cur(self.0 * length.0)
+    }
+    fn times_permeability(self, permeability: Pmb) -> Fld {
+        Fld(self.0 * permeability.0)
+    }
+}
+
+impl Permittivity for Pmt {
+    type Length = Len;
+    type Capacitance = Cap;
+    fn times_length(self, length: Len) -> Cap {
+        Cap(self.0 * length.0)
+    }
+}
+
+impl Permeability for Pmb {
+    type Length = Len;
+    type Inductance = Ind;
+    type MagneticFieldStrength = Hfs;
+    type MagneticFluxDensity = Fld;
+    fn times_length(self, length: Len) -> Ind {
+        Ind(self.0 * length.0)
+    }
+    fn times_field_strength(self, field_strength: Hfs) -> Fld {
+        Fld(self.0 * field_strength.0)
+    }
+}
+
+impl Resistivity for Rsv {
+    type CurrentDensity = CrD;
+    type ElectricField = EFd;
+    type Conductivity = Cdv;
+    fn times_current_density(self, current_density: CrD) -> EFd {
+        EFd(self.0 * current_density.0)
+    }
+    fn conductivity(self) -> Cdv {
+        Cdv(self.0.recip())
+    }
+}
+
+impl Conductivity for Cdv {
+    type ElectricField = EFd;
+    type CurrentDensity = CrD;
+    type Resistivity = Rsv;
+    fn times_electric_field(self, field: EFd) -> CrD {
+        CrD(self.0 * field.0)
+    }
+    fn resistivity(self) -> Rsv {
+        Rsv(self.0.recip())
+    }
+}
+
 // --- thermal impls -------------------------------------------------------------------------
 
 impl Temperature for Tmp {
@@ -869,20 +1051,59 @@ impl Temperature for Tmp {
 impl HeatCapacity for Hcp {
     type Temperature = Tmp;
     type Energy = Eng;
+    type Mass = Mas;
+    type SpecificHeatCapacity = Shc;
     fn times_temperature(self, delta: Tmp) -> Eng {
         Eng(self.0 * delta.0)
+    }
+    fn per_mass(self, mass: Mas) -> Shc {
+        Shc(self.0 / mass.0)
     }
 }
 
 impl ThermalConductivity for Tcd {}
+
+impl SpecificHeatCapacity for Shc {
+    type Mass = Mas;
+    type HeatCapacity = Hcp;
+    type Temperature = Tmp;
+    type SpecificEnergy = SpE;
+    fn times_mass(self, mass: Mas) -> Hcp {
+        Hcp(self.0 * mass.0)
+    }
+    fn times_temperature(self, delta: Tmp) -> SpE {
+        SpE(self.0 * delta.0)
+    }
+}
+
+impl ThermalResistance for Thr {
+    type Power = Pwr;
+    type Temperature = Tmp;
+    fn times_power(self, power: Pwr) -> Tmp {
+        Tmp(self.0 * power.0)
+    }
+}
+
+impl HeatFlux for Hfx {
+    type Area = Ar;
+    type Power = Pwr;
+    fn times_area(self, area: Ar) -> Pwr {
+        Pwr(self.0 * area.0)
+    }
+}
 
 // --- photometry impls ----------------------------------------------------------------------
 
 impl LuminousIntensity for Lum {
     type SolidAngle = Sld;
     type LuminousFlux = LFl;
+    type Area = Ar;
+    type Luminance = Lmn;
     fn times_solid_angle(self, solid_angle: Sld) -> LFl {
         LFl(self.0 * solid_angle.0)
+    }
+    fn per_area(self, area: Ar) -> Lmn {
+        Lmn(self.0 / area.0)
     }
 }
 
@@ -907,6 +1128,14 @@ impl Illuminance for Ilm {
     }
 }
 
+impl Luminance for Lmn {
+    type Area = Ar;
+    type LuminousIntensity = Lum;
+    fn times_area(self, area: Ar) -> Lum {
+        Lum(self.0 * area.0)
+    }
+}
+
 // --- chemistry impls -----------------------------------------------------------------------
 
 impl AmountOfSubstance for Amt {
@@ -916,6 +1145,7 @@ impl AmountOfSubstance for Amt {
     type Concentration = Cnc;
     type MolarMass = Mlr;
     type Mass = Mas;
+    type Molality = Mlt;
     fn per_time(self, elapsed: Tim) -> Cat {
         Cat(self.0 / elapsed.0)
     }
@@ -924,6 +1154,9 @@ impl AmountOfSubstance for Amt {
     }
     fn times_molar_mass(self, molar_mass: Mlr) -> Mas {
         Mas(self.0 * molar_mass.0)
+    }
+    fn per_mass(self, mass: Mas) -> Mlt {
+        Mlt(self.0 / mass.0)
     }
 }
 
@@ -948,6 +1181,64 @@ impl MolarMass for Mlr {
     type Mass = Mas;
     fn times_amount(self, amount: Amt) -> Mas {
         Mas(self.0 * amount.0)
+    }
+}
+
+impl MolarEnergy for MlE {
+    type AmountOfSubstance = Amt;
+    type Energy = Eng;
+    fn times_amount(self, amount: Amt) -> Eng {
+        Eng(self.0 * amount.0)
+    }
+}
+
+impl MolarVolume for MlV {
+    type AmountOfSubstance = Amt;
+    type Volume = Vol;
+    type Concentration = Cnc;
+    fn times_amount(self, amount: Amt) -> Vol {
+        Vol(self.0 * amount.0)
+    }
+    fn concentration(self) -> Cnc {
+        Cnc(self.0.recip())
+    }
+}
+
+impl Molality for Mlt {
+    type Mass = Mas;
+    type AmountOfSubstance = Amt;
+    fn times_mass(self, mass: Mas) -> Amt {
+        Amt(self.0 * mass.0)
+    }
+}
+
+// --- radiology impls -----------------------------------------------------------------------
+
+impl Radioactivity for Rdy {
+    type Time = Tim;
+    type Count = Rat;
+    fn times_time(self, elapsed: Tim) -> Rat {
+        Rat(self.0 * elapsed.0)
+    }
+}
+
+impl AbsorbedDose for AbD {
+    type Mass = Mas;
+    type Energy = Eng;
+    type DoseEquivalent = DsE;
+    fn times_mass(self, mass: Mas) -> Eng {
+        Eng(self.0 * mass.0)
+    }
+    fn weighted_by(self, radiation_weight: f64) -> DsE {
+        DsE(self.0 * radiation_weight)
+    }
+}
+
+impl DoseEquivalent for DsE {
+    type Mass = Mas;
+    type Energy = Eng;
+    fn times_mass(self, mass: Mas) -> Eng {
+        Eng(self.0 * mass.0)
     }
 }
 
@@ -1056,7 +1347,10 @@ fn rotational_dynamics() {
     let torque: Trq = Inr(4.0).times_angular_acceleration(AngAcc(2.0)); // τ = Iα
     assert!(approx(torque.clone().raw(), 8.0));
     assert!(approx(torque.clone().per_length(Len(2.0)).raw(), 4.0)); // → force
-    assert!(approx(torque.times_angular_velocity(AngVel(3.0)).raw(), 24.0)); // → power
+    assert!(approx(
+        torque.times_angular_velocity(AngVel(3.0)).raw(),
+        24.0
+    )); // → power
 
     let l: AngMom = Inr(4.0).times_angular_velocity(AngVel(3.0)); // L = Iω
     assert!(approx(l.clone().raw(), 12.0));
@@ -1107,7 +1401,10 @@ fn thermal_photometric_chemical() {
     assert!(approx(flux.clone().per_solid_angle(Sld(2.0)).raw(), 4.0));
     assert!(approx(flux.per_area(Ar(2.0)).raw(), 4.0)); // illuminance
     assert!(approx(Ilm(4.0).times_area(Ar(2.0)).raw(), 8.0));
-    assert!(approx(Sld::full_sphere().steradians(), 4.0 * std::f64::consts::PI));
+    assert!(approx(
+        Sld::full_sphere().steradians(),
+        4.0 * std::f64::consts::PI
+    ));
 
     // chemistry
     assert!(approx(Amt(6.0).per_time(Tim(2.0)).raw(), 3.0)); // catalytic activity
@@ -1120,6 +1417,102 @@ fn thermal_photometric_chemical() {
     // thermal conductivity is a tracked marker with no cross-dimensional product.
     assert_eq!(Tcd(0.5).raw(), 0.5);
     assert_eq!(Tcd::DIMENSION, Dimension::ThermalConductivity);
+}
+
+#[test]
+fn derived_mechanics() {
+    // mass flow rate
+    let m_dot: Mfr = Mas(10.0).per_time(Tim(2.0));
+    assert!(approx(m_dot.clone().raw(), 5.0));
+    assert!(approx(m_dot.clone().times_time(Tim(2.0)).raw(), 10.0));
+    assert!(approx(m_dot.clone().times_speed(Spd(3.0)).raw(), 15.0)); // thrust F = ṁv
+    assert!(approx(m_dot.per_density(Den(2.0)).raw(), 2.5)); // → volumetric flow
+
+    // kinematic viscosity ν = μ/ρ
+    assert!(approx(Kvs(2.0).times_density(Den(3.0)).raw(), 6.0)); // → dynamic viscosity
+    assert!(approx(Kvs(6.0).per_length(Len(2.0)).raw(), 3.0)); // → speed
+
+    // specific energy and energy density
+    let e_spec: SpE = Eng(20.0).per_mass(Mas(4.0));
+    assert!(approx(e_spec.clone().raw(), 5.0));
+    assert!(approx(e_spec.times_mass(Mas(4.0)).raw(), 20.0));
+    assert!(approx(EnD(5.0).times_volume(Vol(2.0)).raw(), 10.0));
+
+    // action — the Planck relation E = hf, and action / time = energy
+    assert!(approx(Act(6.0).times_frequency(Frq(2.0)).raw(), 12.0));
+    assert!(approx(Act(12.0).per_time(Tim(3.0)).raw(), 4.0));
+}
+
+#[test]
+fn fields_and_material_constants() {
+    // current density J = I/A
+    let j: CrD = Cur(12.0).per_area(Ar(3.0));
+    assert!(approx(j.clone().raw(), 4.0));
+    assert!(approx(j.times_area(Ar(3.0)).raw(), 12.0));
+
+    // magnetizing field H: Ampère's law and B = μH
+    assert!(approx(Hfs(5.0).times_length(Len(2.0)).raw(), 10.0)); // → current
+    assert!(approx(Hfs(2.0).times_permeability(Pmb(3.0)).raw(), 6.0)); // → flux density
+
+    // permittivity and permeability scale with length to capacitance / inductance
+    assert!(approx(Pmt(2.0).times_length(Len(3.0)).raw(), 6.0));
+    assert!(approx(Pmb(2.0).times_length(Len(3.0)).raw(), 6.0));
+
+    // resistivity ⇄ conductivity reciprocal pair, with E = ρJ and J = σE
+    assert!(approx(Rsv(4.0).conductivity().raw(), 0.25));
+    assert!(approx(Cdv(0.25).resistivity().raw(), 4.0));
+    assert!(approx(Rsv(3.0).times_current_density(CrD(2.0)).raw(), 6.0)); // → electric field
+    assert!(approx(Cdv(2.0).times_electric_field(EFd(3.0)).raw(), 6.0)); // → current density
+}
+
+#[test]
+fn intensive_thermal_chemical_photometric() {
+    // specific heat capacity
+    let c: Shc = Hcp(12.0).per_mass(Mas(3.0));
+    assert!(approx(c.clone().raw(), 4.0));
+    assert!(approx(c.clone().times_mass(Mas(3.0)).raw(), 12.0)); // → heat capacity
+    assert!(approx(c.times_temperature(Tmp(2.0)).raw(), 8.0)); // → specific energy (ΔT interval)
+
+    // thermal resistance ΔT = R·Q̇, and heat flux q = P/A
+    assert!(approx(Thr(2.0).times_power(Pwr(3.0)).raw(), 6.0));
+    let q: Hfx = Pwr(12.0).per_area(Ar(4.0));
+    assert!(approx(q.clone().raw(), 3.0));
+    assert!(approx(q.times_area(Ar(4.0)).raw(), 12.0));
+
+    // molar energy / volume / molality
+    assert!(approx(Eng(20.0).per_amount(Amt(4.0)).raw(), 5.0)); // molar energy
+    assert!(approx(MlE(5.0).times_amount(Amt(4.0)).raw(), 20.0));
+    let vm: MlV = Vol(12.0).per_amount(Amt(3.0));
+    assert!(approx(vm.clone().raw(), 4.0));
+    assert!(approx(vm.clone().times_amount(Amt(3.0)).raw(), 12.0));
+    assert!(approx(vm.concentration().raw(), 0.25)); // 1 / molar volume
+    let b: Mlt = Amt(6.0).per_mass(Mas(2.0)); // molality
+    assert!(approx(b.clone().raw(), 3.0));
+    assert!(approx(b.times_mass(Mas(2.0)).raw(), 6.0));
+
+    // luminance L = I/A
+    let lum: Lmn = Lum(8.0).per_area(Ar(2.0));
+    assert!(approx(lum.clone().raw(), 4.0));
+    assert!(approx(lum.times_area(Ar(2.0)).raw(), 8.0));
+}
+
+#[test]
+fn radiological_doses() {
+    // becquerel: activity × time = expected decay count (dimensionless)
+    assert!(approx(Rdy(100.0).times_time(Tim(3.0)).raw(), 300.0));
+
+    // gray: absorbed dose × mass = deposited energy
+    assert!(approx(AbD(2.0).times_mass(Mas(5.0)).raw(), 10.0));
+
+    // sievert: weight a gray by a dimensionless radiation factor, then read energy back
+    let h: DsE = AbD(2.0).weighted_by(20.0); // e.g. wᵣ = 20 for alpha particles
+    assert!(approx(h.clone().raw(), 40.0));
+    assert!(approx(h.times_mass(Mas(0.5)).raw(), 20.0));
+
+    // gray and sievert share a base signature but are distinct names, as is specific energy.
+    assert!(Dimension::AbsorbedDose.commensurable(Dimension::DoseEquivalent));
+    assert!(Dimension::AbsorbedDose.commensurable(Dimension::SpecificEnergy));
+    assert!(!Dimension::AbsorbedDose.same(Dimension::DoseEquivalent));
 }
 
 #[test]
@@ -1160,8 +1553,14 @@ fn angle_conversion_and_normalization() {
     let half_turn = Ang::from_degrees(180.0);
     assert!(approx(half_turn.radians(), std::f64::consts::PI));
     assert!(approx(half_turn.degrees(), 180.0));
-    assert!(approx(Ang::from_degrees(450.0).normalized_unsigned().degrees(), 90.0));
-    assert!(approx(Ang::from_degrees(270.0).normalized_signed().degrees(), -90.0));
+    assert!(approx(
+        Ang::from_degrees(450.0).normalized_unsigned().degrees(),
+        90.0
+    ));
+    assert!(approx(
+        Ang::from_degrees(270.0).normalized_signed().degrees(),
+        -90.0
+    ));
 }
 
 #[test]
@@ -1186,8 +1585,22 @@ fn base_dimension_signatures() {
     assert!(Dimension::Energy.commensurable(Dimension::Torque));
     assert!(!Dimension::Energy.same(Dimension::Torque));
 
-    // frequency and angular velocity are likewise commensurable.
+    // the same pattern recurs among the new derived names.
+    assert!(Dimension::EnergyDensity.commensurable(Dimension::Pressure));
+    assert!(!Dimension::EnergyDensity.same(Dimension::Pressure));
+    assert!(Dimension::Action.commensurable(Dimension::AngularMomentum));
+    assert!(!Dimension::Action.same(Dimension::AngularMomentum));
+    assert!(Dimension::Luminance.commensurable(Dimension::Illuminance));
+    assert!(!Dimension::Luminance.same(Dimension::Illuminance));
+
+    // a couple of the new derived signatures spelled out explicitly.
+    assert_eq!(Dimension::Permittivity.exponents(), [-3, -1, 4, 2, 0, 0, 0]);
+    assert_eq!(Dimension::MolarEnergy.exponents(), [2, 1, -2, 0, 0, -1, 0]);
+    assert_eq!(Dimension::AbsorbedDose.exponents(), [2, 0, -2, 0, 0, 0, 0]);
+
+    // frequency, angular velocity, and radioactivity are all commensurable (`[T⁻¹]`).
     assert!(Dimension::Frequency.commensurable(Dimension::AngularVelocity));
+    assert!(Dimension::Frequency.commensurable(Dimension::Radioactivity));
 
     // angles read as dimensionless in SI even though they are tracked names.
     assert!(Dimension::Angle.is_dimensionless());

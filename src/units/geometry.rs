@@ -14,8 +14,8 @@
 //! through [`LinearQuantity::ratio`].
 
 use super::{
-    AngularVelocity, LinearQuantity, LuminousFlux, LuminousIntensity, Speed, Time,
-    VolumetricFlowRate,
+    AmountOfSubstance, AngularVelocity, LinearQuantity, LuminousFlux, LuminousIntensity,
+    MolarVolume, Speed, Time, VolumetricFlowRate,
 };
 
 /// A length-dimensioned quantity (`[L]`). Anchors the spatial algebra:
@@ -68,12 +68,17 @@ pub trait Area: LinearQuantity {
     fn side(self) -> Self::Length;
 }
 
-/// A volume-dimensioned quantity (`[L³]`). `volume / length = area`, `volume / area = length`.
+/// A volume-dimensioned quantity (`[L³]`). `volume / length = area`, `volume / area = length`,
+/// `volume / amount = molar volume`.
 pub trait Volume: LinearQuantity {
     /// The length produced by `volume / area` (and the edge of a cube of this volume).
     type Length: Length<Repr = Self::Repr>;
     /// The area produced by `volume / length`.
     type Area: Area<Repr = Self::Repr>;
+    /// The amount of substance that pairs with this volume.
+    type AmountOfSubstance: AmountOfSubstance<Repr = Self::Repr>;
+    /// The molar volume produced by `volume / amount of substance`.
+    type MolarVolume: MolarVolume<Repr = Self::Repr>;
 
     /// `volume / length = area`.
     fn per_length(self, height: Self::Length) -> Self::Area;
@@ -81,6 +86,8 @@ pub trait Volume: LinearQuantity {
     fn per_area(self, base: Self::Area) -> Self::Length;
     /// The edge length of a cube with this volume (`∛volume`).
     fn edge(self) -> Self::Length;
+    /// `volume / amount of substance = molar volume`.
+    fn per_amount(self, amount: Self::AmountOfSubstance) -> Self::MolarVolume;
 }
 
 /// An angle-dimensioned quantity, conventionally carried in radians. Dimensionless in SI but

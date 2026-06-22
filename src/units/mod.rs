@@ -10,7 +10,8 @@
 //!
 //! ## Coverage
 //!
-//! The trait surface spans the seven SI base dimensions and the standard derived set:
+//! The trait surface spans the seven SI base dimensions and the standard derived set — including
+//! all 22 SI named derived units:
 //!
 //! - **base** — [`Length`], [`Mass`], [`Time`], [`ElectricCurrent`], [`Temperature`],
 //!   [`AmountOfSubstance`], [`LuminousIntensity`]
@@ -19,12 +20,19 @@
 //!   [`AngularVelocity`], [`AngularAcceleration`], [`VolumetricFlowRate`]
 //! - **[`mechanics`]** — [`Force`], [`Pressure`], [`Energy`], [`Power`], [`Momentum`],
 //!   [`AngularMomentum`], [`Torque`], [`Density`], [`MomentOfInertia`], [`DynamicViscosity`],
-//!   [`SurfaceTension`]
+//!   [`SurfaceTension`], [`MassFlowRate`], [`KinematicViscosity`], [`SpecificEnergy`],
+//!   [`EnergyDensity`], [`Action`]
 //! - **[`electromagnetism`]** — [`ElectricCharge`], [`Voltage`], [`Resistance`], [`Conductance`],
-//!   [`Capacitance`], [`Inductance`], [`MagneticFlux`], [`MagneticFluxDensity`], [`ElectricField`]
-//! - **[`thermal`]** — [`HeatCapacity`], [`ThermalConductivity`]
-//! - **[`photometry`]** — [`LuminousFlux`], [`Illuminance`]
-//! - **[`chemistry`]** — [`CatalyticActivity`], [`Concentration`], [`MolarMass`]
+//!   [`Capacitance`], [`Inductance`], [`MagneticFlux`], [`MagneticFluxDensity`], [`ElectricField`],
+//!   [`CurrentDensity`], [`MagneticFieldStrength`], [`Permittivity`], [`Permeability`],
+//!   [`Resistivity`], [`Conductivity`]
+//! - **[`thermal`]** — [`HeatCapacity`], [`ThermalConductivity`], [`SpecificHeatCapacity`],
+//!   [`ThermalResistance`], [`HeatFlux`]
+//! - **[`photometry`]** — [`LuminousFlux`], [`Illuminance`], [`Luminance`]
+//! - **[`chemistry`]** — [`CatalyticActivity`], [`Concentration`], [`MolarMass`], [`MolarEnergy`],
+//!   [`MolarVolume`], [`Molality`]
+//! - **[`radiology`]** — [`Radioactivity`], [`AbsorbedDose`], [`DoseEquivalent`] (becquerel, gray,
+//!   sievert)
 //! - **pure number** — [`Dimensionless`] (factors, gains, percentages)
 //!
 //! ## Type-level markers
@@ -63,6 +71,7 @@ pub mod geometry;
 pub mod kinematics;
 pub mod mechanics;
 pub mod photometry;
+pub mod radiology;
 pub mod thermal;
 
 mod dimension;
@@ -72,13 +81,17 @@ mod linear;
 mod quantity;
 mod scalar;
 
-pub use chemistry::{AmountOfSubstance, CatalyticActivity, Concentration, MolarMass};
+pub use chemistry::{
+    AmountOfSubstance, CatalyticActivity, Concentration, Molality, MolarEnergy, MolarMass,
+    MolarVolume,
+};
 pub use dimension::{BaseExponents, Dimension};
 pub use dimensioned::{Dimensioned, dim};
 pub use dimensionless::Dimensionless;
 pub use electromagnetism::{
-    Capacitance, Conductance, ElectricCharge, ElectricCurrent, ElectricField, Inductance,
-    MagneticFlux, MagneticFluxDensity, Resistance, Voltage,
+    Capacitance, Conductance, Conductivity, CurrentDensity, ElectricCharge, ElectricCurrent,
+    ElectricField, Inductance, MagneticFieldStrength, MagneticFlux, MagneticFluxDensity,
+    Permeability, Permittivity, Resistance, Resistivity, Voltage,
 };
 pub use geometry::{Angle, Area, Length, SolidAngle, Volume};
 pub use kinematics::{
@@ -87,13 +100,18 @@ pub use kinematics::{
 };
 pub use linear::LinearQuantity;
 pub use mechanics::{
-    AngularMomentum, Density, DynamicViscosity, Energy, Force, Mass, MomentOfInertia, Momentum,
-    Power, Pressure, SurfaceTension, Torque,
+    Action, AngularMomentum, Density, DynamicViscosity, Energy, EnergyDensity, Force,
+    KinematicViscosity, Mass, MassFlowRate, MomentOfInertia, Momentum, Power, Pressure,
+    SpecificEnergy, SurfaceTension, Torque,
 };
-pub use photometry::{Illuminance, LuminousFlux, LuminousIntensity};
+pub use photometry::{Illuminance, Luminance, LuminousFlux, LuminousIntensity};
 pub use quantity::{Mask, Quantity};
+pub use radiology::{AbsorbedDose, DoseEquivalent, Radioactivity};
 pub use scalar::ScalarQuantity;
-pub use thermal::{HeatCapacity, Temperature, ThermalConductivity};
+pub use thermal::{
+    HeatCapacity, HeatFlux, SpecificHeatCapacity, Temperature, ThermalConductivity,
+    ThermalResistance,
+};
 
 #[cfg(test)]
 mod tests;
