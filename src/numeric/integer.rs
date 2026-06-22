@@ -37,5 +37,9 @@ pub trait Integer: Ring {
     /// Euclidean division with remainder `(quotient, remainder)`, so
     /// `self == quotient * rhs + remainder` and `0 <= remainder < abs(rhs)` when `rhs != 0`.
     /// This is integer division, not the field operator `÷`.
+    ///
+    /// # Panics
+    /// Panics when `rhs == 0`, and on the overflow case `MIN.div_rem(-1)` whose quotient
+    /// `|MIN|` is unrepresentable — matching Rust's `div_euclid`/`rem_euclid`.
     fn div_rem(self, rhs: Self) -> (Self, Self);
 }

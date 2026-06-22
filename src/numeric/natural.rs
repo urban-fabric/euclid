@@ -50,6 +50,10 @@ pub trait Natural: Semiring {
     /// `self == quotient * rhs + remainder`. With no sign this is the
     /// ordinary floor division — the semiring peer of [`Integer::div_rem`], without the
     /// truncate-toward-zero caveat.
+    ///
+    /// # Panics
+    /// Panics when `rhs == 0`, as all integer division does. Unsigned division has no
+    /// overflow case.
     fn div_rem(self, rhs: Self) -> (Self, Self);
 
     /// `ln(n!)` in the associated real surface.

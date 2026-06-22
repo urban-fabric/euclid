@@ -136,11 +136,23 @@ impl Natural for u128 {
     }
     #[inline]
     fn binomial(&self, k: &Self) -> f64 {
+        // Multiplicative recurrence (exact within `2^53`), mirroring the host `binomial`;
+        // the previous `exp(lnΓ).round()` lost the low digits past `2^53`.
         if k > self {
-            0.0
-        } else {
-            self.ln_binomial(k).exp().round()
+            return 0.0;
         }
+        let n = *self;
+        let k = (*k).min(n - *k);
+        let mut acc = 1.0_f64;
+        let mut i: u128 = 1;
+        while i <= k {
+            acc = acc * (n - k + i) as f64 / i as f64;
+            if acc.is_infinite() {
+                return f64::INFINITY;
+            }
+            i += 1;
+        }
+        acc.round()
     }
 }
 

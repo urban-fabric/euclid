@@ -16,9 +16,32 @@ pub(crate) fn erf(x: f64) -> f64 {
     }
 }
 
+/// Lower edge of the continued-fraction regime. At and above this point `1 - erf`
+/// has lost too many bits (`erf` has rounded to `1.0`) while the continued fraction
+/// has converged, so both `erfc` and `erfcx` switch to the stable scaled form there.
+const ERFCX_CF_MIN: f64 = 4.0;
+
 /// The complementary error function `erfc(x) = 1 - erf(x)`.
+///
+/// The naive `1 - erf(x)` cancels catastrophically in the right tail — by `x ≈ 6`
+/// `erf` rounds to exactly `1.0` and `erfc` would underflow to `0`. For `x ≥ ERFCX_CF_MIN`
+/// we instead evaluate the algebraically equal `erfc(x) = e^{-x²}·erfcx(x)` through the
+/// continued fraction, which keeps full precision down to the underflow of `e^{-x²}`.
 pub(crate) fn erfc(x: f64) -> f64 {
+    if x >= ERFCX_CF_MIN {
+        return (-x * x).exp() * erfcx_cf(x);
+    }
     1.0 - erf(x)
+}
+
+/// Continued-fraction core of `erfcx` for `x ≥ ERFCX_CF_MIN`, depending only on `x`
+/// (not on `erfc`), so `erfc` and `erfcx` can both call it without mutual recursion.
+fn erfcx_cf(x: f64) -> f64 {
+    let mut t = x;
+    for k in (1..=60).rev() {
+        t = x + (k as f64) * 0.5 / t;
+    }
+    1.0 / (PI.sqrt() * t)
 }
 
 /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)`, finite in the right
@@ -28,14 +51,11 @@ pub(crate) fn erfcx(x: f64) -> f64 {
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);
     }
-    if x < 4.0 {
+    if x < ERFCX_CF_MIN {
+        // `x < ERFCX_CF_MIN`, so `erfc(x)` here takes its stable `1 - erf` branch.
         return (x * x).exp() * erfc(x);
     }
-    let mut t = x;
-    for k in (1..=60).rev() {
-        t = x + (k as f64) * 0.5 / t;
-    }
-    1.0 / (PI.sqrt() * t)
+    erfcx_cf(x)
 }
 
 /// The inverse error function: `erf_inv(erf(x)) = x` for `x ∈ (-1, 1)`.
@@ -102,6 +122,25 @@ mod tests {
     fn erf_inv_round_trips() {
         for &x in &[-0.9, -0.5, -0.1, 0.1, 0.3, 0.5, 0.8, 0.95] {
             close(erf(erf_inv(x)), x, 1e-10);
+        }
+    }
+
+    #[test]
+    fn erfc_tail_does_not_underflow() {
+        // Regression: the naive `1 - erf` underflows to exactly 0 by x ≈ 6 in f64;
+        // the tail now routes through `e^{-x²}·erfcx`, recovering the true value.
+        let known: &[(f64, f64)] = &[
+            (5.0, 1.537_459_794_428_034e-12),
+            (6.0, 2.151_973_671_249_891e-17),
+            (10.0, 2.088_487_583_762_545e-45),
+        ];
+        for &(x, want) in known {
+            let got = erfc(x);
+            assert!(got > 0.0, "erfc({x}) underflowed to {got}");
+            assert!(
+                (got - want).abs() <= 1e-3 * want,
+                "erfc({x}) = {got}, want {want}"
+            );
         }
     }
 }

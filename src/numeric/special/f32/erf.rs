@@ -16,9 +16,31 @@ pub(crate) fn erf(x: f32) -> f32 {
     }
 }
 
+/// Lower edge of the continued-fraction regime. Lower than the `f64` cutoff (`4.0`)
+/// because `f32`'s `1 - erf` cancellation sets in much earlier — by `x ≈ 3.5` it has
+/// lost most of its bits, and by `x ≈ 4` `erf` rounds to `1.0` so `erfc` underflows to
+/// `0`. The 60-term backward continued fraction is already accurate from `2.0` upward.
+const ERFCX_CF_MIN: f32 = 2.0;
+
 /// The complementary error function `erfc(x) = 1 - erf(x)`.
+///
+/// For `x ≥ ERFCX_CF_MIN` the `1 - erf` form cancels (in `f32` it underflows to `0`
+/// by `x ≈ 4`), so there we evaluate the equal, stable `erfc(x) = e^{-x²}·erfcx(x)`.
 pub(crate) fn erfc(x: f32) -> f32 {
+    if x >= ERFCX_CF_MIN {
+        return (-x * x).exp() * erfcx_cf(x);
+    }
     1.0 - erf(x)
+}
+
+/// Continued-fraction core of `erfcx` for `x ≥ ERFCX_CF_MIN`, depending only on `x`
+/// (not on `erfc`), so `erfc` and `erfcx` can both call it without mutual recursion.
+fn erfcx_cf(x: f32) -> f32 {
+    let mut t = x;
+    for k in (1..=60).rev() {
+        t = x + (k as f32) * 0.5 / t;
+    }
+    1.0 / (PI.sqrt() * t)
 }
 
 /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)`, finite in the right
@@ -27,14 +49,11 @@ pub(crate) fn erfcx(x: f32) -> f32 {
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);
     }
-    if x < 4.0 {
+    if x < ERFCX_CF_MIN {
+        // `x < ERFCX_CF_MIN`, so `erfc(x)` here takes its stable `1 - erf` branch.
         return (x * x).exp() * erfc(x);
     }
-    let mut t = x;
-    for k in (1..=60).rev() {
-        t = x + (k as f32) * 0.5 / t;
-    }
-    1.0 / (PI.sqrt() * t)
+    erfcx_cf(x)
 }
 
 /// The inverse error function: `erf_inv(erf(x)) = x` for `x ∈ (-1, 1)`.
@@ -108,6 +127,40 @@ mod tests {
     fn erf_inv_round_trips() {
         for &x in &[-0.9, -0.5, -0.1, 0.1, 0.3, 0.5, 0.8, 0.95] {
             agrees(erf(erf_inv(x)), x as f64, 1e-5);
+        }
+    }
+
+    #[test]
+    fn erfcx_tail_is_accurate() {
+        // Regression: the old `x < 4.0` threshold (copied from f64) routed [≈3.5, 4)
+        // through the catastrophic `1 - erf` cancellation, where the relative error
+        // reached 71% at 3.9 and 100% (returned 0.0) at 3.99. The lowered threshold
+        // sends that zone through the continued fraction instead.
+        for &x in &[1.5f32, 2.0, 2.5, 3.0, 3.5, 3.9, 3.99, 4.0, 5.0, 8.0] {
+            let got = erfcx(x);
+            let reference = crate::numeric::special::erf::erfcx(x as f64);
+            let rel = ((got as f64) - reference).abs() / reference.abs();
+            assert!(
+                rel < 1e-5,
+                "erfcx({x}) = {got}, ref {reference}, rel {rel:.2e}"
+            );
+        }
+    }
+
+    #[test]
+    fn erfc_tail_does_not_underflow() {
+        // Regression: `1 - erf` underflowed to exactly 0 by x ≈ 4 in f32; the tail now
+        // routes through `e^{-x²}·erfcx`, staying positive and accurate to the
+        // underflow of `e^{-x²}` itself.
+        for &x in &[3.0f32, 3.5, 4.0, 5.0, 6.0, 8.0] {
+            let got = erfc(x);
+            let reference = crate::numeric::special::erf::erfc(x as f64);
+            assert!(got > 0.0, "erfc({x}) underflowed to {got}");
+            let rel = ((got as f64) - reference).abs() / reference.abs();
+            assert!(
+                rel < 1e-4,
+                "erfc({x}) = {got}, ref {reference}, rel {rel:.2e}"
+            );
         }
     }
 }

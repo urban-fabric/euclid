@@ -124,7 +124,9 @@ pub(crate) fn digamma(mut x: f64) -> f64 {
     }
     let inv = 1.0 / x;
     let inv2 = inv * inv;
-    result + x.ln() - 0.5 * inv - inv2 * (1.0 / 12.0 - inv2 * (1.0 / 120.0 - inv2 / 252.0))
+    result + x.ln()
+        - 0.5 * inv
+        - inv2 * (1.0 / 12.0 - inv2 * (1.0 / 120.0 - inv2 * (1.0 / 252.0 - inv2 / 240.0)))
 }
 
 /// The trigamma function `ψ₁(x) = d²/dx² ln Γ(x)` — the derivative of [`digamma`].
@@ -184,8 +186,12 @@ mod tests {
 
     #[test]
     fn digamma_known_values() {
-        close(digamma(1.0), -0.577_215_664_901_532_9, 1e-9);
-        close(digamma(2.0), 1.0 - 0.577_215_664_901_532_9, 1e-9);
+        // Tightened to 1e-11 after adding the 1/(240·x⁸) asymptotic term: the prior
+        // truncation reached only ~1e-10 (vs the ~15-digit intent of the coefficients).
+        close(digamma(1.0), -0.577_215_664_901_532_9, 1e-11);
+        close(digamma(2.0), 1.0 - 0.577_215_664_901_532_9, 1e-11);
+        // ψ(3) = 3/2 − γ.
+        close(digamma(3.0), 1.5 - 0.577_215_664_901_532_9, 1e-11);
     }
 
     #[test]

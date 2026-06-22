@@ -1,7 +1,7 @@
 //! Supporting `f32` numeric impls outside the main `Real` block.
 
 use crate::interpolate::Interpolate;
-use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra, Real};
+use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra};
 
 impl Element for f32 {
     #[inline]
@@ -26,7 +26,10 @@ impl Interpolate for f32 {
 
     #[inline]
     fn midpoint(self, target: Self) -> Self {
-        self + (target - self) * Self::half()
+        // `f32::midpoint` (std, stabilized in 1.85) is overflow- and sign-stable; the
+        // earlier `self + (target - self) * ½` overflowed to ±∞ for large opposite-sign
+        // operands. This is exactly the "more stable midpoint" the trait doc anticipates.
+        f32::midpoint(self, target)
     }
 }
 

@@ -26,8 +26,11 @@
 //! - [`tensor`](mod@tensor) defines the rank-graded [`Tensor`] (a vector is a rank-1 tensor, a
 //!   matrix a rank-2 tensor).
 //! - [`random`] defines explicit-key random sampler contracts.
-//! - [`units`] defines physical-dimension contracts (`Length`, `Time`, `Speed`, `Area`,
-//!   `Angle`) over any [`Real`] carrier.
+//! - [`units`] defines physical-dimension contracts over any [`Real`] carrier — the seven SI
+//!   base dimensions (`Length`, `Mass`, `Time`, `ElectricCurrent`, `Temperature`,
+//!   `AmountOfSubstance`, `LuminousIntensity`) and the standard derived set (`Force`, `Energy`,
+//!   `Power`, `Pressure`, `Voltage`, `Resistance`, …), wired together by their cross-dimensional
+//!   algebra.
 //!
 //! ## Example
 //!

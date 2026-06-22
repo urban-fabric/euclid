@@ -8,7 +8,9 @@
 
 use crate::numeric::special::{f32::gamma::ln_gamma as ln_gamma_f32, gamma::ln_gamma};
 
-/// Cutoff for the exact loop: 20! is the largest factorial that fits an `f64` exactly.
+/// Cutoff for the exact integer loop (`n < SMALL`). `22!` is in fact the largest factorial
+/// exactly representable in `f64`; `20!` is a conservative cutoff that also keeps the
+/// `f32` companion loop (`factorial_u32`) honest within its much narrower `2^24` range.
 const SMALL: usize = 21;
 
 /// `n!` as `f64`. Exact through 20!, then via `exp(ln_factorial)` (so it overflows to
@@ -39,11 +41,25 @@ pub(crate) fn ln_factorial(n: u64) -> f64 {
 }
 
 /// The binomial coefficient `C(n, k)` as `f64`.
+///
+/// Evaluated by the multiplicative recurrence `C(n, i) = C(n, i-1)·(n-k+i)/i`, which is
+/// **exact** while the running product stays within `f64`'s exact-integer range (`2^53`) —
+/// each partial product `C(n-k+i, i)` is an integer, so the divide is exact. This is far
+/// wider than the previous `exp(lnΓ)` differencing, which lost the low digits early (e.g.
+/// `C(48, 25)` came out one short). Above `2^53` it returns the nearest representable `f64`.
 pub(crate) fn binomial(n: u64, k: u64) -> f64 {
     if k > n {
         return 0.0;
     }
-    ln_binomial(n, k).exp().round()
+    let k = k.min(n - k);
+    let mut acc = 1.0_f64;
+    for i in 1..=k {
+        acc = acc * (n - k + i) as f64 / i as f64;
+        if acc.is_infinite() {
+            return f64::INFINITY;
+        }
+    }
+    acc.round()
 }
 
 /// `ln C(n, k)`.
@@ -81,11 +97,22 @@ pub(crate) fn ln_factorial_u32(n: u32) -> f32 {
 }
 
 /// The binomial coefficient `C(n, k)` as `f32`.
+///
+/// Multiplicative recurrence (see [`binomial`]); exact within `f32`'s `2^24` exact-integer
+/// range, nearest representable beyond.
 pub(crate) fn binomial_u32(n: u32, k: u32) -> f32 {
     if k > n {
         return 0.0;
     }
-    ln_binomial_u32(n, k).exp().round()
+    let k = k.min(n - k);
+    let mut acc = 1.0_f32;
+    for i in 1..=k {
+        acc = acc * (n - k + i) as f32 / i as f32;
+        if acc.is_infinite() {
+            return f32::INFINITY;
+        }
+    }
+    acc.round()
 }
 
 /// `ln C(n, k)` in the `u32 -> f32` natural surface.
@@ -121,6 +148,12 @@ mod tests {
         assert_eq!(binomial(5, 2), 10.0);
         assert_eq!(binomial(10, 5), 252.0);
         assert_eq!(binomial(3, 4), 0.0);
+        // Regression: the old `exp(lnΓ)` path returned 30957699535775 here, one short of
+        // the true value (which is < 2^53, so the multiplicative form is exact).
+        assert_eq!(binomial(48, 25), 30_957_699_535_776.0);
+        assert_eq!(binomial(52, 5), 2_598_960.0);
+        // Symmetry C(n, k) == C(n, n-k).
+        assert_eq!(binomial(40, 3), binomial(40, 37));
     }
 
     #[test]

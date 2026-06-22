@@ -1,7 +1,7 @@
 //! Supporting `f64` numeric impls outside the main `Real` block.
 
 use crate::interpolate::Interpolate;
-use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra, Real};
+use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra};
 
 impl Element for f64 {
     #[inline]
@@ -26,7 +26,10 @@ impl Interpolate for f64 {
 
     #[inline]
     fn midpoint(self, target: Self) -> Self {
-        self + (target - self) * Self::half()
+        // `f64::midpoint` (std, stabilized in 1.85) is overflow- and sign-stable; the
+        // earlier `self + (target - self) * ½` overflowed to ±∞ for large opposite-sign
+        // operands. This is exactly the "more stable midpoint" the trait doc anticipates.
+        f64::midpoint(self, target)
     }
 }
 
@@ -69,5 +72,24 @@ impl NormedDivisionAlgebra for f64 {
     #[inline]
     fn magnitude(&self) -> f64 {
         f64::abs(*self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::interpolate::Interpolate;
+
+    #[test]
+    fn midpoint_is_overflow_stable() {
+        // Regression: `self + (target - self) * ½` returned -inf for large opposite-sign
+        // operands; the stable `f64::midpoint` returns the true (finite) midpoint.
+        assert_eq!(Interpolate::midpoint(1e308_f64, -1e308_f64), 0.0);
+        assert_eq!(Interpolate::midpoint(f64::MAX, f64::MAX), f64::MAX);
+        assert_eq!(Interpolate::midpoint(2.0_f64, 4.0), 3.0);
+        // Agrees with lerp at the midpoint for ordinary values.
+        assert_eq!(
+            Interpolate::midpoint(3.0_f64, 9.0),
+            Interpolate::lerp(3.0_f64, 9.0, 0.5)
+        );
     }
 }

@@ -287,9 +287,16 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     fn to_degrees(self) -> Self;
 
     // --- elementwise select (NaN-aware on the concrete reals) ---
-    // Comparison-free selectors for min/max/clamp-shaped piecewise kernels.
+    // Comparison-free selectors for min/max/clamp-shaped piecewise kernels. NaN-awareness
+    // here is about the *value* `self`: the concrete `f64`/`f32` `min`/`max` return the
+    // non-NaN operand, and `clamp` preserves a NaN value — not about the `clamp` bounds.
     fn min(self, other: Self) -> Self;
     fn max(self, other: Self) -> Self;
+    /// Clamp `self` into `[lo, hi]`.
+    ///
+    /// # Panics
+    /// The concrete `f64`/`f32` impls delegate to `f{64,32}::clamp`, which **panics** if
+    /// `lo > hi` or if either bound is NaN. Callers must supply ordered, non-NaN bounds.
     fn clamp(self, lo: Self, hi: Self) -> Self;
 
     // --- special functions ---
