@@ -148,4 +148,4 @@ pub use boolean::{Boolean, Compare};
 pub use complex::{Complex, Quaternion};
 pub use integer::Integer;
 pub use natural::Natural;
-pub use real::{Real, RealConstants};
+pub use real::Real;

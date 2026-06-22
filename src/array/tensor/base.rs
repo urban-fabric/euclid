@@ -1,4 +1,3 @@
-use crate::array::control_flow;
 use crate::numeric::{Boolean, Compare, Element, NormedDivisionAlgebra, Real, Ring, Semiring};
 
 /// **Rank n.** An n-dimensional array over a carrier element type: the dtype-agnostic array
@@ -213,22 +212,13 @@ pub trait Tensor: Clone {
 
     /// Elementwise tensor conditional: `mask ? on_true : on_false`.
     ///
-    /// This is the tensor-level spelling of [`Compare::select`]. Implementations
-    /// with vector masks lower this to an elementwise select/where operation.
-    fn where_cond(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
-    where
-        Self: Compare,
-    {
-        control_flow::where_cond(mask, on_true, on_false)
-    }
-
-    /// Alias for [`where_cond`](Self::where_cond), named like an ordinary conditional
-    /// expression.
+    /// This is the tensor-level spelling of [`Compare::if_then_else`]. Implementations
+    /// with vector masks lower this to an elementwise select operation.
     fn if_then_else(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
     where
         Self: Compare,
     {
-        Self::where_cond(mask, on_true, on_false)
+        <Self as Compare>::if_then_else(mask, on_true, on_false)
     }
 }
 

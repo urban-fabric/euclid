@@ -8,7 +8,7 @@ use crate::numeric::Compare;
 fn lazy_vector_control_flow_selects_values() {
     let mask = ToyTensor(1.0).lt(&ToyTensor(2.0));
     assert_eq!(
-        <ToyTensor as Vector>::where_cond(&mask, ToyTensor(10.0), ToyTensor(20.0)),
+        <ToyTensor as Vector>::if_then_else(&mask, ToyTensor(10.0), ToyTensor(20.0)),
         ToyTensor(10.0)
     );
     assert_eq!(
@@ -43,7 +43,7 @@ fn lazy_vector_while_loop_is_implemented_by_the_carrier() {
 fn lazy_matrix_control_flow_selects_values() {
     let mask = ToyTensor(1.0).lt(&ToyTensor(2.0));
     assert_eq!(
-        <ToyTensor as Matrix>::where_cond(&mask, ToyTensor(10.0), ToyTensor(20.0)),
+        <ToyTensor as Matrix>::if_then_else(&mask, ToyTensor(10.0), ToyTensor(20.0)),
         ToyTensor(10.0)
     );
     assert_eq!(
@@ -78,7 +78,7 @@ fn lazy_matrix_while_loop_is_implemented_by_the_carrier() {
 fn lazy_tensor_control_flow_selects_values() {
     let mask = ToyTensor(1.0).lt(&ToyTensor(2.0));
     assert_eq!(
-        <ToyTensor as Tensor>::where_cond(&mask, ToyTensor(10.0), ToyTensor(20.0)),
+        <ToyTensor as Tensor>::if_then_else(&mask, ToyTensor(10.0), ToyTensor(20.0)),
         ToyTensor(10.0)
     );
     assert_eq!(

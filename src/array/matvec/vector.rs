@@ -1,5 +1,4 @@
 use super::RealPart;
-use crate::array::control_flow;
 use crate::numeric::{Compare, Element, NormedDivisionAlgebra};
 
 /// **Rank 1.** A vector over a scalar carrier (real or complex): the vector-space and
@@ -49,22 +48,13 @@ pub trait Vector: Clone {
 
     /// Elementwise vector conditional: `mask ? on_true : on_false`.
     ///
-    /// This is the vector-level spelling of [`Compare::select`]. Implementations
-    /// with vector masks lower this to an elementwise select/where operation.
-    fn where_cond(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
-    where
-        Self: Compare,
-    {
-        control_flow::where_cond(mask, on_true, on_false)
-    }
-
-    /// Alias for [`where_cond`](Self::where_cond), named like an ordinary conditional
-    /// expression.
+    /// This is the vector-level spelling of [`Compare::if_then_else`]. Implementations
+    /// with vector masks lower this to an elementwise select operation.
     fn if_then_else(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
     where
         Self: Compare,
     {
-        Self::where_cond(mask, on_true, on_false)
+        <Self as Compare>::if_then_else(mask, on_true, on_false)
     }
 }
 

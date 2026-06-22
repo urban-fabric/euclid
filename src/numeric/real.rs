@@ -96,6 +96,48 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// Gumbel/Weibull/Gamma entropies. Not a `core` constant, so lifted from its digits.
     fn euler_gamma() -> Self;
 
+    /// `-1`.
+    #[inline]
+    fn neg_one() -> Self {
+        Self::zero() - Self::one()
+    }
+
+    /// Degrees in one full turn, `360`.
+    #[inline]
+    fn full_turn_degrees() -> Self {
+        Self::scalar(360.0)
+    }
+
+    /// Degrees in one half turn, `180`.
+    #[inline]
+    fn half_turn_degrees() -> Self {
+        Self::scalar(180.0)
+    }
+
+    /// Degrees in one quarter turn, `90`.
+    #[inline]
+    fn quarter_turn_degrees() -> Self {
+        Self::scalar(90.0)
+    }
+
+    /// Degrees in one and a half turns, `540`.
+    #[inline]
+    fn three_half_turn_degrees() -> Self {
+        Self::scalar(540.0)
+    }
+
+    /// Radians per degree, `pi / 180`.
+    #[inline]
+    fn radians_per_degree() -> Self {
+        Self::pi() / Self::half_turn_degrees()
+    }
+
+    /// Degrees per radian, `180 / pi`.
+    #[inline]
+    fn degrees_per_radian() -> Self {
+        Self::half_turn_degrees() / Self::pi()
+    }
+
     // --- non-finite IEEE sentinels ---
     // These bit patterns lift as ordinary constants through `scalar`. They are useful as
     // reduction/clamp bounds (`±∞`), log-domain masks
@@ -362,31 +404,4 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// `I₁(x) / I₀(x) = I₁ᵉ(x) / I₀ᵉ(x)` — the von Mises mean resultant length;
     /// overflow-free, since the shared `e^{|x|}` growth factor cancels.
     fn bessel_i1_over_i0(self) -> Self;
-}
-
-/// Standard real constants used by geometry and unit conversions.
-///
-/// These are required methods so each carrier can choose its own constant
-/// representation instead of inheriting a default `scalar(...)` lift.
-pub trait RealConstants: Real {
-    /// `-1`.
-    fn neg_one() -> Self;
-
-    /// Degrees in one full turn, `360`.
-    fn full_turn_degrees() -> Self;
-
-    /// Degrees in one half turn, `180`.
-    fn half_turn_degrees() -> Self;
-
-    /// Degrees in one quarter turn, `90`.
-    fn quarter_turn_degrees() -> Self;
-
-    /// Degrees in one and a half turns, `540`.
-    fn three_half_turn_degrees() -> Self;
-
-    /// Radians per degree, `π / 180`.
-    fn radians_per_degree() -> Self;
-
-    /// Degrees per radian, `180 / π`.
-    fn degrees_per_radian() -> Self;
 }

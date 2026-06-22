@@ -46,15 +46,17 @@ impl DType {
     }
 
     pub const fn is_bool(self) -> bool {
-        matches!(self, Self::Bool)
+        self as u8 == Self::Bool as u8
     }
 
     pub const fn is_signed_integer(self) -> bool {
-        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64)
+        let dtype = self as u8;
+        dtype >= Self::I8 as u8 && dtype <= Self::I64 as u8
     }
 
     pub const fn is_unsigned_integer(self) -> bool {
-        matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64)
+        let dtype = self as u8;
+        dtype >= Self::U8 as u8 && dtype <= Self::U64 as u8
     }
 
     pub const fn is_integer(self) -> bool {
@@ -62,11 +64,13 @@ impl DType {
     }
 
     pub const fn is_float(self) -> bool {
-        matches!(self, Self::F16 | Self::Bf16 | Self::F32 | Self::F64)
+        let dtype = self as u8;
+        dtype >= Self::F16 as u8 && dtype <= Self::F64 as u8
     }
 
     pub const fn is_complex(self) -> bool {
-        matches!(self, Self::C64 | Self::C128)
+        let dtype = self as u8;
+        dtype >= Self::C64 as u8 && dtype <= Self::C128 as u8
     }
 
     pub const fn bit_width(self) -> u32 {

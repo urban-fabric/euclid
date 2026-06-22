@@ -63,8 +63,7 @@ pub use execute::{Compile, Compiled, Parameter, Traced, TypedParameter};
 pub use interpolate::{sample, sample_at, Interpolate};
 pub use numeric::{
     Arithmetic, Boolean, Compare, Complex, Element, InnerProductSpace, Integer, Natural,
-    NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, RealConstants, Ring, Semiring,
-    VectorSpace,
+    NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, Ring, Semiring, VectorSpace,
 };
 pub use random::{
     GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomMatVec,

@@ -15,9 +15,6 @@
 //!   matrices interact with *each other* (matvec products, diagonals, SPD vector solves) as
 //!   well as with scalars, so they are grouped together.
 //!
-//! Helpers shared by both — the `control_flow` select primitive — live here at the `array`
-//! root.
-//!
 //! Within each interface the surface is layered:
 //!
 //! - **Structural tensors**: [`Tensor`] starts at [`Clone`], so shape and structural
@@ -45,7 +42,6 @@
 //! | 2 | [`Matrix`] | field | constructors + matmul + the SPD linear-algebra quantities |
 //! | n | [`Tensor`] | [`Clone`] | shape + constructors + structural ops + reductions + contraction |
 
-mod control_flow;
 mod matvec;
 mod tensor;
 #[cfg(test)]
