@@ -1,29 +1,29 @@
-use super::{RealPart, control_flow, vector::LazyVector};
-use crate::numeric::{LazyCompare, NormedDivisionAlgebra};
+use super::{vector::Vector, RealPart};
+use crate::array::control_flow;
+use crate::numeric::{Compare, Element, NormedDivisionAlgebra};
 
 /// **Rank 2.** Dense linear algebra over a scalar field (real or complex), centered on
 /// Hermitian-positive-definite results. The trait exposes stable operations
 /// (`solve_spd`, `logdet_spd`, `mahalanobis_squared`) and deliberately has no `inverse`.
-pub trait LazyMatrix: Clone {
+pub trait Matrix: Clone {
     /// The element scalar — real or complex.
     type Scalar: NormedDivisionAlgebra;
-    /// The companion vector type (`Self` for a tensor backend).
-    type Vector: LazyVector<Scalar = Self::Scalar>;
+    /// The companion vector type (`Self` for implementations where tensors carry all ranks).
+    type Vector: Vector<Scalar = Self::Scalar>;
 
     /// `(rows, cols)`.
     fn shape(&self) -> (usize, usize);
 
     // --- constructors ---
-    // Context-free, like `LazyReal::scalar`: an eager backend allocates, a lazy one emits
-    // a constant node. They let the abstract algorithms (`A \ I`, `AᴴA + λI`, …) compose
-    // without dropping to a concrete type.
+    // Context-free, like `Real::scalar`. These let generic algorithms (`A \ I`,
+    // `AᴴA + λI`, …) compose without dropping to a concrete type.
     /// The `n×n` identity matrix.
     fn identity(n: usize) -> Self;
     /// A matrix filled with `value`.
     fn full(rows: usize, cols: usize, value: Self::Scalar) -> Self;
     /// An all-zeros `rows×cols` matrix.
     fn zeros(rows: usize, cols: usize) -> Self {
-        Self::full(rows, cols, Self::Scalar::field_zero())
+        Self::full(rows, cols, Self::Scalar::zero())
     }
     /// A matrix with the same shape as `self`, filled with `value`.
     fn full_like(&self, value: Self::Scalar) -> Self {
@@ -67,27 +67,27 @@ pub trait LazyMatrix: Clone {
 
     /// Elementwise matrix conditional: `mask ? on_true : on_false`.
     ///
-    /// This is the matrix-level spelling of [`LazyCompare::select`]. Backends
+    /// This is the matrix-level spelling of [`Compare::select`]. Implementations
     /// with matrix masks lower this to an elementwise select/where operation.
-    fn where_cond(mask: &<Self as LazyCompare>::Mask, on_true: Self, on_false: Self) -> Self
+    fn where_cond(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
     where
-        Self: LazyCompare,
+        Self: Compare,
     {
         control_flow::where_cond(mask, on_true, on_false)
     }
 
     /// Alias for [`where_cond`](Self::where_cond), named like an ordinary conditional
     /// expression.
-    fn if_then_else(mask: &<Self as LazyCompare>::Mask, on_true: Self, on_false: Self) -> Self
+    fn if_then_else(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
     where
-        Self: LazyCompare,
+        Self: Compare,
     {
         Self::where_cond(mask, on_true, on_false)
     }
 }
 
 /// Explicit graph control-flow contract for matrix carriers.
-pub trait LazyMatrixControlFlow: LazyMatrix + LazyCompare {
+pub trait MatrixControlFlow: Matrix + Compare {
     /// Graph-level conditional over matrix values.
     fn cond<T, F>(
         pred: &Self::Mask,
@@ -105,4 +105,34 @@ pub trait LazyMatrixControlFlow: LazyMatrix + LazyCompare {
     where
         C: Fn(&Self) -> Self::Mask,
         B: Fn(Self) -> Self;
+}
+
+/// Dense matrix decompositions and the general (non-SPD) solve.
+///
+/// These return mathematical *factors* — QR, Hermitian eigen, singular-value, and LU — in the
+/// same "expose the result, not an `inverse`" spirit as [`Matrix`]. They sit outside the
+/// base trait because not every carrier supplies dense factorizations. euclid declares the
+/// contract; implementations provide the numerics.
+/// Real-valued spectra (eigenvalues, singular values) come back as a [`Vector`](Matrix::Vector).
+pub trait MatrixDecompose: Matrix {
+    /// Reduced QR factorization `A = Q·R`, with orthonormal `Q` and upper-triangular `R`.
+    fn qr(self) -> (Self, Self);
+
+    /// Hermitian eigendecomposition `A = V·diag(λ)·Vᴴ`, as `(eigenvalues, eigenvectors)` —
+    /// the eigenvalues real and ascending, `V` orthonormal.
+    fn eigh(self) -> (Self::Vector, Self);
+
+    /// Singular-value decomposition `A = U·diag(σ)·Vᴴ`, as `(U, singular_values, V)`.
+    fn svd(self) -> (Self, Self::Vector, Self);
+
+    /// LU factorization with partial pivoting: `(L, U, P)` with `P·A = L·U`.
+    fn lu(self) -> (Self, Self, Self);
+
+    /// Solve the general linear system `A·X = rhs` — no positive-definiteness assumed (cf.
+    /// [`solve_spd`](Matrix::solve_spd)).
+    fn solve(self, rhs: Self) -> Self;
+
+    /// Solve `A·x = b` for a single vector `b`, the [`solve`](Self::solve) analogue for
+    /// [`Vector`](Matrix::Vector).
+    fn solve_vec(self, rhs: Self::Vector) -> Self::Vector;
 }

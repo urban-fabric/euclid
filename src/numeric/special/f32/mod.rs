@@ -1,7 +1,7 @@
 //! Native single-precision special functions — the `f32` peer of the `f64` reference
 //! implementations in [`super`]. Same algorithms (Lanczos gamma, Numerical-Recipes continued
 //! fractions, Giles inverse-erf, A&S Bessel), evaluated in `f32` throughout so the `f32`
-//! [`LazyReal`](crate::numeric::LazyReal) surface never round-trips through `f64`. The
+//! [`Real`](crate::numeric::Real) surface never round-trips through `f64`. The
 //! continued-fraction tolerances are loosened to the `f32` noise floor (~`1e-6`), and the
 //! module mirrors [`super`]'s implementation layout.
 //!

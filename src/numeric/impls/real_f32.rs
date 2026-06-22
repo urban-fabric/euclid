@@ -1,10 +1,21 @@
 //! `f32` implementations of the numeric traits.
 
-use crate::numeric::{Arithmetic, LazyReal, NormedDivisionAlgebra};
+use crate::numeric::{Arithmetic, Element, NormedDivisionAlgebra, Real, RealConstants};
+
+impl Element for f32 {
+    #[inline]
+    fn zero() -> Self {
+        0.0
+    }
+    #[inline]
+    fn one() -> Self {
+        1.0
+    }
+}
 
 impl Arithmetic for f32 {}
 
-impl LazyReal for f32 {
+impl Real for f32 {
     type Integer = i32;
     #[inline]
     fn scalar(x: f64) -> Self {
@@ -12,8 +23,95 @@ impl LazyReal for f32 {
     }
     #[inline]
     fn scalar_like(&self, x: f64) -> Self {
-        let _ = self;
         x as f32
+    }
+    #[inline]
+    fn two() -> Self {
+        2.0
+    }
+    #[inline]
+    fn half() -> Self {
+        0.5
+    }
+    #[inline]
+    fn pi() -> Self {
+        core::f32::consts::PI
+    }
+    #[inline]
+    fn tau() -> Self {
+        core::f32::consts::TAU
+    }
+    #[inline]
+    fn frac_pi_2() -> Self {
+        core::f32::consts::FRAC_PI_2
+    }
+    #[inline]
+    fn frac_pi_4() -> Self {
+        core::f32::consts::FRAC_PI_4
+    }
+    #[inline]
+    fn sqrt_2() -> Self {
+        core::f32::consts::SQRT_2
+    }
+    #[inline]
+    fn frac_1_sqrt_2() -> Self {
+        core::f32::consts::FRAC_1_SQRT_2
+    }
+    #[inline]
+    fn ln_2() -> Self {
+        core::f32::consts::LN_2
+    }
+    #[inline]
+    fn ln_pi() -> Self {
+        core::f32::consts::PI.ln()
+    }
+    #[inline]
+    fn ln_tau() -> Self {
+        core::f32::consts::TAU.ln()
+    }
+    #[inline]
+    fn half_ln_tau() -> Self {
+        0.5 * core::f32::consts::TAU.ln()
+    }
+    #[inline]
+    fn e() -> Self {
+        core::f32::consts::E
+    }
+    #[inline]
+    fn log2_e() -> Self {
+        core::f32::consts::LOG2_E
+    }
+    #[inline]
+    fn log10_e() -> Self {
+        core::f32::consts::LOG10_E
+    }
+    #[inline]
+    fn ln_10() -> Self {
+        core::f32::consts::LN_10
+    }
+    #[inline]
+    fn log2_10() -> Self {
+        core::f32::consts::LOG2_10
+    }
+    #[inline]
+    fn log10_2() -> Self {
+        core::f32::consts::LOG10_2
+    }
+    #[inline]
+    fn euler_gamma() -> Self {
+        0.577_215_7
+    }
+    #[inline]
+    fn infinity() -> Self {
+        f32::INFINITY
+    }
+    #[inline]
+    fn neg_infinity() -> Self {
+        f32::NEG_INFINITY
+    }
+    #[inline]
+    fn nan() -> Self {
+        f32::NAN
     }
     #[inline]
     fn debug_assert_finite(self) -> Self {
@@ -21,7 +119,7 @@ impl LazyReal for f32 {
         // erase the check (it carries no semantic meaning).
         debug_assert!(
             self.is_finite(),
-            "LazyReal::debug_assert_finite: non-finite f32 {self}"
+            "Real::debug_assert_finite: non-finite f32 {self}"
         );
         self
     }
@@ -275,12 +373,20 @@ impl LazyReal for f32 {
     fn xlogy(self, y: Self) -> Self {
         // 0·ln 0 = 0 (and 0·ln y = 0): short-circuit the absorbing zero so the
         // multiply never forms 0·(−∞) = NaN.
-        if self == 0.0 { 0.0 } else { self * y.ln() }
+        if self == 0.0 {
+            0.0
+        } else {
+            self * y.ln()
+        }
     }
     #[inline]
     fn xlog1py(self, y: Self) -> Self {
         // 0·ln(1 + y) = 0, including y = −1 where the logarithm is −∞.
-        if self == 0.0 { 0.0 } else { self * y.ln_1p() }
+        if self == 0.0 {
+            0.0
+        } else {
+            self * y.ln_1p()
+        }
     }
     #[inline]
     fn ln_1m(&self) -> Self {
@@ -373,6 +479,43 @@ impl LazyReal for f32 {
     #[inline]
     fn bessel_i1_over_i0(self) -> Self {
         crate::numeric::special::f32::bessel::i1_over_i0(self)
+    }
+}
+
+impl RealConstants for f32 {
+    #[inline]
+    fn neg_one() -> Self {
+        -1.0
+    }
+
+    #[inline]
+    fn full_turn_degrees() -> Self {
+        360.0
+    }
+
+    #[inline]
+    fn half_turn_degrees() -> Self {
+        180.0
+    }
+
+    #[inline]
+    fn quarter_turn_degrees() -> Self {
+        90.0
+    }
+
+    #[inline]
+    fn three_half_turn_degrees() -> Self {
+        540.0
+    }
+
+    #[inline]
+    fn radians_per_degree() -> Self {
+        core::f32::consts::PI / 180.0
+    }
+
+    #[inline]
+    fn degrees_per_radian() -> Self {
+        180.0 / core::f32::consts::PI
     }
 }
 

@@ -1,14 +1,30 @@
 use super::ToyTensor;
-use crate::array::LazyTensor;
-use crate::numeric::LazyBool;
+use crate::array::Tensor;
+use crate::numeric::{Boolean, Element};
 
 #[derive(Clone, Debug, PartialEq)]
-struct ToyBoolTensor {
+struct ToyBooleanTensor {
     value: bool,
     dims: Vec<usize>,
 }
 
-impl LazyBool for ToyBoolTensor {
+impl Element for ToyBooleanTensor {
+    fn zero() -> Self {
+        Self {
+            value: false,
+            dims: vec![],
+        }
+    }
+
+    fn one() -> Self {
+        Self {
+            value: true,
+            dims: vec![],
+        }
+    }
+}
+
+impl Boolean for ToyBooleanTensor {
     fn and(&self, other: &Self) -> Self {
         Self {
             value: self.value && other.value,
@@ -38,12 +54,19 @@ impl LazyBool for ToyBoolTensor {
     }
 }
 
-impl LazyTensor for ToyBoolTensor {
+impl Tensor for ToyBooleanTensor {
     type Index = ToyTensor;
 
     fn full(shape: &[usize], value: Self) -> Self {
         Self {
             value: value.value,
+            dims: shape.to_vec(),
+        }
+    }
+
+    fn from_host(_data: &[f64], shape: &[usize]) -> Self {
+        Self {
+            value: false,
             dims: shape.to_vec(),
         }
     }
@@ -196,6 +219,40 @@ impl LazyTensor for ToyBoolTensor {
         }
     }
 
+    fn scatter_update(
+        &self,
+        _scatter_indices: &Self::Index,
+        updates: &Self,
+        _update_window_dims: &[usize],
+        _inserted_window_dims: &[usize],
+        _scatter_dims_to_operand_dims: &[usize],
+        _index_vector_dim: Option<usize>,
+        _indices_are_sorted: bool,
+        _unique_indices: bool,
+    ) -> Self {
+        Self {
+            value: updates.value,
+            dims: self.dims.clone(),
+        }
+    }
+
+    fn scatter_add(
+        &self,
+        _scatter_indices: &Self::Index,
+        updates: &Self,
+        _update_window_dims: &[usize],
+        _inserted_window_dims: &[usize],
+        _scatter_dims_to_operand_dims: &[usize],
+        _index_vector_dim: Option<usize>,
+        _indices_are_sorted: bool,
+        _unique_indices: bool,
+    ) -> Self {
+        Self {
+            value: self.value || updates.value,
+            dims: self.dims.clone(),
+        }
+    }
+
     fn sum(self, _axes: &[usize]) -> Self {
         self
     }
@@ -231,11 +288,11 @@ impl LazyTensor for ToyBoolTensor {
 
 #[test]
 fn lazy_tensor_can_be_boolean_without_being_a_ring() {
-    fn accepts_bool_tensor<T: LazyTensor + LazyBool>(tensor: T) -> T {
+    fn accepts_bool_tensor<T: Tensor + Boolean>(tensor: T) -> T {
         tensor.reshape(&[3])
     }
 
-    let tensor = ToyBoolTensor {
+    let tensor = ToyBooleanTensor {
         value: true,
         dims: vec![1, 3],
     };
@@ -244,11 +301,11 @@ fn lazy_tensor_can_be_boolean_without_being_a_ring() {
     assert_eq!(reshaped.shape(), vec![3]);
     assert_eq!(reshaped.rank(), 1);
     assert_eq!(
-        reshaped.and(&ToyBoolTensor {
+        reshaped.and(&ToyBooleanTensor {
             value: false,
             dims: vec![3]
         }),
-        ToyBoolTensor {
+        ToyBooleanTensor {
             value: false,
             dims: vec![3]
         }

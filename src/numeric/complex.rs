@@ -1,5 +1,4 @@
-//! The complex/quaternion lazy traits: [`LazyComplex`] and [`LazyQuaternion`]. The concrete
-//! `Complex` number (the `Copy` tier) lives in the `napier` crate.
+//! Complex and quaternion carrier traits.
 
 use super::NormedDivisionAlgebra;
 
@@ -8,7 +7,7 @@ use super::NormedDivisionAlgebra;
 /// the real scalars. The real field, `conjugate`, `magnitude`, and `norm_sqr` come from
 /// [`NormedDivisionAlgebra`]; `from_parts`, `re`, and `conj` are the idiomatic complex
 /// spellings.
-pub trait LazyComplex: NormedDivisionAlgebra {
+pub trait Complex: NormedDivisionAlgebra {
     /// Construct `re + i·im` from real and imaginary parts.
     fn from_parts(re: Self::RealPart, im: Self::RealPart) -> Self;
 
@@ -29,7 +28,7 @@ pub trait LazyComplex: NormedDivisionAlgebra {
 /// imaginary components of `q = w + x·i + y·j + z·k`. Implemented by `Quaternion{32,64}`.
 /// ℍ is non-commutative (`i·j = k`, `j·i = −k`), so a division ring rather than a `Field` —
 /// it carries the division-algebra structure here, but not the matrix kernels.
-pub trait LazyQuaternion: NormedDivisionAlgebra {
+pub trait Quaternion: NormedDivisionAlgebra {
     /// The `i` (first imaginary) component.
     fn i(&self) -> Self::RealPart;
     /// The `j` (second imaginary) component.

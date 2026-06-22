@@ -1,38 +1,41 @@
 //! # euclid
 //!
-//! Domain-neutral numeric foundations for the urban-fabric math stack.
+//! Dependency-free numeric contracts for carrier-generic Rust math.
 //!
-//! euclid defines lazy trait contracts for scalar, interpolation, array, random, and unit-aware math.
-//! It has no external dependencies. The crate includes the contracts, the `f64`/`f32`
-//! reference scalar implementations, integer/natural/bool scalar carriers, and lazy
-//! physical-unit wrappers.
+//! A formula written against these traits can run on ordinary `f64`/`f32` values and on
+//! consumer-defined expression, graph, tensor, or unit-aware carriers. euclid defines the
+//! operations a formula may use; it does not define storage layout, execution runtime, array
+//! allocation, or a random-number engine.
 //!
-//! The contracts are intentionally small:
+//! The crate includes `f64`/`f32`, integer, natural, and `bool` implementations, plus
+//! physical-unit wrappers over any [`Real`] carrier.
 //!
-//! - Values are `Clone`, not `Copy`.
-//! - Constants are lifted with methods such as [`LazyReal::scalar`].
-//! - Comparisons return masks, consumed by [`LazyCompare::select`] or
-//!   [`LazyCompare::if_then_else`].
-//! - Matrix traits expose stable mathematical results such as `solve_spd` and
-//!   `logdet_spd`, not `inverse`.
-//! - Each trait names the structure it requires; code should use the narrowest bound that
-//!   contains the operations it needs.
+//! ## Usage Rules
+//!
+//! - Choose the narrowest trait bound that contains the operations a formula needs.
+//! - Treat generic values as `Clone`, not `Copy`.
+//! - Lift host literals with methods such as [`Real::scalar`] and
+//!   [`Real::scalar_like`].
+//! - Comparisons return masks, consumed by [`Compare::select`] or
+//!   [`Compare::if_then_else`].
+//! - Use matrix operations such as `solve_spd`, `logdet_spd`, and
+//!   `mahalanobis_squared` instead of forming an inverse.
 //!
 //! ## Modules
 //!
 //! - [`numeric`] defines scalar algebra, real analysis, masks, and special functions.
 //! - [`interpolate`] defines scalar-parameterized interpolation.
-//! - [`array`](mod@array) defines [`LazyVector`], [`LazyMatrix`], and [`LazyTensor`].
-//! - [`random`] defines stream-shaped and keyed random-source contracts.
-//! - [`units`] defines lazy physical quantities over any [`LazyReal`] carrier.
+//! - [`array`](mod@array) defines [`Vector`], [`Matrix`], and [`Tensor`].
+//! - [`random`] defines JAX-style keyed random-source contracts.
+//! - [`units`] defines physical quantities over any [`Real`] carrier.
 //!
 //! ## Example
 //!
 //! ```
-//! use euclid::LazyReal;
+//! use euclid::Real;
 //!
-//! // Standard-normal log-density, generic over the lazy real surface.
-//! fn standard_normal_logpdf<T: LazyReal>(x: T) -> T {
+//! // Standard-normal log-density over any real carrier.
+//! fn standard_normal_logpdf<T: Real>(x: T) -> T {
 //!     let x2 = x.square();
 //!     -(T::half() * x2) - T::half_ln_tau()
 //! }
@@ -42,27 +45,35 @@
 //! ```
 //!
 //! In this crate, `f64`/`f32` implement the real and interpolation traits;
-//! `i32`/`i64`/`i128` implement [`LazyInteger`]; `u32`/`u64`/`u128` implement
-//! [`LazyNatural`]; and `bool` implements [`LazyBool`].
+//! `i32`/`i64`/`i128` implement [`Integer`]; `u32`/`u64`/`u128` implement
+//! [`Natural`]; and `bool` implements [`Boolean`].
 
 pub mod array;
+pub mod control_flow;
+pub mod execute;
 pub mod interpolate;
 pub mod numeric;
 pub mod random;
+pub mod spec;
 pub mod units;
 
-pub use array::{LazyMatrix, LazyTensor, LazyVector};
-pub use interpolate::{Interpolate, sample, sample_at};
+pub use array::{Matrix, Tensor, Vector};
+pub use control_flow::ControlFlow;
+pub use execute::{Compile, Compiled, Parameter, Traced, TypedParameter};
+pub use interpolate::{sample, sample_at, Interpolate};
 pub use numeric::{
-    Arithmetic, InnerProductSpace, LazyBool, LazyCompare, LazyComplex, LazyInteger, LazyNatural,
-    LazyQuaternion, LazyReal, LazyRing, LazySemiring, NormedDivisionAlgebra, NormedVectorSpace,
+    Arithmetic, Boolean, Compare, Complex, Element, InnerProductSpace, Integer, Natural,
+    NormedDivisionAlgebra, NormedVectorSpace, Quaternion, Real, RealConstants, Ring, Semiring,
     VectorSpace,
 };
 pub use random::{
-    KeyedRandomBackend, RandomAlgorithm, RandomProcess, RandomStream, SampleWith,
-    TensorRandomStream,
+    GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomMatVec,
+    KeyedRandomMatVecDistributions, KeyedRandomProcess, KeyedRandomScalar,
+    KeyedRandomScalarDistributions, KeyedRandomTensor, KeyedRandomTensorDistributions,
+    RandomAlgorithm, RandomDType, SampleWithKey,
 };
+pub use spec::{Cast, DType, HasTensorSpec, TensorSpec};
 pub use units::{
-    Dimension, LazyKm, LazyLinearQuantity, LazyMeters, LazyQuantity, LazyScalarQuantity,
-    LazySeconds, LazySpeedMs, LazySquareMeters,
+    Angle, Dimension, Km, LinearQuantity, Meters, Quantity, ScalarQuantity, Seconds, SpeedMs,
+    SquareMeters,
 };

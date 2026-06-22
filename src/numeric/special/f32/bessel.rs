@@ -1,11 +1,9 @@
 //! Native `f32` modified-Bessel family — the single-precision port of
 //! [`mod@super::super::bessel`]. Abramowitz & Stegun polynomial approximations (≈ 1e-7 relative
 //! accuracy — already at the `f32` precision floor), the scaled forms `Iₙᵉ`, the stable ratio
-//! `I₁/I₀`, `ln I₀`, and the log-sum-exp `ln I_ν`, evaluated in `f32` throughout.
+//! `I₁/I₀`, and `ln I₀`, evaluated in `f32` throughout.
 
 use core::f32::consts::PI;
-
-use super::gamma::ln_gamma;
 
 /// `I₀` large-argument asymptotic polynomial in `t = 3.75/x` (A&S 9.8.2).
 fn i0_asymp(t: f32) -> f32 {
@@ -56,7 +54,11 @@ pub(crate) fn i1(x: f32) -> f32 {
     } else {
         (ax.exp() / ax.sqrt()) * i1_asymp(3.75 / ax)
     };
-    if x < 0.0 { -result } else { result }
+    if x < 0.0 {
+        -result
+    } else {
+        result
+    }
 }
 
 /// The **exponentially-scaled** `I₀ᵉ(x) = e^{−|x|} I₀(x)`, finite for all `x` where
@@ -77,7 +79,11 @@ pub(crate) fn i1e(x: f32) -> f32 {
         i1(x) * (-ax).exp()
     } else {
         let r = i1_asymp(3.75 / ax) / ax.sqrt();
-        if x < 0.0 { -r } else { r }
+        if x < 0.0 {
+            -r
+        } else {
+            r
+        }
     }
 }
 
@@ -104,50 +110,6 @@ pub(crate) fn ln_i0(x: f32) -> f32 {
         let series = 1.0 + r * (0.125 + r * (0.070_312_5 + r * 0.073_242_19));
         ax - 0.5 * (2.0 * PI * ax).ln() + series.ln()
     }
-}
-
-/// Stable `ln(eᵃ + eᵇ)`.
-fn ln_add_exp(a: f32, b: f32) -> f32 {
-    if a == f32::NEG_INFINITY {
-        return b;
-    }
-    if b == f32::NEG_INFINITY {
-        return a;
-    }
-    let (hi, lo) = if a >= b { (a, b) } else { (b, a) };
-    hi + (lo - hi).exp().ln_1p()
-}
-
-/// `ln I_ν(x)` — modified Bessel of the first kind, real order `ν ≥ 0`, argument `x ≥ 0`,
-/// in log space. Accumulates the ascending series `Σ_m (x/2)^{2m+ν} / (m! Γ(ν+m+1))` by
-/// log-sum-exp, so it never overflows and stays accurate for any order/argument. Returns `0`
-/// for `x = ν = 0` and `−∞` for `x = 0, ν > 0`.
-#[must_use]
-pub(crate) fn ln_iv(nu: f32, x: f32) -> f32 {
-    debug_assert!(nu >= 0.0 && x >= 0.0, "ln_iv needs ν ≥ 0, x ≥ 0");
-    if x == 0.0 {
-        return if nu == 0.0 { 0.0 } else { f32::NEG_INFINITY };
-    }
-    let ln_half_x = (0.5 * x).ln();
-    let ln_x2_4 = 2.0 * ln_half_x; // ln(x²/4), the term-ratio numerator
-    // Accumulate ln Σ aₘ with a₀ = 1 and aₘ/aₘ₋₁ = (x²/4)/(m(ν+m)).
-    let m_peak = 0.5 * ((x * x + nu * nu).sqrt() - nu);
-    let mut ln_term = 0.0;
-    let mut ln_sum = 0.0;
-    let mut m: f32 = 1.0;
-    loop {
-        ln_term += ln_x2_4 - m.ln() - (nu + m).ln();
-        ln_sum = ln_add_exp(ln_sum, ln_term);
-        // Past the peak, below `f32` precision (`ln 2²⁴ ≈ 16.6`).
-        if m > m_peak && ln_term < ln_sum - 17.0 {
-            break;
-        }
-        m += 1.0;
-        if m > 1.0e7 {
-            break; // safety backstop
-        }
-    }
-    nu.mul_add(ln_half_x, ln_sum) - ln_gamma(nu + 1.0)
 }
 
 #[cfg(test)]
@@ -184,19 +146,5 @@ mod tests {
                 1e-5,
             );
         }
-        for &x in &[0.3, 1.0, 4.0, 20.0] {
-            agrees(
-                ln_iv(0.0, x),
-                crate::numeric::special::bessel::ln_iv(0.0, x as f64),
-                1e-4,
-            );
-            agrees(
-                ln_iv(1.0, x),
-                crate::numeric::special::bessel::ln_iv(1.0, x as f64),
-                1e-4,
-            );
-        }
-        assert_eq!(ln_iv(0.0, 0.0), 0.0);
-        assert_eq!(ln_iv(2.5, 0.0), f32::NEG_INFINITY);
     }
 }

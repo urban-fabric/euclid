@@ -1,9 +1,10 @@
-use super::{RealPart, control_flow};
-use crate::numeric::{LazyCompare, NormedDivisionAlgebra};
+use super::RealPart;
+use crate::array::control_flow;
+use crate::numeric::{Compare, Element, NormedDivisionAlgebra};
 
-/// **Rank 1.** A vector over a lazy scalar (real or complex): the vector-space and
-/// inner-product surface (elementwise transcendentals belong to [`LazyTensor`](super::LazyTensor)).
-pub trait LazyVector: Clone {
+/// **Rank 1.** A vector over a scalar carrier (real or complex): the vector-space and
+/// inner-product surface (elementwise transcendentals belong to [`Tensor`](crate::array::Tensor)).
+pub trait Vector: Clone {
     /// The element scalar — real or complex.
     type Scalar: NormedDivisionAlgebra;
 
@@ -17,7 +18,7 @@ pub trait LazyVector: Clone {
     fn full(len: usize, value: Self::Scalar) -> Self;
     /// The all-zeros vector.
     fn zeros(len: usize) -> Self {
-        Self::full(len, Self::Scalar::field_zero())
+        Self::full(len, Self::Scalar::zero())
     }
     /// A vector with the same length as `self`, filled with `value`.
     fn full_like(&self, value: Self::Scalar) -> Self {
@@ -48,27 +49,27 @@ pub trait LazyVector: Clone {
 
     /// Elementwise vector conditional: `mask ? on_true : on_false`.
     ///
-    /// This is the vector-level spelling of [`LazyCompare::select`]. Backends
+    /// This is the vector-level spelling of [`Compare::select`]. Implementations
     /// with vector masks lower this to an elementwise select/where operation.
-    fn where_cond(mask: &<Self as LazyCompare>::Mask, on_true: Self, on_false: Self) -> Self
+    fn where_cond(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
     where
-        Self: LazyCompare,
+        Self: Compare,
     {
         control_flow::where_cond(mask, on_true, on_false)
     }
 
     /// Alias for [`where_cond`](Self::where_cond), named like an ordinary conditional
     /// expression.
-    fn if_then_else(mask: &<Self as LazyCompare>::Mask, on_true: Self, on_false: Self) -> Self
+    fn if_then_else(mask: &<Self as Compare>::Mask, on_true: Self, on_false: Self) -> Self
     where
-        Self: LazyCompare,
+        Self: Compare,
     {
         Self::where_cond(mask, on_true, on_false)
     }
 }
 
 /// Explicit graph control-flow contract for vector carriers.
-pub trait LazyVectorControlFlow: LazyVector + LazyCompare {
+pub trait VectorControlFlow: Vector + Compare {
     /// Graph-level conditional over vector values.
     fn cond<T, F>(
         pred: &Self::Mask,

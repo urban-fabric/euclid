@@ -1,57 +1,56 @@
-//! Dimensional cross-products over the lazy units — canonical-unit discipline (length
-//! over time is a speed, two lengths an area), generic over the carrier `T`, so the
-//! algebra holds whether `T` is `f64`, a polars `Expr`, or a backend `Tensor` scalar.
+//! Dimensional cross-products over unit wrappers. The algebra is generic over the carrier
+//! `T`, so it holds for `f64`, expression carriers, and tensor scalar carriers.
 
 use core::ops::{Div, Mul};
 
-use crate::LazyReal;
+use crate::Real;
 
-use super::measures::{LazyMeters, LazySeconds, LazySpeedMs, LazySquareMeters};
+use super::measures::{Meters, Seconds, SpeedMs, SquareMeters};
 
 /// meters ÷ seconds = m/s
-impl<T: LazyReal> Div<LazySeconds<T>> for LazyMeters<T> {
-    type Output = LazySpeedMs<T>;
-    fn div(self, t: LazySeconds<T>) -> LazySpeedMs<T> {
-        LazySpeedMs(self.0 / t.0)
+impl<T: Real> Div<Seconds<T>> for Meters<T> {
+    type Output = SpeedMs<T>;
+    fn div(self, t: Seconds<T>) -> SpeedMs<T> {
+        SpeedMs(self.0 / t.0)
     }
 }
 
 /// meters ÷ (m/s) = seconds
-impl<T: LazyReal> Div<LazySpeedMs<T>> for LazyMeters<T> {
-    type Output = LazySeconds<T>;
-    fn div(self, v: LazySpeedMs<T>) -> LazySeconds<T> {
-        LazySeconds(self.0 / v.0)
+impl<T: Real> Div<SpeedMs<T>> for Meters<T> {
+    type Output = Seconds<T>;
+    fn div(self, v: SpeedMs<T>) -> Seconds<T> {
+        Seconds(self.0 / v.0)
     }
 }
 
 /// meters × meters = m²
-impl<T: LazyReal> Mul<LazyMeters<T>> for LazyMeters<T> {
-    type Output = LazySquareMeters<T>;
-    fn mul(self, rhs: LazyMeters<T>) -> LazySquareMeters<T> {
-        LazySquareMeters(self.0 * rhs.0)
+impl<T: Real> Mul<Meters<T>> for Meters<T> {
+    type Output = SquareMeters<T>;
+    fn mul(self, rhs: Meters<T>) -> SquareMeters<T> {
+        SquareMeters(self.0 * rhs.0)
     }
 }
 
 /// m² ÷ meters = meters
-impl<T: LazyReal> Div<LazyMeters<T>> for LazySquareMeters<T> {
-    type Output = LazyMeters<T>;
-    fn div(self, rhs: LazyMeters<T>) -> LazyMeters<T> {
-        LazyMeters(self.0 / rhs.0)
+impl<T: Real> Div<Meters<T>> for SquareMeters<T> {
+    type Output = Meters<T>;
+    fn div(self, rhs: Meters<T>) -> Meters<T> {
+        Meters(self.0 / rhs.0)
     }
 }
 
 /// (m/s) × seconds = meters
-impl<T: LazyReal> Mul<LazySeconds<T>> for LazySpeedMs<T> {
-    type Output = LazyMeters<T>;
-    fn mul(self, t: LazySeconds<T>) -> LazyMeters<T> {
-        LazyMeters(self.0 * t.0)
+impl<T: Real> Mul<Seconds<T>> for SpeedMs<T> {
+    type Output = Meters<T>;
+    fn mul(self, t: Seconds<T>) -> Meters<T> {
+        Meters(self.0 * t.0)
     }
 }
 
 /// seconds × (m/s) = meters
-impl<T: LazyReal> Mul<LazySpeedMs<T>> for LazySeconds<T> {
-    type Output = LazyMeters<T>;
-    fn mul(self, v: LazySpeedMs<T>) -> LazyMeters<T> {
-        LazyMeters(self.0 * v.0)
+impl<T: Real> Mul<SpeedMs<T>> for Seconds<T> {
+    type Output = Meters<T>;
+    fn mul(self, v: SpeedMs<T>) -> Meters<T> {
+        Meters(self.0 * v.0)
     }
 }

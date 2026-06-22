@@ -5,12 +5,12 @@
 //! formula. The trait therefore requires both `lerp` and `midpoint` instead of deriving one
 //! from the other.
 
-use crate::numeric::{LazyNatural, LazyReal};
+use crate::numeric::{Natural, Real};
 
 /// Values that can interpolate between two points using a real scalar parameter.
 pub trait Interpolate: Clone {
     /// The real scalar field used for interpolation parameters.
-    type Scalar: LazyReal;
+    type Scalar: Real;
 
     /// Interpolate from `self` to `target` at parameter `t`.
     ///
@@ -31,7 +31,7 @@ pub trait Interpolate: Clone {
 pub fn sample_at<P, N>(start: P, end: P, index: N, segments: N) -> P
 where
     P: Interpolate,
-    N: LazyNatural<Real = P::Scalar>,
+    N: Natural<Real = P::Scalar>,
 {
     start.lerp(end, index.to_real() / segments.to_real())
 }

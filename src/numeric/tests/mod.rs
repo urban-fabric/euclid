@@ -2,19 +2,10 @@ use super::*;
 
 mod control_flow;
 
-/// A formula written once over the lazy analysis base — analysis plus a scalar constant.
-fn shifted_quadratic<T: LazyReal>(x: T) -> T {
+/// A formula written once over the real analysis base — analysis plus a scalar constant.
+fn shifted_quadratic<T: Real>(x: T) -> T {
     let half = T::half();
     x.clone() * x.clone() + half * x
-}
-
-fn vector_space_midpoint<V: VectorSpace>(a: V, b: V) -> V {
-    let half = V::Scalar::half();
-    (a + b).scale(half)
-}
-
-fn inner_product_energy<V: InnerProductSpace>(x: V) -> V::Scalar {
-    x.clone().dot(x)
 }
 
 #[test]
@@ -24,25 +15,11 @@ fn real_formula_runs_on_f64_and_f32() {
 }
 
 #[test]
-fn scalar_carriers_are_vector_spaces_over_their_real_part() {
-    assert_eq!(<f64 as VectorSpace>::zero(), 0.0);
-    assert_eq!(<f32 as VectorSpace>::zero(), 0.0);
-    assert_eq!(VectorSpace::scale(3.0_f64, 2.0), 6.0);
-    assert_eq!(VectorSpace::scale(3.0_f32, 2.0), 6.0);
-    assert_eq!(vector_space_midpoint(2.0_f64, 6.0), 4.0);
-    assert_eq!(vector_space_midpoint(2.0_f32, 6.0), 4.0);
-}
-
-#[test]
-fn scalar_carriers_are_inner_product_and_normed_spaces() {
-    assert_eq!(InnerProductSpace::dot(3.0_f64, 4.0), 12.0);
-    assert_eq!(InnerProductSpace::dot(3.0_f32, 4.0), 12.0);
-    assert_eq!(inner_product_energy(-3.0_f64), 9.0);
-    assert_eq!(inner_product_energy(-3.0_f32), 9.0);
-    assert_eq!(NormedVectorSpace::norm_squared(-3.0_f64), 9.0);
-    assert_eq!(NormedVectorSpace::norm_squared(-3.0_f32), 9.0);
-    assert_eq!(NormedVectorSpace::norm(-3.0_f64), 3.0);
-    assert_eq!(NormedVectorSpace::norm(-3.0_f32), 3.0);
+fn element_identities_are_defined_directly() {
+    assert_eq!(<f64 as Element>::zero(), 0.0);
+    assert_eq!(<f64 as Element>::one(), 1.0);
+    assert_eq!(<f32 as Element>::zero(), 0.0);
+    assert_eq!(<f32 as Element>::one(), 1.0);
 }
 
 #[test]
@@ -70,8 +47,8 @@ fn euler_constants_lift_on_every_real_tier() {
 }
 
 /// `powf` takes its exponent in the same real substrate, so a power law is write-once over
-/// [`LazyReal`] with the exponent itself a value of the surface.
-fn power_law<T: LazyReal>(base: T, exponent: T) -> T {
+/// [`Real`] with the exponent itself a value of the surface.
+fn power_law<T: Real>(base: T, exponent: T) -> T {
     base.powf(exponent)
 }
 
@@ -85,9 +62,9 @@ fn lazy_real_powf_takes_a_real_exponent() {
     assert!((x.powf(x.ln() / x.ln()) - x).abs() < 1e-12);
 }
 
-/// `powi` takes its exponent from the integer substrate [`LazyReal::Integer`], not a host
+/// `powi` takes its exponent from the integer substrate [`Real::Integer`], not a host
 /// `i32`, so an integer power law is write-once over the surface.
-fn integer_power_law<T: LazyReal>(base: T, exponent: T::Integer) -> T {
+fn integer_power_law<T: Real>(base: T, exponent: T::Integer) -> T {
     base.powi(exponent)
 }
 
@@ -101,11 +78,11 @@ fn lazy_real_powi_takes_an_integer_from_the_integer_tier() {
 
     // `f64` uses the full `i64` exponent surface; it must not silently narrow to `i32`.
     let beyond_i32 = i64::from(i32::MAX) + 1;
-    assert_eq!(<f64 as LazyReal>::powi(2.0, beyond_i32), f64::INFINITY);
-    assert_eq!(<f64 as LazyReal>::powi(0.5, beyond_i32), 0.0);
+    assert_eq!(<f64 as Real>::powi(2.0, beyond_i32), f64::INFINITY);
+    assert_eq!(<f64 as Real>::powi(0.5, beyond_i32), 0.0);
 }
 
-fn square_plus_self<T: LazyReal>(x: T) -> T {
+fn square_plus_self<T: Real>(x: T) -> T {
     x.square() + x
 }
 
@@ -121,9 +98,9 @@ fn lazy_real_square_is_x_times_x() {
 fn scalar_stable_operations_handle_cancellation_and_tails() {
     let tiny = 1e-16_f64;
     assert_eq!((1.0 + tiny).ln(), 0.0);
-    assert!((<f64 as LazyReal>::ln_1p(&tiny) - tiny).abs() < 1e-30);
+    assert!((<f64 as Real>::ln_1p(&tiny) - tiny).abs() < 1e-30);
     assert_eq!(tiny.exp() - 1.0, 0.0);
-    assert!((<f64 as LazyReal>::exp_m1(&tiny) - tiny).abs() < 1e-30);
+    assert!((<f64 as Real>::exp_m1(&tiny) - tiny).abs() < 1e-30);
     assert!((tiny.ln_1m() + tiny).abs() < 1e-30);
 
     let small = 1e-16_f64;
@@ -145,8 +122,8 @@ fn scalar_stable_operations_handle_cancellation_and_tails() {
 
     let tiny32 = 1e-8_f32;
     assert_eq!((1.0_f32 + tiny32).ln(), 0.0);
-    assert!((<f32 as LazyReal>::ln_1p(&tiny32) - tiny32).abs() < 1e-12);
-    assert!((<f32 as LazyReal>::exp_m1(&tiny32) - tiny32).abs() < 1e-12);
+    assert!((<f32 as Real>::ln_1p(&tiny32) - tiny32).abs() < 1e-12);
+    assert!((<f32 as Real>::exp_m1(&tiny32) - tiny32).abs() < 1e-12);
 }
 
 #[test]
@@ -165,9 +142,9 @@ fn softplus_is_stable_at_extremes() {
     assert!(f64::INFINITY.ln_sub_exp(f64::INFINITY).is_nan());
 }
 
-/// A formula on [`LazyReal`] using `atan2`, trig, and the `clamp` selector — once a
-/// concrete-only API, now compiling for every lazy backend.
-fn wrapped_angle_unit<T: LazyReal>(x: T, y: T) -> T {
+/// A formula on [`Real`] using `atan2`, trig, and the `clamp` selector — once a
+/// concrete-only API, now compiling for every real carrier.
+fn wrapped_angle_unit<T: Real>(x: T, y: T) -> T {
     let angle = y.atan2(x);
     let pythagorean = angle.clone().sin() * angle.clone().sin() + angle.clone().cos() * angle.cos();
     pythagorean.clamp(T::zero(), T::one())
@@ -175,24 +152,24 @@ fn wrapped_angle_unit<T: LazyReal>(x: T, y: T) -> T {
 
 #[test]
 fn lazy_real_carries_trig_and_select_on_f64_and_f32() {
-    // sin²+cos² = 1, clamped to [0, 1], through the LazyReal bound alone.
+    // sin²+cos² = 1, clamped to [0, 1], through the Real bound alone.
     assert!((wrapped_angle_unit(0.7_f64, 1.3_f64) - 1.0).abs() < 1e-12);
     assert!((wrapped_angle_unit(0.7_f32, 1.3_f32) - 1.0).abs() < 1e-6);
-    let (s, c) = <f64 as LazyReal>::sin_cos(0.7);
+    let (s, c) = <f64 as Real>::sin_cos(0.7);
     assert!((s * s + c * c - 1.0).abs() < 1e-12);
-    let (s, c) = <f32 as LazyReal>::sin_cos(0.7);
+    let (s, c) = <f32 as Real>::sin_cos(0.7);
     assert!((s * s + c * c - 1.0).abs() < 1e-6);
-    assert_eq!(LazyReal::max(LazyReal::min(3.0_f64, 5.0), 1.0), 3.0);
-    assert_eq!(LazyReal::clamp(2.0_f32, 0.0, 1.0), 1.0);
+    assert_eq!(Real::max(Real::min(3.0_f64, 5.0), 1.0), 3.0);
+    assert_eq!(Real::clamp(2.0_f32, 0.0, 1.0), 1.0);
 }
 
-/// Inverse hyperbolics over [`LazyReal`] invert their forward partner.
-fn asinh_then_sinh<T: LazyReal>(x: T) -> T {
+/// Inverse hyperbolics over [`Real`] invert their forward partner.
+fn asinh_then_sinh<T: Real>(x: T) -> T {
     x.asinh().sinh()
 }
 
 /// Algebraic spelling of `asinh`, used as a reference at moderate inputs.
-fn asinh_via_ln<T: LazyReal>(x: T) -> T {
+fn asinh_via_ln<T: Real>(x: T) -> T {
     (x.clone() + (x.clone() * x + T::one()).sqrt()).ln()
 }
 
@@ -209,8 +186,8 @@ fn lazy_real_inverse_hyperbolics_invert_and_match_identity() {
     assert!((1.3_f32.asinh() - asinh_via_ln(1.3_f32)).abs() < 1e-5);
 }
 
-/// The Normal CDF `Φ(z) = ½·erfc(−z/√2)` over [`LazyReal`], lowering to a backend's `Erfc`.
-fn normal_cdf<T: LazyReal>(z: T) -> T {
+/// The Normal CDF `Φ(z) = ½·erfc(−z/√2)` over [`Real`].
+fn normal_cdf<T: Real>(z: T) -> T {
     T::half() * (-z / T::sqrt_2()).erfc()
 }
 
@@ -220,23 +197,23 @@ fn lazy_real_special_functions_run_on_f64_and_f32() {
     assert!((normal_cdf(0.0_f32) - 0.5).abs() < 1e-6);
 
     // Spot-check the defining identities through the trait.
-    assert!((LazyReal::ln_gamma(5.0_f64) - 24.0_f64.ln()).abs() < 1e-9);
-    assert!((LazyReal::digamma(1.0_f64) + f64::euler_gamma()).abs() < 1e-9);
-    assert!((LazyReal::ln_beta(2.0_f64, 3.0) - (1.0_f64 / 12.0).ln()).abs() < 1e-10);
-    assert!((LazyReal::beta(2.0_f64, 3.0) - 1.0 / 12.0).abs() < 1e-10);
+    assert!((Real::ln_gamma(5.0_f64) - 24.0_f64.ln()).abs() < 1e-9);
+    assert!((Real::digamma(1.0_f64) + f64::euler_gamma()).abs() < 1e-9);
+    assert!((Real::ln_beta(2.0_f64, 3.0) - (1.0_f64 / 12.0).ln()).abs() < 1e-10);
+    assert!((Real::beta(2.0_f64, 3.0) - 1.0 / 12.0).abs() < 1e-10);
     // P(a, x) + Q(a, x) = 1.
-    let p = LazyReal::gamma_lr(3.0_f64, 2.5);
-    let q = LazyReal::gamma_ur(3.0_f64, 2.5);
+    let p = Real::gamma_lr(3.0_f64, 2.5);
+    let q = Real::gamma_ur(3.0_f64, 2.5);
     assert!((p + q - 1.0).abs() < 1e-10);
     // I_x(1, 1) = x.
-    assert!((LazyReal::beta_reg(0.37_f64, 1.0, 1.0) - 0.37).abs() < 1e-12);
-    assert!((LazyReal::erf(1.0_f32) - 0.842_700_8).abs() < 1e-6);
+    assert!((Real::beta_reg(0.37_f64, 1.0, 1.0) - 0.37).abs() < 1e-12);
+    assert!((Real::erf(1.0_f32) - 0.842_700_8).abs() < 1e-6);
 
     // erfcx(x)·e^{-x²} = erfc(x); ln(1−e^x) complements ln(1+e^x); scaled Bessel recovers
     // ln I₀ and the I₁/I₀ ratio.
     let x = 0.6_f64;
-    assert!((x.erfcx() * (-x * x).exp() - LazyReal::erfc(x)).abs() < 1e-12);
-    assert!((LazyReal::ln_1m_exp(&(-0.5_f64)).exp() - (1.0 - (-0.5_f64).exp())).abs() < 1e-12);
+    assert!((x.erfcx() * (-x * x).exp() - Real::erfc(x)).abs() < 1e-12);
+    assert!((Real::ln_1m_exp(&(-0.5_f64)).exp() - (1.0 - (-0.5_f64).exp())).abs() < 1e-12);
     let k = 2.5_f64;
     assert!((k.bessel_i0e().ln() + k - crate::numeric::special::bessel::ln_i0(k)).abs() < 1e-9);
     assert!((k.ln_bessel_i0() - crate::numeric::special::bessel::ln_i0(k)).abs() < 1e-9);
@@ -247,12 +224,12 @@ fn lazy_real_special_functions_run_on_f64_and_f32() {
     );
     // Native f32 paths stay close to the f64 reference.
     assert!((0.5_f32.erfcx() - 0.5_f64.erfcx() as f32).abs() < 1e-6);
-    assert!((LazyReal::beta(2.0_f32, 3.0) - 1.0 / 12.0).abs() < 1e-5);
+    assert!((Real::beta(2.0_f32, 3.0) - 1.0 / 12.0).abs() < 1e-5);
 }
 
 /// A write-once ring formula (`+ - *`, no division). The binomial step `(n − k)·(k + 1)` is
 /// the count arithmetic a discrete distribution does before reaching the real surface.
-fn ring_step<I: LazyInteger>(n: I, k: I) -> I {
+fn ring_step<I: Integer>(n: I, k: I) -> I {
     (n - k.clone()) * (k + I::one())
 }
 
@@ -267,8 +244,8 @@ fn lazy_ring_formula_runs_on_i32_i64_and_i128() {
     assert_eq!(3_i64.to_real(), 3.0_f64);
     // Lift, sign, abs, Euclidean div/rem.
     assert_eq!(i64::from_i64(7), 7);
-    assert_eq!(LazyInteger::signum(-7_i64), -1);
-    assert_eq!(LazyInteger::abs(-7_i64), 7);
+    assert_eq!(Integer::signum(-7_i64), -1);
+    assert_eq!(Integer::abs(-7_i64), 7);
     assert_eq!(7_i64.div_rem(3), (2, 1));
     assert_eq!((-7_i64).div_rem(3), (-3, 2));
     assert_eq!(7_i64.div_rem(-3), (-2, 1));
@@ -278,11 +255,11 @@ fn lazy_ring_formula_runs_on_i32_i64_and_i128() {
 }
 
 /// The integer→real bridge: a Poisson log-mass kernel with an integer count and real
-/// parameters, crossing into the real surface once via [`LazyInteger::to_real`].
+/// parameters, crossing into the real surface once via [`Integer::to_real`].
 fn poisson_log_pmf<I, T>(k: I, lambda: T, ln_factorial_k: T) -> T
 where
-    I: LazyInteger<Real = T>,
-    T: LazyReal,
+    I: Integer<Real = T>,
+    T: Real,
 {
     k.to_real() * lambda.clone().ln() - lambda - ln_factorial_k
 }
@@ -297,7 +274,7 @@ fn lazy_integer_bridges_into_the_real_surface() {
 
 /// A write-once semiring formula (`+ *`, no subtraction): `n·n + n` — the count arithmetic a
 /// formula does staying inside the naturals, before any cast leaves the semiring.
-fn semiring_step<N: LazyNatural>(n: N) -> N {
+fn semiring_step<N: Natural>(n: N) -> N {
     n.clone() * n.clone() + n
 }
 
@@ -327,9 +304,9 @@ fn lazy_semiring_formula_runs_on_u32_u64_and_u128() {
 }
 
 /// The natural→integer bridge: a signed difference of counts crosses into the ring via
-/// [`LazyNatural::to_integer`], where the subtraction the semiring withholds is available —
+/// [`Natural::to_integer`], where the subtraction the semiring withholds is available —
 /// the result is unrepresentable in the naturals themselves.
-fn count_difference<N: LazyNatural>(a: N, b: N) -> N::Integer {
+fn count_difference<N: Natural>(a: N, b: N) -> N::Integer {
     a.to_integer() - b.to_integer()
 }
 
@@ -341,8 +318,8 @@ fn lazy_natural_bridges_into_the_integer_ring() {
 }
 
 /// A write-once piecewise kernel over the mask tier: `relu(x) = select(x > 0, x, 0)`, a
-/// comparison to a [`LazyCompare::Mask`] driving a branchless `select` with no scalar `bool`.
-fn relu<T: LazyCompare>(x: T, zero: T) -> T {
+/// comparison to a [`Compare::Mask`] driving a branchless `select` with no scalar `bool`.
+fn relu<T: Compare>(x: T, zero: T) -> T {
     let positive = x.gt(&zero);
     T::select(&positive, x, zero)
 }
@@ -358,58 +335,58 @@ fn lazy_bool_mask_drives_select_and_logic() {
     assert_eq!(relu(-7_i64, 0), 0);
 
     // Naturals are ordered carriers too: min(4, 7) = 4 via comparison + select.
-    let lt = LazyCompare::lt(&4_u64, &7_u64);
+    let lt = Compare::lt(&4_u64, &7_u64);
     assert_eq!(u64::select(&lt, 4, 7), 4);
 
     // The Boolean algebra on the masks (trait-qualified to avoid std's `PartialOrd`).
-    let t = LazyCompare::lt(&2.0_f64, &3.0); // true
-    let f = LazyCompare::gt(&2.0_f64, &3.0); // false
-    assert!(LazyBool::or(&t, &f));
-    assert!(!LazyBool::and(&t, &f));
-    assert!(LazyBool::xor(&t, &f));
-    assert!(LazyBool::not(&f));
+    let t = Compare::lt(&2.0_f64, &3.0); // true
+    let f = Compare::gt(&2.0_f64, &3.0); // false
+    assert!(Boolean::or(&t, &f));
+    assert!(!Boolean::and(&t, &f));
+    assert!(Boolean::xor(&t, &f));
+    assert!(Boolean::not(&f));
 }
 
 #[test]
 fn eager_integer_masks_drive_host_while_loop() {
-    let signed = <i32 as LazyCompare>::while_loop(0_i32, |n| LazyCompare::lt(n, &5), |n| n + 1);
+    let signed = <i32 as Compare>::while_loop(0_i32, |n| Compare::lt(n, &5), |n| n + 1);
     assert_eq!(signed, 5);
 
-    let natural = <u64 as LazyCompare>::while_loop(1_u64, |n| LazyCompare::lt(n, &16), |n| n * 2);
+    let natural = <u64 as Compare>::while_loop(1_u64, |n| Compare::lt(n, &16), |n| n * 2);
     assert_eq!(natural, 16);
 }
 
-/// `if`/`then`/`else` over the real surface *alone*. Because `LazyReal: LazyCompare`, a
-/// piecewise kernel needs no separate `+ LazyCompare` bound: `signed_clip(x) = if |x| > 1
+/// `if`/`then`/`else` over the real surface *alone*. Because `Real: Compare`, a
+/// piecewise kernel needs no separate `+ Compare` bound: `signed_clip(x) = if |x| > 1
 /// { sign(x) } else { x }` — the branchless saturation a truncated density reaches for — is
-/// write-once over [`LazyReal`], lowering to `Abs`/`Gt`/`Select` on a tensor backend.
-fn signed_clip<T: LazyReal>(x: T) -> T {
+/// write-once over [`Real`], using `abs`, comparison, and `select`.
+fn signed_clip<T: Real>(x: T) -> T {
     let outside = x.abs().gt(&T::one());
     T::if_then_else(&outside, x.clone().signum(), x)
 }
 
 #[test]
 fn lazy_real_carries_comparison_and_if_then_else() {
-    // Control flow reached through the `LazyReal` bound alone, on every real tier.
+    // Control flow reached through the `Real` bound alone, on every real tier.
     assert_eq!(signed_clip(0.4_f64), 0.4);
     assert_eq!(signed_clip(2.5_f64), 1.0);
     assert_eq!(signed_clip(-3.0_f32), -1.0);
 
     // The six comparisons return the mask tier; `select` / `if_then_else` consume it.
-    assert!(LazyCompare::ge(&2.0_f64, &1.0));
+    assert!(Compare::ge(&2.0_f64, &1.0));
     assert_eq!(
-        f64::if_then_else(&LazyCompare::lt(&1.0_f64, &2.0), 10.0, 20.0),
+        f64::if_then_else(&Compare::lt(&1.0_f64, &2.0), 10.0, 20.0),
         10.0
     );
     assert_eq!(
-        <f32 as LazyCompare>::select(&LazyCompare::gt(&1.0_f32, &2.0), 10.0, 20.0),
+        <f32 as Compare>::select(&Compare::gt(&1.0_f32, &2.0), 10.0, 20.0),
         20.0
     );
 }
 
-/// Scrub `NaN` to a fallback — a `LazyReal`-generic kernel composing the `is_nan` predicate
+/// Scrub `NaN` to a fallback — a `Real`-generic kernel composing the `is_nan` predicate
 /// with `if_then_else`, the shape a guarded log-density uses outside its support.
-fn scrub_nan<T: LazyReal>(x: T, fallback: T) -> T {
+fn scrub_nan<T: Real>(x: T, fallback: T) -> T {
     T::if_then_else(&x.is_nan(), fallback, x)
 }
 
@@ -422,17 +399,17 @@ fn lazy_real_non_finite_sentinels_and_predicates() {
     assert!(f64::nan().is_nan());
 
     // Trait-qualified calls bypass the inherent `f64::is_nan` etc. and exercise the
-    // `LazyReal` classifier surface.
-    assert!(LazyReal::is_infinite(&f64::infinity()));
-    assert!(LazyReal::is_infinite(&f64::neg_infinity()));
-    assert!(LazyReal::is_nan(&f64::nan()));
-    assert!(!LazyReal::is_finite(&f64::nan()));
-    assert!(!LazyReal::is_finite(&f64::infinity()));
-    assert!(LazyReal::is_finite(&3.5_f64));
-    assert!(!LazyReal::is_nan(&3.5_f64));
-    assert!(LazyReal::is_nan(&f32::nan()));
+    // `Real` classifier surface.
+    assert!(Real::is_infinite(&f64::infinity()));
+    assert!(Real::is_infinite(&f64::neg_infinity()));
+    assert!(Real::is_nan(&f64::nan()));
+    assert!(!Real::is_finite(&f64::nan()));
+    assert!(!Real::is_finite(&f64::infinity()));
+    assert!(Real::is_finite(&3.5_f64));
+    assert!(!Real::is_nan(&3.5_f64));
+    assert!(Real::is_nan(&f32::nan()));
 
-    // The predicates compose with the control-flow surface, write-once over `LazyReal`.
+    // The predicates compose with the control-flow surface, write-once over `Real`.
     assert_eq!(scrub_nan(f64::nan(), 0.0), 0.0);
     assert_eq!(scrub_nan(7.0_f64, 0.0), 7.0);
     assert_eq!(scrub_nan(f32::nan(), -1.0), -1.0);

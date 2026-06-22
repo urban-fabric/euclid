@@ -1,16 +1,20 @@
-//! Boolean masks and lazy comparisons.
+//! Boolean masks and mask-producing comparisons.
 //!
-//! [`LazyBool`] is the Boolean algebra for masks. [`LazyCompare`] is the ordered comparison
+//! [`Boolean`] is the Boolean algebra for masks. [`Compare`] is the ordered comparison
 //! surface that produces those masks and consumes them with `select`.
 //!
 //! Booleans are not rings: `or` is idempotent and there is no additive inverse. The mask
-//! tier therefore sits beside [`LazyRing`](super::LazyRing). A comparison returns
-//! [`LazyCompare::Mask`] (`bool` for eager scalars, a predicate value for lazy carriers),
-//! not a scalar `bool`.
+//! tier therefore sits beside [`Ring`](super::Ring). A comparison returns
+//! [`Compare::Mask`] (`bool` for host scalars, a predicate value for expression/tensor carriers),
+//! not a scalar `bool`. The concrete `bool`/`f*`/`i*`/`u*` impls live in
+//! [`impls::boolean_impl`](super::impls).
 
-/// The elementwise Boolean algebra of masks — `∧`/`∨`/`⊕`/`¬`. `bool` eagerly, a
-/// `pred`-dtype tensor on a backend. Not a ring, so it is not a [`LazyRing`](super::LazyRing).
-pub trait LazyBool: Clone {
+/// The elementwise Boolean algebra of masks — `∧`/`∨`/`⊕`/`¬`. `bool` for host values,
+/// carrier masks for expression/tensor values. A boolean is a tensor element, so it is a
+/// [`Element`](super::Element) (its `0`/`1` are `false`/`true`) — which also lets a
+/// boolean [`Tensor`](crate::array::Tensor) be built with `zeros`. It is not a ring,
+/// though (`∨` has no additive inverse), so it is not a [`Ring`](super::Ring).
+pub trait Boolean: super::Element {
     /// Logical AND (`∧`).
     fn and(&self, other: &Self) -> Self;
     /// Logical OR (`∨`).
@@ -21,40 +25,21 @@ pub trait LazyBool: Clone {
     fn not(&self) -> Self;
 }
 
-impl LazyBool for bool {
-    #[inline]
-    fn and(&self, other: &Self) -> Self {
-        *self && *other
-    }
-    #[inline]
-    fn or(&self, other: &Self) -> Self {
-        *self || *other
-    }
-    #[inline]
-    fn xor(&self, other: &Self) -> Self {
-        *self ^ *other
-    }
-    #[inline]
-    fn not(&self) -> Self {
-        !*self
-    }
-}
-
-/// Elementwise comparison to a [`LazyBool`] mask, plus the branchless
-/// [`select`](LazyCompare::select)/[`if_then_else`](LazyCompare::if_then_else) it drives.
+/// Elementwise comparison to a [`Boolean`] mask, plus the branchless
+/// [`select`](Compare::select)/[`if_then_else`](Compare::if_then_else) it drives.
 /// Implemented by ordered carriers (`f64`/`f32`, `i32`/`i64`/`i128`,
-/// `u32`/`u64`/`u128`, and ordered lazy values).
+/// `u32`/`u64`/`u128`, and ordered expression/tensor values).
 ///
-/// The ordered analysis surface folds this in directly: [`LazyReal`](super::LazyReal)`:
-/// LazyCompare`, so `if`/`then`/`else` over real numbers is reachable through the
-/// [`LazyReal`](super::LazyReal) bound alone, with no separate `+ LazyCompare`. (Complex
+/// The ordered analysis surface folds this in directly: [`Real`](super::Real)`:
+/// Compare`, so `if`/`then`/`else` over real numbers is reachable through the
+/// [`Real`](super::Real) bound alone, with no separate `+ Compare`. (Complex
 /// stays unordered, so it carries no comparison.)
 ///
 /// The methods share names with `PartialOrd`/`PartialEq` but return the [`Mask`](Self::Mask),
-/// not a `bool`; on a concrete scalar, disambiguate with `LazyCompare::lt(&a, &b)`.
-pub trait LazyCompare: Clone {
-    /// The boolean mask a comparison yields — `bool` eagerly, a `pred` tensor on a backend.
-    type Mask: LazyBool;
+/// not a `bool`; on a concrete scalar, disambiguate with `Compare::lt(&a, &b)`.
+pub trait Compare: Clone {
+    /// The boolean mask a comparison yields — `bool` for host values or a carrier mask.
+    type Mask: Boolean;
 
     /// `self < other`.
     fn lt(&self, other: &Self) -> Self::Mask;
@@ -69,7 +54,7 @@ pub trait LazyCompare: Clone {
     /// `self != other`.
     fn ne(&self, other: &Self) -> Self::Mask;
 
-    /// Branchless `where`: `mask ? on_true : on_false`, elementwise (XLA `Select`).
+    /// Branchless `where`: `mask ? on_true : on_false`, elementwise for array carriers.
     fn select(mask: &Self::Mask, on_true: Self, on_false: Self) -> Self;
 
     /// Branchless conditional `mask ? on_true : on_false`, named for ordinary
@@ -83,357 +68,16 @@ pub trait LazyCompare: Clone {
 
     /// Iterative control flow: repeatedly advance a loop-carried state `C` by `body`
     /// while `cond` holds — the scalar analog of
-    /// [`LazyTensorControlFlow::while_loop`](crate::array::LazyTensorControlFlow::while_loop),
+    /// [`TensorControlFlow::while_loop`](crate::array::TensorControlFlow::while_loop),
     /// and the counterpart of [`select`](Self::select) for loops rather than branches.
     ///
     /// `cond` maps the carried state to the [`Mask`](Self::Mask) "keep iterating"
     /// predicate; `body` advances it. The state `C` may be a single value or a bundle such
-    /// as a `(lo, hi)` bracket. Eager carriers whose [`Mask`](Self::Mask) is a host `bool`
-    /// can run an ordinary host loop; lazy carriers implement this with their native
+    /// as a `(lo, hi)` bracket. Host carriers whose [`Mask`](Self::Mask) is a host `bool`
+    /// can run an ordinary host loop; expression/tensor carriers implement this with their native
     /// control-flow representation.
     fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
     where
         P: Fn(&C) -> Self::Mask,
         B: Fn(C) -> C;
-}
-
-fn host_while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-where
-    P: Fn(&C) -> bool,
-    B: Fn(C) -> C,
-{
-    let mut state = init;
-    while cond(&state) {
-        state = body(state);
-    }
-    state
-}
-
-// The ordered carriers. (Complex is unordered, so it carries no comparison here.)
-impl LazyCompare for f64 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
-}
-
-impl LazyCompare for f32 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
-}
-
-impl LazyCompare for i32 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
-}
-
-impl LazyCompare for i64 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
-}
-
-impl LazyCompare for i128 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
-}
-
-impl LazyCompare for u32 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
-}
-
-impl LazyCompare for u64 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
-}
-
-impl LazyCompare for u128 {
-    type Mask = bool;
-
-    #[inline]
-    fn lt(&self, other: &Self) -> bool {
-        *self < *other
-    }
-    #[inline]
-    fn le(&self, other: &Self) -> bool {
-        *self <= *other
-    }
-    #[inline]
-    fn gt(&self, other: &Self) -> bool {
-        *self > *other
-    }
-    #[inline]
-    fn ge(&self, other: &Self) -> bool {
-        *self >= *other
-    }
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        *self == *other
-    }
-    #[inline]
-    fn ne(&self, other: &Self) -> bool {
-        *self != *other
-    }
-    #[inline]
-    fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
-    }
-    #[inline]
-    fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
-    where
-        P: Fn(&C) -> bool,
-        B: Fn(C) -> C,
-    {
-        host_while_loop(init, cond, body)
-    }
 }

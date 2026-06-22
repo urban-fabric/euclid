@@ -1,11 +1,11 @@
 use super::*;
 
-/// A write-once bisection over [`LazyReal`]: drive a `(lo, hi, trip)` bracket toward the
+/// A write-once bisection over [`Real`]: drive a `(lo, hi, trip)` bracket toward the
 /// root of a monotone-increasing `f` for a fixed trip count — the shape a generic
 /// inverse-CDF quantile takes. The carriers whose mask is a host `bool` (`f64`/`f32`) run a
-/// real `while` loop through [`LazyCompare::while_loop`]; a tensor backend lowers the
-/// identical code to graph `While`.
-fn bisect_increasing<T: LazyReal>(f: impl Fn(T) -> T, target: T, lo: T, hi: T, iters: u32) -> T {
+/// real `while` loop through [`Compare::while_loop`]; expression/tensor carriers can lower
+/// the same code to their own loop representation.
+fn bisect_increasing<T: Real>(f: impl Fn(T) -> T, target: T, lo: T, hi: T, iters: u32) -> T {
     let trips = T::scalar(f64::from(iters));
     let (lo, hi, _) = T::while_loop(
         (lo, hi, T::zero()),

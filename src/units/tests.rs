@@ -1,23 +1,21 @@
-//! Coverage over the `f64` carrier. `f64: LazyReal`, so this exercises the exact generic
-//! code paths a polars `Expr` or backend `Tensor` carrier will run — only the carrier type
-//! differs. `<f64 as LazyCompare>::Mask = bool`, so the mask-returning predicates collapse
-//! to plain `bool` here.
+//! Coverage over the `f64` carrier. `f64: Real`, so this exercises the same generic
+//! code paths used by other real carriers. `<f64 as Compare>::Mask = bool`, so the
+//! mask-returning predicates collapse to plain `bool` here.
 //!
-//! `LazyReal` is implemented for both `f32` and `f64`, so a bare literal carrier is
-//! ambiguous — these tests pin `f64` via helpers (a real backend carrier names its own type).
+//! `Real` is implemented for both `f32` and `f64`, so a bare literal carrier is
+//! ambiguous — these tests pin `f64` via helpers.
 
 use super::{
-    Dimension, LazyKm, LazyLinearQuantity, LazyMeters, LazyQuantity, LazyScalarQuantity,
-    LazySeconds, LazySpeedMs,
+    Angle, Dimension, Km, LinearQuantity, Meters, Quantity, ScalarQuantity, Seconds, SpeedMs,
 };
 
 const EPS: f64 = 1e-9;
 
-fn m(v: f64) -> LazyMeters<f64> {
-    LazyMeters::new(v)
+fn m(v: f64) -> Meters<f64> {
+    Meters::new(v)
 }
-fn s(v: f64) -> LazySeconds<f64> {
-    LazySeconds::new(v)
+fn s(v: f64) -> Seconds<f64> {
+    Seconds::new(v)
 }
 
 #[test]
@@ -61,13 +59,13 @@ fn selectors_and_masks_collapse_to_bool() {
 
 #[test]
 fn dimensional_algebra() {
-    let v: LazySpeedMs = m(100.0) / s(4.0);
+    let v: SpeedMs = m(100.0) / s(4.0);
     assert!((v.clone().value() - 25.0).abs() < EPS);
 
-    let back: LazyMeters = v.clone() * s(4.0);
+    let back: Meters = v.clone() * s(4.0);
     assert!((back.value() - 100.0).abs() < EPS);
 
-    let elapsed: LazySeconds = m(100.0) / v;
+    let elapsed: Seconds = m(100.0) / v;
     assert!((elapsed.value() - 4.0).abs() < EPS);
 
     let area = m(3.0) * m(4.0);
@@ -77,14 +75,28 @@ fn dimensional_algebra() {
 
 #[test]
 fn km_conversion_lifts_factor() {
-    let five_km: LazyKm = LazyKm::new(5.0);
+    let five_km: Km = Km::new(5.0);
     assert!((five_km.to_meters().value() - 5_000.0).abs() < EPS);
 }
 
 #[test]
+fn angle_conversion_and_normalization() {
+    let half_turn: Angle = Angle::from_degrees(180.0);
+    assert!((half_turn.radians() - std::f64::consts::PI).abs() < EPS);
+    assert!((half_turn.degrees() - 180.0).abs() < EPS);
+
+    let wrapped: Angle = Angle::from_degrees(450.0).normalized_unsigned();
+    assert!((wrapped.degrees() - 90.0).abs() < EPS);
+
+    let signed: Angle = Angle::from_degrees(270.0).normalized_signed();
+    assert!((signed.degrees() + 90.0).abs() < EPS);
+}
+
+#[test]
 fn unit_metadata() {
-    assert_eq!(LazyMeters::<f64>::UNIT_NAME, "m");
-    assert_eq!(LazySpeedMs::<f64>::DIMENSION, Dimension::Speed);
+    assert_eq!(Meters::<f64>::UNIT_NAME, "m");
+    assert_eq!(SpeedMs::<f64>::DIMENSION, Dimension::Speed);
+    assert_eq!(Angle::<f64>::DIMENSION, Dimension::Angle);
     assert!(Dimension::Length.same(Dimension::Length));
     assert!(!Dimension::Length.same(Dimension::Time));
 }

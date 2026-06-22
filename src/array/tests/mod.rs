@@ -1,5 +1,5 @@
 use super::*;
-use crate::numeric::LazyCompare;
+use crate::numeric::{Compare, Element};
 use core::ops::{Add, Mul, Neg, Sub};
 
 mod boolean_tensor;
@@ -40,7 +40,17 @@ impl Neg for ToyTensor {
     }
 }
 
-impl LazyCompare for ToyTensor {
+impl Element for ToyTensor {
+    fn zero() -> Self {
+        Self(0.0)
+    }
+
+    fn one() -> Self {
+        Self(1.0)
+    }
+}
+
+impl Compare for ToyTensor {
     type Mask = bool;
 
     fn lt(&self, other: &Self) -> bool {
@@ -68,7 +78,11 @@ impl LazyCompare for ToyTensor {
     }
 
     fn select(mask: &bool, on_true: Self, on_false: Self) -> Self {
-        if *mask { on_true } else { on_false }
+        if *mask {
+            on_true
+        } else {
+            on_false
+        }
     }
 
     fn while_loop<C, P, B>(init: C, cond: P, body: B) -> C
@@ -84,7 +98,7 @@ impl LazyCompare for ToyTensor {
     }
 }
 
-impl LazyVector for ToyTensor {
+impl Vector for ToyTensor {
     type Scalar = f64;
 
     fn full(_len: usize, value: Self::Scalar) -> Self {
@@ -128,7 +142,7 @@ impl LazyVector for ToyTensor {
     }
 }
 
-impl LazyVectorControlFlow for ToyTensor {
+impl VectorControlFlow for ToyTensor {
     fn cond<T, F>(
         pred: &Self::Mask,
         true_arg: Self,
@@ -158,7 +172,7 @@ impl LazyVectorControlFlow for ToyTensor {
     }
 }
 
-impl LazyMatrix for ToyTensor {
+impl Matrix for ToyTensor {
     type Scalar = f64;
     type Vector = ToyTensor;
 
@@ -227,7 +241,7 @@ impl LazyMatrix for ToyTensor {
     }
 }
 
-impl LazyMatrixControlFlow for ToyTensor {
+impl MatrixControlFlow for ToyTensor {
     fn cond<T, F>(
         pred: &Self::Mask,
         true_arg: Self,
@@ -257,11 +271,15 @@ impl LazyMatrixControlFlow for ToyTensor {
     }
 }
 
-impl LazyTensor for ToyTensor {
+impl Tensor for ToyTensor {
     type Index = ToyTensor;
 
     fn full(_shape: &[usize], value: Self) -> Self {
         value
+    }
+
+    fn from_host(data: &[f64], _shape: &[usize]) -> Self {
+        Self(data.first().copied().unwrap_or(0.0))
     }
 
     fn shape(&self) -> Vec<usize> {
@@ -342,6 +360,34 @@ impl LazyTensor for ToyTensor {
         self.clone() + updates.clone()
     }
 
+    fn scatter_update(
+        &self,
+        _scatter_indices: &Self::Index,
+        updates: &Self,
+        _update_window_dims: &[usize],
+        _inserted_window_dims: &[usize],
+        _scatter_dims_to_operand_dims: &[usize],
+        _index_vector_dim: Option<usize>,
+        _indices_are_sorted: bool,
+        _unique_indices: bool,
+    ) -> Self {
+        updates.clone()
+    }
+
+    fn scatter_add(
+        &self,
+        _scatter_indices: &Self::Index,
+        updates: &Self,
+        _update_window_dims: &[usize],
+        _inserted_window_dims: &[usize],
+        _scatter_dims_to_operand_dims: &[usize],
+        _index_vector_dim: Option<usize>,
+        _indices_are_sorted: bool,
+        _unique_indices: bool,
+    ) -> Self {
+        self.clone() + updates.clone()
+    }
+
     fn sum(self, _axes: &[usize]) -> Self {
         self
     }
@@ -375,7 +421,7 @@ impl LazyTensor for ToyTensor {
     }
 }
 
-impl LazyTensorControlFlow for ToyTensor {
+impl TensorControlFlow for ToyTensor {
     fn cond<T, F>(
         pred: &Self::Mask,
         true_arg: Self,
@@ -408,37 +454,31 @@ impl LazyTensorControlFlow for ToyTensor {
 #[test]
 fn vector_and_matrix_like_constructors_use_shape_context() {
     let vector = ToyTensor(3.0);
-    assert_eq!(<ToyTensor as LazyVector>::zeros(4), ToyTensor(0.0));
+    assert_eq!(<ToyTensor as Vector>::zeros(4), ToyTensor(0.0));
     assert_eq!(
-        <ToyTensor as LazyVector>::full_like(&vector, 7.0),
+        <ToyTensor as Vector>::full_like(&vector, 7.0),
         ToyTensor(7.0)
     );
-    assert_eq!(
-        <ToyTensor as LazyVector>::zeros_like(&vector),
-        ToyTensor(0.0)
-    );
+    assert_eq!(<ToyTensor as Vector>::zeros_like(&vector), ToyTensor(0.0));
 
     let matrix = ToyTensor(5.0);
-    assert_eq!(<ToyTensor as LazyMatrix>::zeros(2, 3), ToyTensor(0.0));
+    assert_eq!(<ToyTensor as Matrix>::zeros(2, 3), ToyTensor(0.0));
     assert_eq!(
-        <ToyTensor as LazyMatrix>::full_like(&matrix, 9.0),
+        <ToyTensor as Matrix>::full_like(&matrix, 9.0),
         ToyTensor(9.0)
     );
-    assert_eq!(
-        <ToyTensor as LazyMatrix>::zeros_like(&matrix),
-        ToyTensor(0.0)
-    );
+    assert_eq!(<ToyTensor as Matrix>::zeros_like(&matrix), ToyTensor(0.0));
 }
 
 #[test]
 fn tensor_constructors_structural_ops_and_reductions_are_available() {
     let tensor = ToyTensor(4.0);
     assert_eq!(
-        <ToyTensor as LazyTensor>::full(&[2, 2], ToyTensor(8.0)),
+        <ToyTensor as Tensor>::full(&[2, 2], ToyTensor(8.0)),
         ToyTensor(8.0)
     );
     assert_eq!(
-        <ToyTensor as LazyTensor>::full_like(&tensor, ToyTensor(8.0)),
+        <ToyTensor as Tensor>::full_like(&tensor, ToyTensor(8.0)),
         ToyTensor(8.0)
     );
     assert_eq!(tensor.slice_in_dim(0, 1, 1, 0), ToyTensor(4.0));

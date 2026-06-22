@@ -2,10 +2,9 @@
 //! binomial coefficient — the host companions to the gamma family
 //! (`ln(n!) = ln Γ(n+1)`), used by the discrete-distribution PMFs (Poisson, Binomial, …).
 //!
-//! These take an integer **count** and return `f64`, so they are not part of the lazy
-//! [`LazyReal`](crate::numeric::LazyReal) surface — a count is structural, not a tensor
-//! value, and a lazy density kernel takes a caller-supplied `ln_factorial`/`ln_binomial`
-//! instead.
+//! These take an integer **count** and return `f64`, so they are not part of the generic
+//! [`Real`](crate::numeric::Real) surface. A generic density kernel should take any needed
+//! `ln_factorial`/`ln_binomial` value from the caller.
 
 use crate::numeric::special::{f32::gamma::ln_gamma as ln_gamma_f32, gamma::ln_gamma};
 

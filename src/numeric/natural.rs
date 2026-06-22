@@ -1,66 +1,54 @@
-//! The natural lazy semiring surface [`LazyNatural`] — the semiring-tier (no subtraction,
-//! no negation) peer of [`LazyInteger`](super::LazyInteger).
+//! Unsigned natural-number carrier surface.
 //!
 //! Naturals form a semiring: `+ *` with identities `0`/`1`, and Euclidean
-//! [`div_rem`](LazyNatural::div_rem), but no additive inverse, so `LazyNatural` is a
-//! [`LazySemiring`](super::LazySemiring) without `Sub`/`Neg` — strictly one rung below the
-//! integer ring. It is implemented for `u32`/`u64`/`u128` — XLA/JAX's unsigned
-//! `u32`/`u64` convention — each width-matched to the real it casts into (`u32 → f32`,
-//! `u64`/`u128 → f64`) and widened into the signed ring it bridges to (`u32 → i64`,
-//! `u64`/`u128 → i128`). This is the dtype a backend uses for non-negative count/index/shape
-//! data.
+//! [`div_rem`](Natural::div_rem), but no additive inverse, so `Natural` is a
+//! [`Semiring`](super::Semiring) without `Sub`/`Neg` — strictly one rung below the
+//! integer ring. It is implemented for `u32`/`u64`/`u128`, each width-matched to the real it
+//! casts into (`u32 → f32`, `u64`/`u128 → f64`) and widened into the signed ring it bridges to
+//! (`u32 → i64`, `u64`/`u128 → i128`). Use it for non-negative count, index, and shape
+//! arithmetic. The concrete `u32`/`u64`/`u128` impls live in
+//! [`impls::natural_impl`](super::impls).
 
-use super::{LazyInteger, LazyReal, LazySemiring};
+use super::{Integer, Real, Semiring};
 
-/// A lazy semiring of naturals: a [`LazySemiring`] plus the natural surface — machine-natural
+/// A semiring of naturals: a [`Semiring`] plus the natural surface — machine-natural
 /// lift, the cast into the real analysis surface, the widen into the signed integer ring, and
-/// Euclidean division-with-remainder. Implemented by `u32`/`u64`/`u128`; lazy unsigned
-/// carriers can implement the same surface.
+/// Euclidean division-with-remainder. Implemented by `u32`/`u64`/`u128`; unsigned carriers can
+/// implement the same surface.
 ///
 /// Naturals carry no `signum`/`abs` (they are already non-negative) and no `Sub`/`Neg` (the
 /// semiring has no additive inverse) — cross into [`Integer`](Self::Integer) via
 /// [`to_integer`](Self::to_integer) when a formula needs subtraction.
-pub trait LazyNatural: LazySemiring {
+pub trait Natural: Semiring {
     /// The real surface this natural casts into — `f32` for `u32`, `f64` for `u64`/`u128`.
-    /// Mirrors [`LazyInteger::Real`](super::LazyInteger::Real).
-    type Real: LazyReal;
+    /// Mirrors [`Integer::Real`](super::Integer::Real).
+    type Real: Real;
 
     /// The signed integer ring this natural widens into — `i64` for `u32`, `i128` for
     /// `u64`/`u128`, the destination of [`to_integer`](Self::to_integer). Wide enough to
     /// hold every value for `u32`/`u64`; `u128` wraps above `i128::MAX`, as the hardware's
     /// convert does.
-    type Integer: LazyInteger;
+    type Integer: Integer;
 
     /// Lift a machine natural into this substrate — the natural analogue of
-    /// [`LazyInteger::from_i64`].
+    /// [`Integer::from_i64`]. (`0`/`1` come from the [`Element`](super::Element)
+    /// supertrait, defined directly by each carrier.)
     fn from_u64(x: u64) -> Self;
 
-    /// `0`, the additive identity.
-    #[inline]
-    fn zero() -> Self {
-        Self::from_u64(0)
-    }
-
-    /// `1`, the multiplicative identity.
-    #[inline]
-    fn one() -> Self {
-        Self::from_u64(1)
-    }
-
-    /// Cast into the real analysis surface (XLA `ConvertElementType`) — the boundary a
-    /// discrete formula crosses once, after exact natural arithmetic and before `ln` /
+    /// Cast into the real analysis surface — the boundary a discrete formula crosses once,
+    /// after exact natural arithmetic and before `ln` /
     /// `beta_reg` / … . Beyond `2^53` the `f64` cast rounds, as the hardware does.
     fn to_real(&self) -> Self::Real;
 
-    /// Widen into the signed integer ring (XLA `ConvertElementType`, `u → s`) — the bridge a
-    /// formula crosses when it needs subtraction or negation the semiring withholds. The
+    /// Widen into the signed integer ring — the bridge a formula crosses when it needs
+    /// subtraction or negation the semiring withholds. The
     /// natural↔integer peer of [`to_real`](Self::to_real)'s integer↔real cast; total for
     /// `u32`/`u64`, wrapping for `u128` above `i128::MAX`.
     fn to_integer(&self) -> Self::Integer;
 
     /// Euclidean division with remainder `(quotient, remainder)` so
-    /// `self == quotient * rhs + remainder` (XLA `Div`+`Rem`). With no sign this is the
-    /// ordinary floor division — the semiring peer of [`LazyInteger::div_rem`], without the
+    /// `self == quotient * rhs + remainder`. With no sign this is the
+    /// ordinary floor division — the semiring peer of [`Integer::div_rem`], without the
     /// truncate-toward-zero caveat.
     fn div_rem(self, rhs: Self) -> (Self, Self);
 
@@ -76,143 +64,4 @@ pub trait LazyNatural: LazySemiring {
     /// `C(n, k)` in the associated real surface, valid on the combinatorial support
     /// `k <= n`.
     fn binomial(&self, k: &Self) -> Self::Real;
-}
-
-impl LazyNatural for u32 {
-    type Real = f32;
-    type Integer = i64;
-    #[inline]
-    fn from_u64(x: u64) -> Self {
-        x as u32
-    }
-    #[inline]
-    fn to_real(&self) -> f32 {
-        *self as f32
-    }
-    #[inline]
-    fn to_integer(&self) -> i64 {
-        *self as i64
-    }
-    #[inline]
-    fn div_rem(self, rhs: Self) -> (Self, Self) {
-        (self / rhs, self % rhs)
-    }
-    #[inline]
-    fn ln_factorial(&self) -> f32 {
-        crate::numeric::special::host::factorial::ln_factorial_u32(*self)
-    }
-    #[inline]
-    fn factorial(&self) -> f32 {
-        crate::numeric::special::host::factorial::factorial_u32(*self)
-    }
-    #[inline]
-    fn ln_binomial(&self, k: &Self) -> f32 {
-        crate::numeric::special::host::factorial::ln_binomial_u32(*self, *k)
-    }
-    #[inline]
-    fn binomial(&self, k: &Self) -> f32 {
-        crate::numeric::special::host::factorial::binomial_u32(*self, *k)
-    }
-}
-
-impl LazyNatural for u64 {
-    type Real = f64;
-    type Integer = i128;
-    #[inline]
-    fn from_u64(x: u64) -> Self {
-        x
-    }
-    #[inline]
-    fn to_real(&self) -> f64 {
-        *self as f64
-    }
-    #[inline]
-    fn to_integer(&self) -> i128 {
-        *self as i128
-    }
-    #[inline]
-    fn div_rem(self, rhs: Self) -> (Self, Self) {
-        (self / rhs, self % rhs)
-    }
-    #[inline]
-    fn ln_factorial(&self) -> f64 {
-        crate::numeric::special::host::factorial::ln_factorial(*self)
-    }
-    #[inline]
-    fn factorial(&self) -> f64 {
-        crate::numeric::special::host::factorial::factorial(*self)
-    }
-    #[inline]
-    fn ln_binomial(&self, k: &Self) -> f64 {
-        crate::numeric::special::host::factorial::ln_binomial(*self, *k)
-    }
-    #[inline]
-    fn binomial(&self, k: &Self) -> f64 {
-        crate::numeric::special::host::factorial::binomial(*self, *k)
-    }
-}
-
-impl LazyNatural for u128 {
-    type Real = f64;
-    type Integer = i128;
-    #[inline]
-    fn from_u64(x: u64) -> Self {
-        x as u128
-    }
-    #[inline]
-    fn to_real(&self) -> f64 {
-        *self as f64
-    }
-    #[inline]
-    fn to_integer(&self) -> i128 {
-        *self as i128
-    }
-    #[inline]
-    fn div_rem(self, rhs: Self) -> (Self, Self) {
-        (self / rhs, self % rhs)
-    }
-    #[inline]
-    fn ln_factorial(&self) -> f64 {
-        if *self <= 20 {
-            let mut sum = 0.0;
-            for k in 2..=*self {
-                sum += (k as f64).ln();
-            }
-            sum
-        } else {
-            let n = *self as f64;
-            crate::numeric::special::gamma::ln_gamma(n + 1.0)
-        }
-    }
-    #[inline]
-    fn factorial(&self) -> f64 {
-        if *self <= 20 {
-            let mut acc = 1.0;
-            for k in 2..=*self {
-                acc *= k as f64;
-            }
-            acc
-        } else {
-            self.ln_factorial().exp()
-        }
-    }
-    #[inline]
-    fn ln_binomial(&self, k: &Self) -> f64 {
-        if k > self {
-            return f64::NEG_INFINITY;
-        }
-        let n = *self as f64;
-        let k = *k as f64;
-        crate::numeric::special::gamma::ln_gamma(n + 1.0)
-            - crate::numeric::special::gamma::ln_gamma(k + 1.0)
-            - crate::numeric::special::gamma::ln_gamma(n - k + 1.0)
-    }
-    #[inline]
-    fn binomial(&self, k: &Self) -> f64 {
-        if k > self {
-            0.0
-        } else {
-            self.ln_binomial(k).exp().round()
-        }
-    }
 }

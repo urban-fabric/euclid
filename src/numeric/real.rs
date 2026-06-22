@@ -1,195 +1,118 @@
-//! The real-number lazy analysis surface [`LazyReal`]. The concrete `Real` number (the
-//! `Copy`, ordered tier) lives in the `napier` crate.
+//! Real-number analysis over any ordered real carrier.
 
-use super::{LazyCompare, LazyInteger, NormedDivisionAlgebra};
+use super::{Compare, Integer, NormedDivisionAlgebra};
 
 /// A real-valued numeric scalar: an [`Arithmetic`](super::Arithmetic) plus the real
 /// transcendentals inherently-real formulas (densities, geometry kernels) are written in.
 ///
-/// `LazyReal: NormedDivisionAlgebra<RealPart = Self>` — a real scalar's real field is
+/// `Real: NormedDivisionAlgebra<RealPart = Self>` — a real scalar's real field is
 /// itself, so its `conjugate` is the identity and a [`NormedDivisionAlgebra`] kernel
 /// collapses to the plain real case here.
 ///
-/// `LazyReal: LazyCompare` — a real scalar is **ordered**, so the comparison/control-flow
+/// `Real: Compare` — a real scalar is **ordered**, so the comparison/control-flow
 /// surface is part of the real surface itself: the six comparisons
-/// (`lt`/`le`/`gt`/`ge`/`eq`/`ne`) to a [`Mask`](LazyCompare::Mask), and the branchless
-/// [`select`](LazyCompare::select)/[`if_then_else`](LazyCompare::if_then_else) the mask
+/// (`lt`/`le`/`gt`/`ge`/`eq`/`ne`) to a [`Mask`](Compare::Mask), and the branchless
+/// [`select`](Compare::select)/[`if_then_else`](Compare::if_then_else) the mask
 /// drives. A piecewise / truncated density — or any `if`/`then`/`else` over real numbers —
-/// uses the `LazyReal` bound alone. The comparison-free
+/// uses the `Real` bound alone. The comparison-free
 /// [`min`](Self::min)/[`max`](Self::max)/[`clamp`](Self::clamp) selectors cover common
 /// min/max/clamp shapes without an explicit mask; use the comparison surface when the branch
 /// condition is something else. Complex values are unordered, so
-/// [`LazyComplex`](super::LazyComplex) carries no comparison.
-pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
+/// [`Complex`](super::Complex) carries no comparison.
+pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// The integer substrate indexing this real's integer powers — `i32` for `f32`, `i64`
-    /// for `f64`, an integer tensor for a tensor backend; the exponent type of
-    /// [`powi`](Self::powi). The bound is the bare [`LazyInteger`], not
-    /// `LazyInteger<Real = Self>`: a differentiable real has no integer differentiating
+    /// for `f64`, or an integer peer for a tensor/expression carrier; the exponent type of
+    /// [`powi`](Self::powi). The bound is the bare [`Integer`], not
+    /// `Integer<Real = Self>`: a differentiable real has no integer differentiating
     /// back to it, so requiring the round-trip would make it un-implementable.
-    type Integer: LazyInteger;
+    type Integer: Integer;
 
     /// Lift a host scalar into this real substrate (identity for `f64`, a narrowing cast
-    /// for `f32`). Lazy backends should represent it as a constant node, ideally interned.
+    /// for `f32`). Non-scalar carriers should represent it as the carrier's own constant.
     fn scalar(x: f64) -> Self;
 
     /// Lift a host scalar using `self` as graph/device/shape context.
     fn scalar_like(&self, x: f64) -> Self;
 
-    /// `0`.
-    #[inline]
-    fn zero() -> Self {
-        Self::scalar(0.0)
-    }
-
-    /// `1`.
-    #[inline]
-    fn one() -> Self {
-        Self::scalar(1.0)
-    }
+    // `0` and `1` come from the [`Element`](super::Element) supertrait (via
+    // [`NormedDivisionAlgebra`]), defined directly by each carrier rather than via `scalar`.
 
     /// `2`.
-    #[inline]
-    fn two() -> Self {
-        Self::scalar(2.0)
-    }
+    fn two() -> Self;
 
     /// `0.5`.
-    #[inline]
-    fn half() -> Self {
-        Self::scalar(0.5)
-    }
+    fn half() -> Self;
 
     /// Archimedes' constant `π`.
-    #[inline]
-    fn pi() -> Self {
-        Self::scalar(core::f64::consts::PI)
-    }
+    fn pi() -> Self;
 
     /// `2π`.
-    #[inline]
-    fn tau() -> Self {
-        Self::scalar(core::f64::consts::TAU)
-    }
+    fn tau() -> Self;
 
     /// `π/2`.
-    #[inline]
-    fn frac_pi_2() -> Self {
-        Self::scalar(core::f64::consts::FRAC_PI_2)
-    }
+    fn frac_pi_2() -> Self;
 
     /// `π/4`.
-    #[inline]
-    fn frac_pi_4() -> Self {
-        Self::scalar(core::f64::consts::FRAC_PI_4)
-    }
+    fn frac_pi_4() -> Self;
 
     /// `√2`.
-    #[inline]
-    fn sqrt_2() -> Self {
-        Self::scalar(core::f64::consts::SQRT_2)
-    }
+    fn sqrt_2() -> Self;
 
     /// `1/√2`.
-    #[inline]
-    fn frac_1_sqrt_2() -> Self {
-        Self::scalar(core::f64::consts::FRAC_1_SQRT_2)
-    }
+    fn frac_1_sqrt_2() -> Self;
 
     /// `ln 2`.
-    #[inline]
-    fn ln_2() -> Self {
-        Self::scalar(core::f64::consts::LN_2)
-    }
+    fn ln_2() -> Self;
 
     /// `ln π`.
-    #[inline]
-    fn ln_pi() -> Self {
-        Self::scalar(core::f64::consts::PI.ln())
-    }
+    fn ln_pi() -> Self;
 
     /// `ln τ`, where `τ = 2π`.
-    #[inline]
-    fn ln_tau() -> Self {
-        Self::scalar(core::f64::consts::TAU.ln())
-    }
+    fn ln_tau() -> Self;
 
     /// `0.5 * ln τ`, the scalar normal-density normalizer.
-    #[inline]
-    fn half_ln_tau() -> Self {
-        Self::scalar(0.5 * core::f64::consts::TAU.ln())
-    }
+    fn half_ln_tau() -> Self;
 
-    /// Euler's number `e`. Named directly so a lazy backend can intern it rather than
+    /// Euler's number `e`. Named directly so a non-scalar carrier can intern it rather than
     /// recover it as `T::one().exp()`.
-    #[inline]
-    fn e() -> Self {
-        Self::scalar(core::f64::consts::E)
-    }
+    fn e() -> Self;
 
     /// `log₂ e` — the factor turning a natural log into a base-2 log.
-    #[inline]
-    fn log2_e() -> Self {
-        Self::scalar(core::f64::consts::LOG2_E)
-    }
+    fn log2_e() -> Self;
 
     /// `log₁₀ e` — the factor turning a natural log into a base-10 log.
-    #[inline]
-    fn log10_e() -> Self {
-        Self::scalar(core::f64::consts::LOG10_E)
-    }
+    fn log10_e() -> Self;
 
     /// `ln 10`.
-    #[inline]
-    fn ln_10() -> Self {
-        Self::scalar(core::f64::consts::LN_10)
-    }
+    fn ln_10() -> Self;
 
     /// `log₂ 10`.
-    #[inline]
-    fn log2_10() -> Self {
-        Self::scalar(core::f64::consts::LOG2_10)
-    }
+    fn log2_10() -> Self;
 
     /// `log₁₀ 2`.
-    #[inline]
-    fn log10_2() -> Self {
-        Self::scalar(core::f64::consts::LOG10_2)
-    }
+    fn log10_2() -> Self;
 
     /// The Euler–Mascheroni constant `γ ≈ 0.5772…` (`= −ψ(1)`); the additive term in the
     /// Gumbel/Weibull/Gamma entropies. Not a `core` constant, so lifted from its digits.
-    #[inline]
-    fn euler_gamma() -> Self {
-        Self::scalar(0.577_215_664_901_532_9)
-    }
+    fn euler_gamma() -> Self;
 
     // --- non-finite IEEE sentinels ---
-    // Every target real is IEEE-754 (host `f32`/`f64`, an XLA `f32`/`f64` tensor), so these
-    // bit patterns lift as ordinary constants through `scalar`. Useful as reduction/clamp
-    // bounds (`±∞`), log-domain masks (`select(keep, logit, neg_infinity())` ahead of a
-    // softmax), and the open ends of a distribution's support. They poison arithmetic and
-    // its gradients, so detect them with the finiteness predicates below rather than
-    // computing through them.
+    // These bit patterns lift as ordinary constants through `scalar`. They are useful as
+    // reduction/clamp bounds (`±∞`), log-domain masks
+    // (`select(keep, logit, neg_infinity())` ahead of a softmax), and the open ends of a
+    // distribution's support. They poison arithmetic, so detect them with the finiteness
+    // predicates below rather than computing through them.
 
     /// Positive infinity, `+∞`.
-    #[inline]
-    fn infinity() -> Self {
-        Self::scalar(f64::INFINITY)
-    }
+    fn infinity() -> Self;
 
     /// Negative infinity, `−∞`.
-    #[inline]
-    fn neg_infinity() -> Self {
-        Self::scalar(f64::NEG_INFINITY)
-    }
+    fn neg_infinity() -> Self;
 
     /// A quiet `NaN` ("not a number") — the IEEE result of an undefined operation
     /// (`0/0`, `∞ − ∞`). It is unequal to everything including itself, so test it with
     /// [`is_nan`](Self::is_nan); never compare it with `eq`.
-    #[inline]
-    fn nan() -> Self {
-        Self::scalar(f64::NAN)
-    }
+    fn nan() -> Self;
 
     // --- finiteness predicates ---
 
@@ -226,8 +149,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
     }
 
     /// Out-of-support guard: keep `self` where `valid`, else `fill`. This is the *output* half
-    /// of the "double `where`" — pair it with a sanitized *input* so a tensor backend (which
-    /// evaluates both `select` branches) never forms a `NaN` in an invalid lane to begin with:
+    /// of the "double `where`" — pair it with a sanitized *input* so an eager elementwise
+    /// implementation never forms a `NaN` in an invalid lane to begin with:
     ///
     /// ```ignore
     /// let safe_x = T::select(&in_support, x.clone(), x.scalar_like(1.0)); // any in-domain dummy
@@ -239,11 +162,11 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
         Self::select(&valid, self, fill)
     }
 
-    /// A debugging hook that returns `self` unchanged but lets a backend trap non-finite values.
+    /// A debugging hook that returns `self` unchanged but lets an implementation trap non-finite values.
     /// The default is the identity (no check); the eager reals override it to `debug_assert!`
-    /// finiteness, and a tensor backend may lower it to a runtime NaN-check (the `checkify`
-    /// model) behind a debug flag. It carries **no** semantic meaning — release builds and
-    /// checkless backends erase it — so never rely on it to change a value.
+    /// finiteness, while other carriers may lower it to a runtime check behind a debug flag.
+    /// It carries **no** semantic meaning — release builds and unchecked implementations may
+    /// erase it — so never rely on it to change a value.
     #[inline]
     fn debug_assert_finite(self) -> Self {
         self
@@ -264,15 +187,15 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
     /// Square, `self * self`.
     fn square(&self) -> Self;
     /// Raise to a real power, `self^p`. The exponent is itself a real of this substrate, so
-    /// a lazy backend can pow by a graph-computed value; lift a literal with
+    /// a carrier can raise to a computed value; lift a literal with
     /// `x.powf(x.scalar_like(2.5))`. Integer exponents have their own [`powi`](Self::powi).
     fn powf(&self, p: Self) -> Self;
     /// Numerically-stable `ln(1 + e^x)` (softplus / `log1pexp`).
     fn ln_1p_exp(&self) -> Self;
 
     // --- trigonometry ---
-    // Elementwise transcendentals; taken by value to match the concrete `Real` signatures
-    // (the `Clone` bound keeps the input).
+    // Elementwise transcendentals; taken by value so carrier handles can move cheaply while
+    // `Clone` remains available when a formula needs to keep the input.
     fn sin(self) -> Self;
     fn cos(self) -> Self;
     fn tan(self) -> Self;
@@ -298,7 +221,7 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
     fn cbrt(self) -> Self;
     /// Integer power, `self^n` — exact repeated multiplication, defined for negative bases
     /// (unlike [`powf`](Self::powf)). The exponent is a value of the [`Integer`](Self::Integer)
-    /// substrate (`i32` for `f32`, `i64` for `f64`), so a backend can raise to a graph-computed
+    /// substrate (`i32` for `f32`, `i64` for `f64`), so a carrier can raise to a computed
     /// count.
     fn powi(self, n: Self::Integer) -> Self;
     /// `self * a + b` (fused where the target supports it).
@@ -335,7 +258,10 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
 
     /// The error function `erf(x)`.
     fn erf(self) -> Self;
-    /// The complementary error function `erfc(x) = 1 − erf(x)`.
+    /// The complementary error function `erfc(x) = 1 − erf(x)`. Formed by complementation, so
+    /// it loses relative precision — and eventually underflows to `0` — in the right tail
+    /// (`x ≳ 5`); for a stable large-`x` value, reach for the scaled
+    /// [`erfcx`](Self::erfcx) (`e^{x²} erfc(x)`) instead.
     fn erfc(self) -> Self;
     /// The inverse error function, `erf_inv(erf(x)) = x`.
     fn erf_inv(self) -> Self;
@@ -373,8 +299,8 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
     ///
     /// It is a **trait primitive**, not a free composite: honoring the `x = 0` case needs
     /// a value-dependent select that the comparison-free real surface cannot express, so
-    /// each carrier supplies it directly. Eager reals branch on `x == 0`; lazy carriers can
-    /// use a `select`-guarded `x · ln y` form.
+    /// each carrier supplies it directly. Host reals branch on `x == 0`; elementwise carriers
+    /// can use a `select`-guarded `x · ln y` form.
     fn xlogy(self, y: Self) -> Self;
 
     /// `x · ln(1 + y)` with the same absorbing-zero convention as [`xlogy`](Self::xlogy):
@@ -436,4 +362,31 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> + LazyCompare {
     /// `I₁(x) / I₀(x) = I₁ᵉ(x) / I₀ᵉ(x)` — the von Mises mean resultant length;
     /// overflow-free, since the shared `e^{|x|}` growth factor cancels.
     fn bessel_i1_over_i0(self) -> Self;
+}
+
+/// Standard real constants used by geometry and unit conversions.
+///
+/// These are required methods so each carrier can choose its own constant
+/// representation instead of inheriting a default `scalar(...)` lift.
+pub trait RealConstants: Real {
+    /// `-1`.
+    fn neg_one() -> Self;
+
+    /// Degrees in one full turn, `360`.
+    fn full_turn_degrees() -> Self;
+
+    /// Degrees in one half turn, `180`.
+    fn half_turn_degrees() -> Self;
+
+    /// Degrees in one quarter turn, `90`.
+    fn quarter_turn_degrees() -> Self;
+
+    /// Degrees in one and a half turns, `540`.
+    fn three_half_turn_degrees() -> Self;
+
+    /// Radians per degree, `π / 180`.
+    fn radians_per_degree() -> Self;
+
+    /// Degrees per radian, `180 / π`.
+    fn degrees_per_radian() -> Self;
 }
