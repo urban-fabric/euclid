@@ -1,6 +1,7 @@
 use super::ToyTensor;
+use crate::control_flow::ControlFlow;
 use crate::numeric::Compare;
-use crate::tensor::{Tensor, TensorControlFlow};
+use crate::tensor::Tensor;
 
 #[test]
 fn lazy_tensor_control_flow_selects_values() {
@@ -14,7 +15,7 @@ fn lazy_tensor_control_flow_selects_values() {
         ToyTensor(20.0)
     );
     assert_eq!(
-        <ToyTensor as TensorControlFlow>::cond(
+        <ToyTensor as ControlFlow>::cond(
             &false,
             ToyTensor(1.0),
             |x| ToyTensor(x.0 + 10.0),
@@ -28,7 +29,7 @@ fn lazy_tensor_control_flow_selects_values() {
 #[test]
 fn lazy_tensor_while_loop_is_implemented_by_the_carrier() {
     assert_eq!(
-        <ToyTensor as TensorControlFlow>::while_loop(
+        <ToyTensor as ControlFlow>::while_loop(
             ToyTensor(0.0),
             |x| x.lt(&ToyTensor(4.0)),
             |x| ToyTensor(x.0 + 1.0),

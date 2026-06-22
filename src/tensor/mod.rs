@@ -16,8 +16,8 @@
 //!   [`mean`](Tensor::mean) requires
 //!   [`NormedDivisionAlgebra`](crate::numeric::NormedDivisionAlgebra), and
 //!   [`any`](Tensor::any)/[`all`](Tensor::all) require [`Boolean`](crate::numeric::Boolean).
-//! - **Graph control flow**: [`TensorControlFlow`] is the explicit contract for carriers that
-//!   can represent conditionals and loops.
+//! - **Graph control flow**: [`ControlFlow`](crate::ControlFlow) is the explicit contract for
+//!   carriers that can represent conditionals and loops.
 //! - **Capability extensions**: opt-in traits that grow the surface an implementation can offer
 //!   without widening the core. [`TensorReduce`] adds statistical/scan reductions (variance,
 //!   log-sum-exp, softmax, cumulative sum); [`TensorSort`] adds sorting and the
@@ -35,7 +35,7 @@ mod extensions;
 #[cfg(test)]
 mod tests;
 
-pub use base::{Tensor, TensorControlFlow};
+pub use base::Tensor;
 pub use extensions::{
     FftKind, TensorContract, TensorConv, TensorFft, TensorIndexing, TensorReduce, TensorSort,
     TensorTransform, TensorWindow,

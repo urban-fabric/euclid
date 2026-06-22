@@ -25,7 +25,7 @@
 //! - [`interpolate`] defines scalar-parameterized interpolation (`lerp`/`midpoint`).
 //! - [`tensor`](mod@tensor) defines the rank-graded [`Tensor`] (a vector is a rank-1 tensor, a
 //!   matrix a rank-2 tensor).
-//! - [`random`] defines JAX-style keyed random-source contracts.
+//! - [`random`] defines explicit-key random sampler contracts.
 //! - [`units`] defines physical-dimension contracts (`Length`, `Time`, `Speed`, `Area`,
 //!   `Angle`) over any [`Real`] carrier.
 //!
@@ -62,11 +62,7 @@ pub use numeric::{
     Arithmetic, Boolean, Compare, Complex, Element, Integer, Natural, NormedDivisionAlgebra,
     Quaternion, Real, Ring, Semiring,
 };
-pub use random::{
-    GraphRandomBackend, GraphRandomTensor, KeyedRandomBackend, KeyedRandomProcess,
-    KeyedRandomScalar, KeyedRandomScalarDistributions, KeyedRandomTensor,
-    KeyedRandomTensorDistributions, RandomAlgorithm, RandomDType, SampleWithKey,
-};
+pub use random::{RandomKey, RandomSampler};
 pub use spec::{Cast, DType, HasTensorSpec, TensorSpec};
 pub use tensor::Tensor;
 pub use units::{

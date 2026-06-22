@@ -1,5 +1,6 @@
+use crate::control_flow::ControlFlow;
 use crate::numeric::{Compare, Element};
-use crate::tensor::{Tensor, TensorControlFlow};
+use crate::tensor::Tensor;
 use core::ops::{Add, Mul, Neg, Sub};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -241,7 +242,7 @@ impl Tensor for ToyTensor {
     }
 }
 
-impl TensorControlFlow for ToyTensor {
+impl ControlFlow for ToyTensor {
     fn cond<T, F>(
         pred: &Self::Mask,
         true_arg: Self,

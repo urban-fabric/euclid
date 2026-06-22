@@ -46,17 +46,15 @@ impl DType {
     }
 
     pub const fn is_bool(self) -> bool {
-        self as u8 == Self::Bool as u8
+        matches!(self, Self::Bool)
     }
 
     pub const fn is_signed_integer(self) -> bool {
-        let dtype = self as u8;
-        dtype >= Self::I8 as u8 && dtype <= Self::I64 as u8
+        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64)
     }
 
     pub const fn is_unsigned_integer(self) -> bool {
-        let dtype = self as u8;
-        dtype >= Self::U8 as u8 && dtype <= Self::U64 as u8
+        matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64)
     }
 
     pub const fn is_integer(self) -> bool {
@@ -64,13 +62,11 @@ impl DType {
     }
 
     pub const fn is_float(self) -> bool {
-        let dtype = self as u8;
-        dtype >= Self::F16 as u8 && dtype <= Self::F64 as u8
+        matches!(self, Self::F16 | Self::Bf16 | Self::F32 | Self::F64)
     }
 
     pub const fn is_complex(self) -> bool {
-        let dtype = self as u8;
-        dtype >= Self::C64 as u8 && dtype <= Self::C128 as u8
+        matches!(self, Self::C64 | Self::C128)
     }
 
     pub const fn bit_width(self) -> u32 {
@@ -165,11 +161,43 @@ mod tests {
 
     #[test]
     fn dtype_classification_is_small_and_backend_neutral() {
-        assert!(DType::Bool.is_bool());
-        assert!(DType::I32.is_signed_integer());
-        assert!(DType::U64.is_unsigned_integer());
-        assert!(DType::F32.is_float());
-        assert!(DType::C128.is_complex());
+        let signed_integers = [DType::I8, DType::I16, DType::I32, DType::I64];
+        let unsigned_integers = [DType::U8, DType::U16, DType::U32, DType::U64];
+        let floats = [DType::F16, DType::Bf16, DType::F32, DType::F64];
+        let complex = [DType::C64, DType::C128];
+        let all = [
+            DType::Bool,
+            DType::I8,
+            DType::I16,
+            DType::I32,
+            DType::I64,
+            DType::U8,
+            DType::U16,
+            DType::U32,
+            DType::U64,
+            DType::F16,
+            DType::Bf16,
+            DType::F32,
+            DType::F64,
+            DType::C64,
+            DType::C128,
+        ];
+
+        for dtype in all {
+            assert_eq!(dtype.is_bool(), dtype == DType::Bool);
+            assert_eq!(dtype.is_signed_integer(), signed_integers.contains(&dtype));
+            assert_eq!(
+                dtype.is_unsigned_integer(),
+                unsigned_integers.contains(&dtype)
+            );
+            assert_eq!(
+                dtype.is_integer(),
+                signed_integers.contains(&dtype) || unsigned_integers.contains(&dtype)
+            );
+            assert_eq!(dtype.is_float(), floats.contains(&dtype));
+            assert_eq!(dtype.is_complex(), complex.contains(&dtype));
+        }
+
         assert_eq!(DType::Bf16.bit_width(), 16);
         assert_eq!(DType::C64.element_size_in_bytes(), 8);
         assert_eq!(DType::F64.to_string(), "f64");

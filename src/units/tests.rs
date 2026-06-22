@@ -27,7 +27,89 @@ macro_rules! unit {
             }
         }
 
-        impl LinearQuantity for $name {}
+        impl ScalarQuantity for $name {
+            fn min(self, other: Self) -> Self {
+                Self(self.0.min(other.0))
+            }
+
+            fn max(self, other: Self) -> Self {
+                Self(self.0.max(other.0))
+            }
+
+            fn clamp(self, lo: Self, hi: Self) -> Self {
+                Self(self.0.clamp(lo.0, hi.0))
+            }
+
+            fn floor(self) -> Self {
+                Self(self.0.floor())
+            }
+
+            fn ceil(self) -> Self {
+                Self(self.0.ceil())
+            }
+
+            fn round(self) -> Self {
+                Self(self.0.round())
+            }
+
+            fn trunc(self) -> Self {
+                Self(self.0.trunc())
+            }
+
+            fn is_finite(&self) -> bool {
+                self.0.is_finite()
+            }
+
+            fn is_nan(&self) -> bool {
+                self.0.is_nan()
+            }
+
+            fn is_infinite(&self) -> bool {
+                self.0.is_infinite()
+            }
+
+            fn approx_eq(&self, other: &Self, tolerance: &Self) -> bool {
+                (self.0 - other.0).abs() <= tolerance.0.abs()
+            }
+        }
+
+        impl LinearQuantity for $name {
+            fn add(self, other: Self) -> Self {
+                Self(self.0 + other.0)
+            }
+
+            fn sub(self, other: Self) -> Self {
+                Self(self.0 - other.0)
+            }
+
+            fn neg(self) -> Self {
+                Self(-self.0)
+            }
+
+            fn abs(self) -> Self {
+                Self(self.0.abs())
+            }
+
+            fn signum(self) -> f64 {
+                self.0.signum()
+            }
+
+            fn ratio(self, other: Self) -> f64 {
+                self.0 / other.0
+            }
+
+            fn lerp(self, other: Self, t: f64) -> Self {
+                Self(self.0 * (1.0 - t) + other.0 * t)
+            }
+
+            fn scale(self, factor: f64) -> Self {
+                Self(self.0 * factor)
+            }
+
+            fn scaled(self, k: f64) -> Self {
+                Self(self.0 * k)
+            }
+        }
     };
 }
 
@@ -52,6 +134,10 @@ impl Length for Len {
 
     fn over(self, speed: Spd) -> Tim {
         Tim(self.0 / speed.0)
+    }
+
+    fn squared(self) -> Ar {
+        Ar(self.0 * self.0)
     }
 }
 
@@ -81,7 +167,56 @@ impl Area for Ar {
     }
 }
 
-impl Angle for Ang {}
+impl Angle for Ang {
+    fn from_radians(radians: f64) -> Self {
+        Self(radians)
+    }
+
+    fn from_degrees(degrees: f64) -> Self {
+        Self(degrees.to_radians())
+    }
+
+    fn half_turn() -> Self {
+        Self(std::f64::consts::PI)
+    }
+
+    fn full_turn() -> Self {
+        Self(std::f64::consts::TAU)
+    }
+
+    fn radians(&self) -> f64 {
+        self.0
+    }
+
+    fn degrees(&self) -> f64 {
+        self.0.to_degrees()
+    }
+
+    fn sin(&self) -> f64 {
+        self.0.sin()
+    }
+
+    fn cos(&self) -> f64 {
+        self.0.cos()
+    }
+
+    fn tan(&self) -> f64 {
+        self.0.tan()
+    }
+
+    fn normalized_unsigned(self) -> Self {
+        Self(self.0.rem_euclid(std::f64::consts::TAU))
+    }
+
+    fn normalized_signed(self) -> Self {
+        let r = self.0.rem_euclid(std::f64::consts::TAU);
+        if r > std::f64::consts::PI {
+            Self(r - std::f64::consts::TAU)
+        } else {
+            Self(r)
+        }
+    }
+}
 
 #[test]
 fn linear_ops_over_f64() {

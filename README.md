@@ -60,7 +60,7 @@ assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
 | [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, masks, and special functions |
 | [`interpolate`](src/interpolate.rs) | scalar-parameterized interpolation (`lerp`/`midpoint`) |
 | [`tensor`](src/tensor/mod.rs) | the rank-graded `Tensor` contract |
-| [`random`](src/random/mod.rs) | JAX-style keyed random-source contracts |
+| [`random`](src/random/mod.rs) | explicit-key random sampler contracts |
 | [`units`](src/units/mod.rs) | physical-dimension contracts over any `Real` carrier |
 
 ## Numeric Traits
@@ -127,32 +127,18 @@ explicit because some carriers need a different implementation than
 
 ## Random Traits
 
-The random module defines JAX-style keyed random APIs split by capability:
+The random module defines a small explicit-key sampler surface:
 
-- `KeyedRandomBackend`: immutable key construction, serialization, splitting,
-  and folding. It has no draw methods by itself.
-- `KeyedRandomScalar`: scalar uniform, normal, gamma, raw bits, Bernoulli, and
-  integer draws.
-- `KeyedRandomTensor`: arbitrary-rank real, boolean, signed-integer, and
-  unsigned-integer tensor draws, including bits, Bernoulli, integer, and
-  categorical sampling. Rank-1 and rank-2 draws are just tensor draws with the
-  corresponding shape.
-- `KeyedRandomScalarDistributions` and `KeyedRandomTensorDistributions`:
-  optional backend-supported samplers for distributions such as exponential,
-  Gumbel, logistic, Cauchy, beta, Dirichlet, Poisson, permutation, and shuffle.
-- `split` and `fold_in`: deterministic key derivation for independent draws,
-  loop steps, chains, replicas, and batches.
-- `key_data` and `wrap_key_data`: key serialization / interop hooks for typed
-  and legacy key representations.
-- `SampleWithKey` and `KeyedRandomProcess`: sampling and process-step contracts
-  over explicit keys.
+- `RandomKey`: immutable key construction, splitting, and folding.
+- `RandomSampler`: basic `uniform`, `normal`, `bernoulli`, and `randint`
+  draws over a host-known `shape`.
 
-Implementors can support only the surfaces they actually have. Generic code can
-require a distribution-extension trait when it wants the backend's native or
-tuned sampler rather than composing a distribution from lower-level draws.
-Batched keys should have map-like semantics: drawing from a batch of keys is
-equivalent to drawing once per key and stacking the results. The module does not
-prescribe a concrete PRNG, storage type, tensor runtime, or state representation.
+Scalar backends such as an `f64` sampler use `&[]` as the shape. Array,
+dataframe, and graph backends can interpret non-empty shapes in their native
+way, which keeps generic sampler code small enough to target JAX-like arrays,
+Polars-style expressions, or eager scalar values without separate random APIs.
+The module does not prescribe a concrete PRNG, storage type, tensor runtime, or
+state representation.
 
 ## Units
 

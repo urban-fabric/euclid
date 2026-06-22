@@ -1,7 +1,7 @@
 use crate::numeric::{Boolean, Compare, Element, NormedDivisionAlgebra, Real, Ring, Semiring};
 
 /// **Rank n.** An n-dimensional array over a carrier element type: the dtype-agnostic array
-/// notions — shape, reshape, indexing/gather, and tensor control flow. `Tensor: Clone`,
+/// notions — shape, reshape, indexing/gather, and tensor selection. `Tensor: Clone`,
 /// so boolean tensors can participate without pretending to be rings. The element kind is a
 /// refinement: additive reductions and contractions require [`Ring`], a real tensor
 /// also implements [`Real`], a complex one [`Complex`](crate::numeric::Complex),
@@ -9,7 +9,7 @@ use crate::numeric::{Boolean, Compare, Element, NormedDivisionAlgebra, Real, Rin
 /// implement [`Boolean`](crate::numeric::Boolean). A vector is just a rank-1 tensor and a
 /// matrix a rank-2 tensor; there are no separate vector/matrix contracts.
 ///
-/// The bound is [`Clone`], not [`Ring`], so shape/reshape/control-flow carry no
+/// The bound is [`Clone`], not [`Ring`], so shape/reshape/select carry no
 /// arithmetic demand; [`sum`](Tensor::sum), [`matmul`](Tensor::matmul), and
 /// [`max`](Tensor::max) ask for the algebra they need.
 /// Axis naming, mask representation, broadcast/gather/scatter details, and precision policy
@@ -208,7 +208,7 @@ pub trait Tensor: Clone {
     where
         Self: Ring;
 
-    // --- tensor control flow ------------------------------------------------
+    // --- tensor select ------------------------------------------------------
 
     /// Elementwise tensor conditional: `mask ? on_true : on_false`.
     ///
@@ -220,25 +220,4 @@ pub trait Tensor: Clone {
     {
         <Self as Compare>::if_then_else(mask, on_true, on_false)
     }
-}
-
-/// Explicit graph control-flow contract for tensor carriers.
-pub trait TensorControlFlow: Tensor + Compare {
-    /// Graph-level conditional over tensor values.
-    fn cond<T, F>(
-        pred: &Self::Mask,
-        true_arg: Self,
-        true_branch: T,
-        false_arg: Self,
-        false_branch: F,
-    ) -> Self
-    where
-        T: FnOnce(Self) -> Self,
-        F: FnOnce(Self) -> Self;
-
-    /// Graph-level while loop over tensor state.
-    fn while_loop<C, B>(init: Self, cond: C, body: B) -> Self
-    where
-        C: Fn(&Self) -> Self::Mask,
-        B: Fn(Self) -> Self;
 }

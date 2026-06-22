@@ -67,9 +67,8 @@ pub trait Compare: Clone {
     }
 
     /// Iterative control flow: repeatedly advance a loop-carried state `C` by `body`
-    /// while `cond` holds — the scalar analog of
-    /// [`TensorControlFlow::while_loop`](crate::tensor::TensorControlFlow::while_loop),
-    /// and the counterpart of [`select`](Self::select) for loops rather than branches.
+    /// while `cond` holds — the counterpart of [`select`](Self::select) for loops rather
+    /// than branches.
     ///
     /// `cond` maps the carried state to the [`Mask`](Self::Mask) "keep iterating"
     /// predicate; `body` advances it. The state `C` may be a single value or a bundle such

@@ -1,23 +1,16 @@
-//! JAX-style random-source contracts over the numeric and array traits.
+//! Small explicit-key random sampler contracts.
 //!
 //! Randomness is modeled with explicit immutable keys. A draw is a pure function of its key,
 //! distribution parameters, and result shape: using the same key twice produces the same value.
-//! New independent randomness is obtained by [`KeyedRandomBackend::split`] or
-//! [`KeyedRandomBackend::fold_in`], which keeps the contract reproducible and friendly to
-//! graph/XLA backends.
+//! New independent randomness is obtained by [`RandomKey::split`] or [`RandomKey::fold_in`],
+//! which keeps the contract reproducible and friendly to eager, dataframe, and graph backends.
 //!
-//! Batched key semantics should be map-like: drawing from a batch of keys is equivalent to drawing
-//! once per key and stacking the results. Backends should not expose implementation details that
-//! make the first key drive an entire batch.
+//! The sampler surface is intentionally small: uniform, normal, Bernoulli, and integer draws over
+//! a host-known `shape`. Scalar backends use `&[]`; array/dataframe backends can interpret
+//! non-empty shapes in their native way.
 
-mod dtype;
 mod key;
-mod process;
-mod scalar;
-mod tensor;
+mod sampler;
 
-pub use dtype::{RandomAlgorithm, RandomDType};
-pub use key::{GraphRandomBackend, KeyedRandomBackend};
-pub use process::{KeyedRandomProcess, SampleWithKey};
-pub use scalar::{KeyedRandomScalar, KeyedRandomScalarDistributions};
-pub use tensor::{GraphRandomTensor, KeyedRandomTensor, KeyedRandomTensorDistributions};
+pub use key::RandomKey;
+pub use sampler::RandomSampler;
