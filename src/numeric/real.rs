@@ -1,187 +1,243 @@
-//! The real-number traits: the lazy analysis surface [`LazyReal`] and the
-//! concrete [`Real`] number.
+//! Real-number analysis over any ordered real carrier.
 
-use super::NormedDivisionAlgebra;
+use super::{Compare, Integer, NormedDivisionAlgebra};
 
-/// A real-valued numeric scalar: an [`Arithmetic`](super::Arithmetic) plus the real transcendentals that
-/// inherently-real formulas (probability densities, geometry kernels) are written
-/// in.
+/// A real-valued numeric scalar: an [`Arithmetic`](super::Arithmetic) plus the real
+/// transcendentals inherently-real formulas (densities, geometry kernels) are written in.
 ///
-/// `LazyReal: NormedDivisionAlgebra<RealPart = Self>` — a real scalar's real field is itself, so
-/// its [`conjugate`](NormedDivisionAlgebra::conjugate) is the identity and a kernel generic over
-/// [`NormedDivisionAlgebra`] collapses to the plain real case at a `LazyReal` element.
-pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
-    /// Lift a host scalar into this real substrate.
-    ///
-    /// For `f64` this is the identity and for `f32` it is a narrowing cast. Lazy
-    /// graph backends should represent it as a scalar constant node, ideally
-    /// interned or otherwise cheap to reuse.
+/// `Real: NormedDivisionAlgebra<RealPart = Self>` — a real scalar's real field is
+/// itself, so its `conjugate` is the identity and a [`NormedDivisionAlgebra`] kernel
+/// collapses to the plain real case here.
+///
+/// `Real: Compare` — a real scalar is **ordered**, so the comparison/control-flow
+/// surface is part of the real surface itself: the six comparisons
+/// (`lt`/`le`/`gt`/`ge`/`eq`/`ne`) to a [`Mask`](Compare::Mask), and the branchless
+/// [`select`](Compare::select)/[`if_then_else`](Compare::if_then_else) the mask
+/// drives. A piecewise / truncated density — or any `if`/`then`/`else` over real numbers —
+/// uses the `Real` bound alone. The comparison-free
+/// [`min`](Self::min)/[`max`](Self::max)/[`clamp`](Self::clamp) selectors cover common
+/// min/max/clamp shapes without an explicit mask; use the comparison surface when the branch
+/// condition is something else. Complex values are unordered, so
+/// [`Complex`](super::Complex) carries no comparison.
+pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
+    /// The integer substrate indexing this real's integer powers — `i32` for `f32`, `i64`
+    /// for `f64`, or an integer peer for a tensor/expression carrier; the exponent type of
+    /// [`powi`](Self::powi). The bound is the bare [`Integer`], not
+    /// `Integer<Real = Self>`: a differentiable real has no integer differentiating
+    /// back to it, so requiring the round-trip would make it un-implementable.
+    type Integer: Integer;
+
+    /// Lift a host scalar into this real substrate (identity for `f64`, a narrowing cast
+    /// for `f32`). Non-scalar carriers should represent it as the carrier's own constant.
     fn scalar(x: f64) -> Self;
 
     /// Lift a host scalar using `self` as graph/device/shape context.
-    ///
-    /// The default is a scalar constant. Tensor or expression backends may
-    /// override this when constants need to live in the same arena, dtype, device,
-    /// or broadcast context as an existing value.
-    #[inline]
-    fn scalar_like(&self, x: f64) -> Self {
-        Self::scalar(x)
-    }
+    fn scalar_like(&self, x: f64) -> Self;
 
-    /// `0`.
-    #[inline]
-    fn zero() -> Self {
-        Self::scalar(0.0)
-    }
-
-    /// `1`.
-    #[inline]
-    fn one() -> Self {
-        Self::scalar(1.0)
-    }
+    // `0` and `1` come from the [`Element`](super::Element) supertrait (via
+    // [`NormedDivisionAlgebra`]), defined directly by each carrier rather than via `scalar`.
 
     /// `2`.
-    #[inline]
-    fn two() -> Self {
-        Self::scalar(2.0)
-    }
+    fn two() -> Self;
 
     /// `0.5`.
-    #[inline]
-    fn half() -> Self {
-        Self::scalar(0.5)
-    }
+    fn half() -> Self;
 
     /// Archimedes' constant `π`.
-    #[inline]
-    fn pi() -> Self {
-        Self::scalar(core::f64::consts::PI)
-    }
+    fn pi() -> Self;
 
     /// `2π`.
-    #[inline]
-    fn tau() -> Self {
-        Self::scalar(core::f64::consts::TAU)
-    }
+    fn tau() -> Self;
 
     /// `π/2`.
-    #[inline]
-    fn frac_pi_2() -> Self {
-        Self::scalar(core::f64::consts::FRAC_PI_2)
-    }
+    fn frac_pi_2() -> Self;
 
     /// `π/4`.
-    #[inline]
-    fn frac_pi_4() -> Self {
-        Self::scalar(core::f64::consts::FRAC_PI_4)
-    }
+    fn frac_pi_4() -> Self;
 
     /// `√2`.
-    #[inline]
-    fn sqrt_2() -> Self {
-        Self::scalar(core::f64::consts::SQRT_2)
-    }
+    fn sqrt_2() -> Self;
 
     /// `1/√2`.
-    #[inline]
-    fn frac_1_sqrt_2() -> Self {
-        Self::scalar(core::f64::consts::FRAC_1_SQRT_2)
-    }
+    fn frac_1_sqrt_2() -> Self;
 
     /// `ln 2`.
-    #[inline]
-    fn ln_2() -> Self {
-        Self::scalar(core::f64::consts::LN_2)
-    }
+    fn ln_2() -> Self;
 
     /// `ln π`.
-    #[inline]
-    fn ln_pi() -> Self {
-        Self::scalar(core::f64::consts::PI.ln())
-    }
+    fn ln_pi() -> Self;
 
     /// `ln τ`, where `τ = 2π`.
-    #[inline]
-    fn ln_tau() -> Self {
-        Self::scalar(core::f64::consts::TAU.ln())
-    }
+    fn ln_tau() -> Self;
 
     /// `0.5 * ln τ`, the scalar normal-density normalizer.
-    #[inline]
-    fn half_ln_tau() -> Self {
-        Self::scalar(0.5 * core::f64::consts::TAU.ln())
-    }
+    fn half_ln_tau() -> Self;
 
-    /// Euler's number `e`.
-    ///
-    /// The base of the natural exponential — the fixed point the whole analysis
-    /// surface (`exp`/`ln`) is written around. Naming it directly lets a lazy
-    /// backend intern the constant instead of recovering it as `T::one().exp()`.
-    #[inline]
-    fn e() -> Self {
-        Self::scalar(core::f64::consts::E)
-    }
+    /// Euler's number `e`. Named directly so a non-scalar carrier can intern it rather than
+    /// recover it as `T::one().exp()`.
+    fn e() -> Self;
 
     /// `log₂ e` — the factor turning a natural log into a base-2 log.
-    #[inline]
-    fn log2_e() -> Self {
-        Self::scalar(core::f64::consts::LOG2_E)
-    }
+    fn log2_e() -> Self;
 
     /// `log₁₀ e` — the factor turning a natural log into a base-10 log.
-    #[inline]
-    fn log10_e() -> Self {
-        Self::scalar(core::f64::consts::LOG10_E)
-    }
+    fn log10_e() -> Self;
 
     /// `ln 10`.
-    #[inline]
-    fn ln_10() -> Self {
-        Self::scalar(core::f64::consts::LN_10)
-    }
+    fn ln_10() -> Self;
 
     /// `log₂ 10`.
-    #[inline]
-    fn log2_10() -> Self {
-        Self::scalar(core::f64::consts::LOG2_10)
-    }
+    fn log2_10() -> Self;
 
     /// `log₁₀ 2`.
+    fn log10_2() -> Self;
+
+    /// The Euler–Mascheroni constant `γ ≈ 0.5772…` (`= −ψ(1)`); the additive term in the
+    /// Gumbel/Weibull/Gamma entropies. Not a `core` constant, so lifted from its digits.
+    fn euler_gamma() -> Self;
+
+    /// `-1`.
     #[inline]
-    fn log10_2() -> Self {
-        Self::scalar(core::f64::consts::LOG10_2)
+    fn neg_one() -> Self {
+        Self::zero() - Self::one()
     }
 
-    /// The Euler–Mascheroni constant `γ ≈ 0.5772…`.
-    ///
-    /// The limit of `Σ_{k≤n} 1/k − ln n`; it is `−ψ(1)` (the additive constant of
-    /// the digamma function) and the additive term in the closed-form entropies of
-    /// the Gumbel, Weibull, and Gamma families. It is not a `core` float constant,
-    /// so it is lifted from its decimal expansion.
+    /// Degrees in one full turn, `360`.
     #[inline]
-    fn euler_gamma() -> Self {
-        Self::scalar(0.577_215_664_901_532_9)
+    fn full_turn_degrees() -> Self {
+        Self::scalar(360.0)
+    }
+
+    /// Degrees in one half turn, `180`.
+    #[inline]
+    fn half_turn_degrees() -> Self {
+        Self::scalar(180.0)
+    }
+
+    /// Degrees in one quarter turn, `90`.
+    #[inline]
+    fn quarter_turn_degrees() -> Self {
+        Self::scalar(90.0)
+    }
+
+    /// Degrees in one and a half turns, `540`.
+    #[inline]
+    fn three_half_turn_degrees() -> Self {
+        Self::scalar(540.0)
+    }
+
+    /// Radians per degree, `pi / 180`.
+    #[inline]
+    fn radians_per_degree() -> Self {
+        Self::pi() / Self::half_turn_degrees()
+    }
+
+    /// Degrees per radian, `180 / pi`.
+    #[inline]
+    fn degrees_per_radian() -> Self {
+        Self::half_turn_degrees() / Self::pi()
+    }
+
+    // --- non-finite IEEE sentinels ---
+    // These bit patterns lift as ordinary constants through `scalar`. They are useful as
+    // reduction/clamp bounds (`±∞`), log-domain masks
+    // (`select(keep, logit, neg_infinity())` ahead of a softmax), and the open ends of a
+    // distribution's support. They poison arithmetic, so detect them with the finiteness
+    // predicates below rather than computing through them.
+
+    /// Positive infinity, `+∞`.
+    fn infinity() -> Self;
+
+    /// Negative infinity, `−∞`.
+    fn neg_infinity() -> Self;
+
+    /// A quiet `NaN` ("not a number") — the IEEE result of an undefined operation
+    /// (`0/0`, `∞ − ∞`). It is unequal to everything including itself, so test it with
+    /// [`is_nan`](Self::is_nan); never compare it with `eq`.
+    fn nan() -> Self;
+
+    // --- finiteness predicates ---
+
+    /// `true` where `self` is `NaN`.
+    fn is_nan(&self) -> Self::Mask;
+
+    /// `true` where `self` is `±∞`.
+    fn is_infinite(&self) -> Self::Mask;
+
+    /// `true` where `self` is finite — neither `±∞` nor `NaN`.
+    fn is_finite(&self) -> Self::Mask;
+
+    // --- non-finite recovery helpers ---
+    // Convenience composites that turn the classifier predicates above into value-level
+    // recovery — the shape an out-of-support guard takes.
+
+    /// Replace `NaN` lanes with `fill`, leaving `±∞` and finite values untouched — the
+    /// portable `nan_to_num` for the `NaN` case. A `NaN` log-density (a bug, or `0·∞`) becomes
+    /// a chosen sentinel (often `neg_infinity()`, i.e. "impossible") instead of poisoning a
+    /// later sum.
+    #[inline]
+    fn nan_to_num(self, fill: Self) -> Self {
+        let is_nan = self.is_nan();
+        Self::select(&is_nan, fill, self)
+    }
+
+    /// Replace every non-finite lane (`NaN` **or** `±∞`) with `fill`, keeping the finite ones —
+    /// the "force finite" recovery. Use [`nan_to_num`](Self::nan_to_num) instead when an
+    /// intended `±∞`, such as a log-domain `−∞`, must survive.
+    #[inline]
+    fn finite_or(self, fill: Self) -> Self {
+        let is_finite = self.is_finite();
+        Self::select(&is_finite, self, fill)
+    }
+
+    /// Out-of-support guard: keep `self` where `valid`, else `fill`. This is the *output* half
+    /// of the "double `where`" — pair it with a sanitized *input* so an eager elementwise
+    /// implementation never forms a `NaN` in an invalid lane to begin with:
+    ///
+    /// ```ignore
+    /// let safe_x = T::select(&in_support, x.clone(), x.scalar_like(1.0)); // any in-domain dummy
+    /// let logp   = density(safe_x);                                       // no NaN in masked lanes
+    /// let out    = logp.mask_invalid(in_support, T::neg_infinity());
+    /// ```
+    #[inline]
+    fn mask_invalid(self, valid: Self::Mask, fill: Self) -> Self {
+        Self::select(&valid, self, fill)
+    }
+
+    /// A debugging hook that returns `self` unchanged but lets an implementation trap non-finite values.
+    /// The default is the identity (no check); the eager reals override it to `debug_assert!`
+    /// finiteness, while other carriers may lower it to a runtime check behind a debug flag.
+    /// It carries **no** semantic meaning — release builds and unchecked implementations may
+    /// erase it — so never rely on it to change a value.
+    #[inline]
+    fn debug_assert_finite(self) -> Self {
+        self
     }
 
     /// `e^x`.
     fn exp(&self) -> Self;
     /// Natural logarithm.
     fn ln(&self) -> Self;
+    /// Natural logarithm of `1 + x`, accurate when `x` is near zero.
+    fn ln_1p(&self) -> Self;
+    /// `e^x − 1`, accurate when `x` is near zero.
+    fn exp_m1(&self) -> Self;
     /// Square root.
     fn sqrt(&self) -> Self;
     /// Absolute value.
     fn abs(&self) -> Self;
-    /// Raise to a real power.
-    fn powf(&self, p: f64) -> Self;
+    /// Square, `self * self`.
+    fn square(&self) -> Self;
+    /// Raise to a real power, `self^p`. The exponent is itself a real of this substrate, so
+    /// a carrier can raise to a computed value; lift a literal with
+    /// `x.powf(x.scalar_like(2.5))`. Integer exponents have their own [`powi`](Self::powi).
+    fn powf(&self, p: Self) -> Self;
     /// Numerically-stable `ln(1 + e^x)` (softplus / `log1pexp`).
     fn ln_1p_exp(&self) -> Self;
 
     // --- trigonometry ---
-    // Elementwise transcendentals. Every backend that can run a formula can run
-    // these too — a tensor compiler lowers them to `Sin`/`Cos`/`Atan2`/… — so they
-    // belong on the write-once surface, not only on the concrete `Real` tier.
-    // (These take `self` by value to match the concrete `Real` signatures they were
-    // promoted from; the `Clone` bound lets a caller keep the input when needed.)
+    // Elementwise transcendentals; taken by value so carrier handles can move cheaply while
+    // `Clone` remains available when a formula needs to keep the input.
     fn sin(self) -> Self;
     fn cos(self) -> Self;
     fn tan(self) -> Self;
@@ -192,18 +248,24 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn sinh(self) -> Self;
     fn cosh(self) -> Self;
     fn tanh(self) -> Self;
+    /// Inverse hyperbolic sine.
+    fn asinh(self) -> Self;
+    /// Inverse hyperbolic cosine, `acosh(x) = ln(x + √(x² − 1))` (for `x ≥ 1`).
+    fn acosh(self) -> Self;
+    /// Inverse hyperbolic tangent, `atanh(x) = ½·ln((1 + x)/(1 − x))` (for `|x| < 1`).
+    fn atanh(self) -> Self;
     /// `(sin, cos)` in one call.
-    #[inline]
-    fn sin_cos(self) -> (Self, Self) {
-        (self.clone().sin(), self.cos())
-    }
+    fn sin_cos(self) -> (Self, Self);
 
     // --- powers / roots ---
     /// `√(self² + other²)` without intermediate overflow.
     fn hypot(self, other: Self) -> Self;
     fn cbrt(self) -> Self;
-    /// Integer power.
-    fn powi(self, n: i32) -> Self;
+    /// Integer power, `self^n` — exact repeated multiplication, defined for negative bases
+    /// (unlike [`powf`](Self::powf)). The exponent is a value of the [`Integer`](Self::Integer)
+    /// substrate (`i32` for `f32`, `i64` for `f64`), so a carrier can raise to a computed
+    /// count.
+    fn powi(self, n: Self::Integer) -> Self;
     /// `self * a + b` (fused where the target supports it).
     fn mul_add(self, a: Self, b: Self) -> Self;
     fn recip(self) -> Self;
@@ -225,26 +287,30 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn to_degrees(self) -> Self;
 
     // --- elementwise select (NaN-aware on the concrete reals) ---
-    // The comparison-free `select` primitives: a tensor backend lowers these to
-    // `Max`/`Min`/`Clamp`, so piecewise / support-indicator kernels stay portable
-    // without a `bool`-returning comparison the lazy tier cannot express.
+    // Comparison-free selectors for min/max/clamp-shaped piecewise kernels. NaN-awareness
+    // here is about the *value* `self`: the concrete `f64`/`f32` `min`/`max` return the
+    // non-NaN operand, and `clamp` preserves a NaN value — not about the `clamp` bounds.
     fn min(self, other: Self) -> Self;
     fn max(self, other: Self) -> Self;
+    /// Clamp `self` into `[lo, hi]`.
+    ///
+    /// # Panics
+    /// The concrete `f64`/`f32` impls delegate to `f{64,32}::clamp`, which **panics** if
+    /// `lo > hi` or if either bound is NaN. Callers must supply ordered, non-NaN bounds.
     fn clamp(self, lo: Self, hi: Self) -> Self;
 
     // --- special functions ---
-    // The elementwise analytic functions a probability/statistics formula reaches
-    // for once it leaves pure algebra: the error function, the gamma family, and the
-    // regularized incomplete gamma/beta CDF kernels. Each has a direct tensor-op
-    // analogue (`Erf`/`Lgamma`/`Digamma`/`Igamma`/`RegularizedIncompleteBeta`, …), so
-    // a backend lowers them the same way it lowers `exp`/`sin`. The concrete `f64`/
-    // `f32` reference implementations live in [`crate::special`]. Where a function
-    // takes auxiliary parameters, `self` is the *evaluation point* (the lazy
-    // variable) and the parameters follow.
+    // The analytic functions a probability formula reaches for past pure algebra. Each has
+    // a direct tensor-op analogue (`Erf`/`Lgamma`/`Igamma`/…); the `f64`/`f32` reference
+    // impls live in the crate-internal `numeric::special` module. `self` is always the
+    // evaluation point, with any parameters following.
 
     /// The error function `erf(x)`.
     fn erf(self) -> Self;
-    /// The complementary error function `erfc(x) = 1 − erf(x)`.
+    /// The complementary error function `erfc(x) = 1 − erf(x)`. Formed by complementation, so
+    /// it loses relative precision — and eventually underflows to `0` — in the right tail
+    /// (`x ≳ 5`); for a stable large-`x` value, reach for the scaled
+    /// [`erfcx`](Self::erfcx) (`e^{x²} erfc(x)`) instead.
     fn erfc(self) -> Self;
     /// The inverse error function, `erf_inv(erf(x)) = x`.
     fn erf_inv(self) -> Self;
@@ -264,100 +330,85 @@ pub trait LazyReal: NormedDivisionAlgebra<RealPart = Self> {
     fn beta_reg(self, a: Self, b: Self) -> Self;
 
     /// Numerically-stable `ln(1 − e^x)` (`log1mexp`), the complement of
-    /// [`ln_1p_exp`](Self::ln_1p_exp); defined for `x < 0`. The stable Gamma /
-    /// exponential / Normal log-CDF complements are written through it.
+    /// [`ln_1p_exp`](Self::ln_1p_exp); defined for `x < 0`.
     fn ln_1m_exp(&self) -> Self;
-    /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)` — the
-    /// stable kernel of a Gaussian / Wald log-CDF tail.
+    /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)` — the stable
+    /// kernel of a Gaussian / Wald log-CDF tail.
     fn erfcx(self) -> Self;
-    /// The exponentially-scaled modified Bessel `I₀ᵉ(x) = e^{−|x|} I₀(x)`. From it
-    /// `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`, the directional
-    /// normalizers, follow without overflow.
+    /// The exponentially-scaled modified Bessel `I₀ᵉ(x) = e^{−|x|} I₀(x)`, the overflow-free
+    /// route to `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`.
     fn bessel_i0e(self) -> Self;
     /// The exponentially-scaled modified Bessel `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
     fn bessel_i1e(self) -> Self;
-}
 
-/// A **concrete real number** — [`LazyReal`] (the whole elementwise analysis
-/// surface) plus the few things that only a concrete number on the real line can
-/// offer: the associated constants (`PI`, `TAU`, `EPSILON`, `INFINITY`, …) and the
-/// `bool`-returning predicates (`is_finite`/`is_nan`/`is_sign_negative`).
-///
-/// This is **distinct from [`LazyReal`]**, deliberately. `LazyReal` is the
-/// cross-backend analysis surface a *write-once* formula needs, so it is
-/// implemented by `f64`/`f32` **and** non-`Copy` backends like a differentiable
-/// `Tensor`. The transcendentals, rounding, and `min`/`max`/`clamp` selectors all
-/// live there, because a tensor compiler can lower every one of them. `Real` keeps
-/// only what a tensor *cannot* produce — a single `PI` value, a scalar `bool` from
-/// a comparison — so code that genuinely needs the whole real number line (e.g.
-/// `hausdorff`'s geometry) bounds on `Real` and runs over `f64`, `f32`, and any
-/// future decimal / interval / extended-precision type, while tensor backends
-/// remain unaffected.
-///
-/// It **fuses the two stacks** for the concrete reals: the algebraic structure
-/// (`+ - * /`, `ZERO`/`ONE`, `÷`, `conjugate`, the total order) comes from
-/// [`crate::algebra::OrderedField`]; the analysis (`scalar`/`exp`/`ln`/`sqrt`/trig/
-/// rounding/`min`/`max`/`clamp`) from [`LazyReal`]; this trait adds only the
-/// constants and predicates. `Real: LazyReal`, so a concrete `f64` also satisfies
-/// any write-once formula bounded on the lazy base.
-pub trait Real:
-    crate::algebra::OrderedField
-    + LazyReal
-    + Copy
-    + core::ops::AddAssign
-    + core::ops::SubAssign
-    + core::ops::MulAssign
-    + core::ops::DivAssign
-    + core::ops::Rem<Output = Self>
-    + core::iter::Sum
-{
-    /// Lift a real literal into the type (`f64` identity, `x as f32` for `f32`, the
-    /// nearest representable for a decimal) — the concrete-tier spelling for
-    /// [`LazyReal::scalar`].
-    #[inline]
-    fn from_f64(x: f64) -> Self {
-        Self::scalar(x)
-    }
+    /// `x · ln y` with the convention `0 · ln 0 = 0` (and `0 · ln y = 0` for any `y`) —
+    /// the numerically stable form that keeps entropy / cross-entropy / KL sums finite
+    /// where a plain `x * y.ln()` would evaluate `0 · (−∞) = NaN`. `self` is `x`, the
+    /// multiplier whose zero is absorbing.
+    ///
+    /// It is a **trait primitive**, not a free composite: honoring the `x = 0` case needs
+    /// a value-dependent select that the comparison-free real surface cannot express, so
+    /// each carrier supplies it directly. Host reals branch on `x == 0`; elementwise carriers
+    /// can use a `select`-guarded `x · ln y` form.
+    fn xlogy(self, y: Self) -> Self;
 
-    /// `2`.
-    const TWO: Self;
-    /// `0.5`.
-    const HALF: Self;
-    /// Archimedes' constant `π`.
-    const PI: Self;
-    /// `2π`.
-    const TAU: Self;
-    /// `π/2`.
-    const FRAC_PI_2: Self;
-    /// `π/4`.
-    const FRAC_PI_4: Self;
-    /// `√2`.
-    const SQRT_2: Self;
-    /// `1/√2`.
-    const FRAC_1_SQRT_2: Self;
-    /// Euler's number `e`.
-    const E: Self;
-    /// Machine epsilon.
-    const EPSILON: Self;
-    /// `+∞`.
-    const INFINITY: Self;
-    /// `−∞`.
-    const NEG_INFINITY: Self;
-    /// Not-a-number.
-    const NAN: Self;
-    /// Largest finite value.
-    const MAX: Self;
-    /// Smallest (most negative) finite value.
-    const MIN: Self;
-    /// Smallest positive normal value.
-    const MIN_POSITIVE: Self;
+    /// `x · ln(1 + y)` with the same absorbing-zero convention as [`xlogy`](Self::xlogy):
+    /// `0 · ln(0) = 0` when `y = -1`, and `0 · ln(1 + y) = 0` for any `y`.
+    ///
+    /// This is a **trait primitive**, not a defaulted `x * y.ln_1p()`: honoring the
+    /// absorbing-zero case needs a value-dependent select that the comparison-free real
+    /// surface cannot express.
+    fn xlog1py(self, y: Self) -> Self;
 
-    // --- predicates ---
-    // The only methods that stay concrete-only: they return `bool`, which the lazy
-    // tier cannot produce (a tensor comparison yields a mask, not a scalar bool).
-    // The elementwise analysis (trig, rounding, `min`/`max`/`clamp`, …) now lives on
-    // [`LazyReal`] and is inherited here through `Real: LazyReal`.
-    fn is_finite(self) -> bool;
-    fn is_nan(self) -> bool;
-    fn is_sign_negative(self) -> bool;
+    // --- stable scalar functions ---
+
+    /// Stable `ln(1 − x)`, accurate when `x` is near zero; defined for `x ≤ 1`.
+    fn ln_1m(&self) -> Self;
+
+    /// Stable `ln(e^x − 1)`, the inverse of [`ln_1p_exp`](Self::ln_1p_exp) on positive
+    /// inputs. Defined for `x > 0`.
+    fn ln_exp_m1(&self) -> Self;
+
+    /// Stable logistic sigmoid `1 / (1 + e^{-x})`, evaluated without overflowing the
+    /// intermediate exponential.
+    fn sigmoid(&self) -> Self;
+
+    /// Stable `ln(sigmoid(x)) = -ln(1 + e^{-x})`.
+    fn ln_sigmoid(&self) -> Self;
+
+    /// Stable `ln(1 − sigmoid(x)) = -ln(1 + e^x)`.
+    fn ln_1m_sigmoid(&self) -> Self;
+
+    /// Stable logit, `ln(p / (1 − p))`, using [`ln_1m`](Self::ln_1m) for the complement.
+    fn logit(&self) -> Self;
+
+    /// `x · ln(1 − y)` with the same absorbing-zero convention as [`xlogy`](Self::xlogy).
+    fn xlog1my(self, y: Self) -> Self;
+
+    /// Stable pairwise `ln(eᵃ + eᵇ) = max(a, b) + ln(1 + e^{−|a−b|})`.
+    fn ln_add_exp(self, other: Self) -> Self;
+
+    /// Stable pairwise `ln(eᵃ − eᵇ) = a + ln(1 − e^{b−a})`, valid for `self >= other`.
+    fn ln_sub_exp(self, other: Self) -> Self;
+
+    // --- composite special functions ---
+    // These are part of the contract surface. Implementors choose the numerics appropriate
+    // for their carrier rather than inheriting a generic stability policy.
+
+    /// `Γ(x)`.
+    fn gamma(self) -> Self;
+
+    /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
+    fn ln_beta(self, b: Self) -> Self;
+
+    /// `B(a, b) = exp(ln B(a, b))`, with `self = a`.
+    fn beta(self, b: Self) -> Self;
+
+    /// `ln I₀(x) = ln I₀ᵉ(x) + |x|`, the overflow-free log of the modified Bessel `I₀`
+    /// (the von Mises / directional normalizer).
+    fn ln_bessel_i0(self) -> Self;
+
+    /// `I₁(x) / I₀(x) = I₁ᵉ(x) / I₀ᵉ(x)` — the von Mises mean resultant length;
+    /// overflow-free, since the shared `e^{|x|}` growth factor cancels.
+    fn bessel_i1_over_i0(self) -> Self;
 }

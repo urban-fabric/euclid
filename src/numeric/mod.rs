@@ -1,75 +1,84 @@
-//! The number traits, in two tiers.
+//! Scalar numeric contracts.
 //!
-//! **Lazy tier** ([`Arithmetic`] → [`LazyReal`]/[`LazyComplex`]) — the *elementwise
-//! analysis* surface over the four operators, `Clone` not `Copy`: the
-//! transcendentals (`exp`/`ln`/`sqrt`, trig, `atan2`/`hypot`), rounding/sign, the
-//! comparison-free `min`/`max`/`clamp` selectors, `conj`/magnitude, plus
-//! scalar-literal lifting for the constants formulas name. Every operation here is
-//! something a lazy backend (a differentiable `Tensor`, a columnar `Expr`) can
-//! lower — a tensor compiler maps them to `Sin`/`Cos`/`Max`/`Select`/… — so a pure
-//! formula written in analysis + operators + scalar constants runs on every
-//! backend. What is *not* here: anything that returns a scalar `bool` (a tensor
-//! comparison yields a mask, not a bool) or that needs the concrete number line.
+//! The traits are grouped by the structure they require:
 //!
-//! **Concrete tier** ([`Real`]/[`Complex`]) — a `Copy` real / complex *number* with
-//! the full API, formed by **fusing** the lazy analysis with the algebraic field
-//! ([`OrderedField`](crate::algebra::OrderedField) /
-//! [`AlgebraicallyClosedField`](crate::algebra::AlgebraicallyClosedField)): one
-//! bound gives operators, `ZERO`/`ONE`, `÷`, `conjugate`, ordering, *and*
-//! `from_f64` (the concrete-tier spelling for [`LazyReal::scalar`]) plus
-//! trig/`hypot`/rounding/constants. `Real: LazyReal` and `Complex: LazyComplex`, so
-//! a concrete number also satisfies a lazy formula — but a `Tensor` (no `Copy`, no
-//! associated constants) is *only* lazy. Implemented by `f64`/`f32` (and
-//! `jacobi::Complex{32,64}`); the geometry / matrix / physics kernels bound on
-//! the concrete tier.
+//! - [`Element`]: the canonical constants `0` and `1` every carrier defines directly — the
+//!   tier booleans, naturals, integers, and the real/complex/quaternion division algebras all
+//!   unify into, so any of them can be a [`Tensor`](crate::tensor::Tensor) element.
+//! - [`Semiring`] and [`Natural`]: `+`, `*`, identities, natural-number lifting,
+//!   Euclidean division, and count combinatorics.
+//! - [`Ring`] and [`Integer`]: subtraction, negation, signed integer lifting,
+//!   Euclidean division, and conversion to real carriers.
+//! - [`Arithmetic`]: division on top of the ring operations.
+//! - [`Real`]: real analysis, lifted constants, square/powers, rounding/sign
+//!   operations, comparison-free selectors, masks, special functions, and stable log-domain
+//!   helpers.
+//! - [`NormedDivisionAlgebra`], [`Complex`], and [`Quaternion`]: conjugation,
+//!   magnitude, real part, and complex/quaternionic construction.
+//! - [`Boolean`] and [`Compare`]: mask algebra, comparisons, `select`, and carrier-level
+//!   control flow.
 //!
-//! The word *field* stays reserved for the algebraic
-//! [`Field`](crate::algebra::Field).
+//! Use the narrowest trait bound that contains the operations a formula needs. Nothing in
+//! this module returns a scalar `bool` from a generic comparison; comparisons return masks.
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-/// The arithmetic substrate: `Clone` plus the four operations and negation — the
-/// bound behind `+ - * /` in a generic formula. Pure operators, no scalar or vector
-/// construction: implemented by `f64`/`f32`, complex scalars, `Tensor`, and `Expr`
-/// alike.
-/// Lifting a scalar *constant* into a real lazy substrate lives on [`LazyReal`],
-/// because probability/statistics formulas need constants without giving up lazy
-/// execution.
-pub trait Arithmetic:
-    Clone
-    + Add<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + Div<Output = Self>
-    + Neg<Output = Self>
-{
+/// The carrier's canonical constants — the additive identity `0` and the multiplicative
+/// identity `1`. The tier every [`Tensor`](crate::tensor::Tensor) element kind unifies
+/// into: booleans (`0`/`1` are `false`/`true`), naturals, integers, and the real/complex/
+/// quaternion division algebras all implement it, so structural tensor constructors and
+/// reductions can name a zero/one for any of them through one bound.
+///
+/// This is the supertrait that gives [`Semiring`] its guaranteed identities — factored one
+/// tier *below* the operators so booleans, which carry `0`/`1` but not `+`/`*`, can share the
+/// identities without being a semiring. Everything above [`Semiring`] (ring, field,
+/// integer, natural, division algebra) therefore inherits `0`/`1` for free.
+///
+/// Both are **required**, not defaulted through a host-`f64` lift: a carrier defines its own
+/// exact `0`/`1` representation. (Arbitrary real lifting stays on [`Real::scalar`].)
+pub trait Element: Clone {
+    /// The additive identity — `0` for numbers, `false` for booleans.
+    fn zero() -> Self;
+    /// The multiplicative identity — `1` for numbers, `true` for booleans.
+    fn one() -> Self;
 }
 
-/// A **normed division algebra over ℝ** — the number-system abstraction the rank-graded
-/// array contracts ([`LazyVector`](crate::array::LazyVector),
-/// [`LazyMatrix`](crate::array::LazyMatrix), [`LazyTensor`](crate::array::LazyTensor))
-/// are generic over. By Frobenius/Hurwitz the associative ones are exactly **ℝ (1D), ℂ
-/// (2D), ℍ (4D)**, so one matrix/vector kernel runs over all three (octonions are
-/// non-associative — no matrices).
+/// The **semiring** substrate: a [`Element`] (which guarantees its identities `0`/`1`) plus
+/// `+` and `*`, with subtraction and negation withheld. Naturals sit at this tier.
+/// Blanket-implemented for every carrier with [`Element`] + `Add` + `Mul`, so every
+/// ring/field carrier joins it too; [`Ring`] refines it with `Sub`/`Neg`, [`Natural`]
+/// with the natural surface.
+pub trait Semiring: Element + Add<Output = Self> + Mul<Output = Self> {}
+impl<T> Semiring for T where T: Element + Add<Output = T> + Mul<Output = T> {}
+
+/// The **ring** substrate: a [`Semiring`] plus `-` and negation, with division withheld.
+/// Blanket-implemented for every carrier with the four ring operators, so division-bearing
+/// scalars and ring-valued arrays join it alongside signed integers. (Unsigned carriers stop at
+/// [`Semiring`], having no `Neg`.) [`Arithmetic`] refines it with `Div`;
+/// [`Integer`] with the integer surface.
+pub trait Ring: Semiring + Sub<Output = Self> + Neg<Output = Self> {}
+impl<T> Ring for T where T: Semiring + Sub<Output = T> + Neg<Output = T> {}
+
+/// A [`Ring`] plus division — the field-tier operator bound behind `+ - * /`,
+/// implemented by `f64`/`f32`, complex scalars, and `Tensor`. Integer carriers stop at
+/// [`Ring`]/[`Integer`]. (Constant lifting lives on [`Real`].)
+pub trait Arithmetic: Ring + Div<Output = Self> {}
+
+/// A **normed division algebra over ℝ** — the number abstraction the
+/// [`Tensor`](crate::tensor::Tensor) array contract is generic over. By Frobenius/Hurwitz the
+/// associative ones are exactly ℝ, ℂ, ℍ, so one tensor kernel runs over all three.
 ///
-/// It names the **real field** the magnitudes, norms, and SPD quantities
-/// (log-determinant, Mahalanobis distance) live in — `Self` for a real number, the real
-/// part otherwise — and the [`conjugate`](NormedDivisionAlgebra::conjugate) every
-/// Hermitian formula needs. `conjugate` is the **identity** on a real number, so a kernel
-/// written with `conjugate`/`magnitude` specializes to the real (symmetric/orthogonal)
-/// case for free.
-///
-/// [`LazyReal`], [`LazyComplex`], and [`LazyQuaternion`] refine it: `f64`/`f32` implement
-/// it with `RealPart = Self`; the hypercomplex numbers (ℂ/ℍ) implement it — in the crate
-/// that owns them — with `RealPart` the real component. It carries no number line of its
-/// own, so a tensor backend lowers it. (This is a *number*, not the relational *scalar*
-/// role — that stays the `Scalar` associated type of a vector space / matrix.)
+/// It names the real field magnitudes, norms, and SPD quantities live in (`Self` for a
+/// real number, the real part otherwise), the `conjugate` every Hermitian formula needs,
+/// and real-axis embedding through [`from_real`](Self::from_real) (with the `0`/`1` constants
+/// inherited from [`Element`] via the ring chain). Refined by [`Real`], [`Complex`],
+/// [`Quaternion`].
 pub trait NormedDivisionAlgebra: Arithmetic {
     /// The real field of magnitudes / norms — `Self` for a real scalar, the real
     /// component for a complex one.
-    type RealPart: LazyReal;
+    type RealPart: Real;
 
-    /// The complex conjugate; the **identity** for a real scalar.
+    /// The complex conjugate; the identity for a real scalar.
     fn conjugate(&self) -> Self;
     /// The squared magnitude (`x²`, or `re² + im²`) — no `sqrt`.
     fn norm_sqr(&self) -> Self::RealPart;
@@ -77,19 +86,25 @@ pub trait NormedDivisionAlgebra: Arithmetic {
     fn real_part(&self) -> Self::RealPart;
     /// Embed a real value (`re + 0i` for complex; the identity for a real scalar).
     fn from_real(re: Self::RealPart) -> Self;
-    /// The magnitude `|x|` (`|z| = √(re² + im²)` for complex). Defaults to `√(norm_sqr)`;
-    /// a real scalar overrides it with `abs`.
-    fn magnitude(&self) -> Self::RealPart {
-        self.norm_sqr().sqrt()
-    }
+    /// The magnitude `|x|`.
+    fn magnitude(&self) -> Self::RealPart;
 }
 
+mod boolean;
 mod complex;
-mod f32_impl;
-mod f64_impl;
+mod impls;
+mod integer;
+mod natural;
 mod real;
 #[cfg(test)]
 mod tests;
 
-pub use complex::{Complex, LazyComplex, LazyQuaternion};
-pub use real::{LazyReal, Real};
+/// Crate-internal reference implementations of the special functions the public [`Real`] trait
+/// names (`erf`/`ln_gamma`/`beta_reg`/`bessel_i0e`/…).
+pub(crate) mod special;
+
+pub use boolean::{Boolean, Compare};
+pub use complex::{Complex, Quaternion};
+pub use integer::Integer;
+pub use natural::Natural;
+pub use real::Real;

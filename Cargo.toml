@@ -1,26 +1,22 @@
 [package]
 name = "euclid"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "Proprietary"
 authors = ["Raymond Mead"]
 rust-version = "1.95"
-description = "Standard metric/unit primitives - speeds, lengths, times, angles, mass, temperature, area, acceleration, percentages, epoch timestamps, plus byte-size and count newtypes, with uncertainty intervals and affine positions. Domain-agnostic; no kolmogorov coupling."
+description = "Dependency-free numeric contracts: scalar algebra and analysis, interpolation, rank-graded array traits, random-source traits, and physical quantities."
 repository = "https://github.com/urban-fabric/euclid"
 
-[dependencies]
-bytemuck = { version = "1.25", features = ["derive", "min_const_generics"] }
-serde = { version = "1", features = ["derive"] }
-
-[dev-dependencies]
-serde_json = "1"
+# euclid is a dependency-free contracts crate: trait surfaces, f64/f32 reference
+# scalar implementations, integer/natural/bool carriers, and physical quantities.
 
 [lints.rust]
-unsafe_code = "warn"
-unreachable_pub = "warn"
+unsafe_code = "deny"
+unreachable_pub = "deny"
 
 [lints.clippy]
-unwrap_used = "warn"
-expect_used = "warn"
-panic = "warn"
-self_named_module_files = "warn"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+self_named_module_files = "deny"

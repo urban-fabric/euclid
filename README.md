@@ -1,153 +1,179 @@
 # euclid
 
-`euclid` provides small, domain-neutral primitives for algebra, scalar
-computation, and typed quantities. It is the place for units, conversions,
-compact storage wrappers, and basic dimensional arithmetic; it deliberately
-does not depend on application crates.
+euclid is a dependency-free set of numeric contracts for writing carrier-generic
+math in Rust.
+
+Use it when a formula should work with ordinary `f64`/`f32` values and also with
+your own expression, graph, tensor, or unit-aware carriers. euclid defines the
+operations a formula may use; it does not define storage layout, execution
+runtime, array allocation, or a random-number engine.
+
+The crate includes:
+
+- scalar traits for algebra, real analysis, masks, integer/natural counts, and
+  complex/quaternion-style carriers;
+- `f64`, `f32`, signed-integer, unsigned-integer, and `bool` implementations;
+- a rank-graded tensor trait (a vector is a rank-1 tensor, a matrix a rank-2
+  tensor);
+- interpolation, random-source, and physical-unit traits.
+
+```toml
+[dependencies]
+euclid = "0.2"
+```
+
+## How To Use It
+
+- Choose the narrowest trait bound that contains the operations your formula
+  needs. For example, use `Ring` for `+ - *`, `Real` for transcendental
+  functions, and `Compare` only when you need masks or `select`.
+- Treat generic values as `Clone`, not `Copy`. A carrier may be a host scalar,
+  an expression handle, or a tensor value.
+- Lift numeric literals through methods such as `Real::scalar`,
+  `Real::half`, and `Real::scalar_like`; do not assume associated constants can
+  represent every carrier.
+- Comparisons return masks, not necessarily host `bool`. Use
+  `Compare::select`, `Compare::if_then_else`, or the `Real::min`/`max`/`clamp`
+  helpers instead of branching on a generic comparison.
+- The array surface is a single `Tensor` trait — a vector is a rank-1 tensor and
+  a matrix a rank-2 tensor; there are no separate `Vector`/`Matrix` contracts.
+
+## Example
+
+```rust
+use euclid::Real;
+
+/// Standard-normal log-density over any real carrier.
+fn standard_normal_logpdf<T: Real>(x: T) -> T {
+    let x2 = x.square();
+    -(T::half() * x2) - T::half_ln_tau()
+}
+
+let lp = standard_normal_logpdf(0.0_f64);
+assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
+```
 
 ## Public API
 
-The public API has three top-level modules:
+| module | purpose |
+|--------|---------|
+| [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, masks, and special functions |
+| [`interpolate`](src/interpolate.rs) | scalar-parameterized interpolation (`lerp`/`midpoint`) |
+| [`tensor`](src/tensor/mod.rs) | the rank-graded `Tensor` contract |
+| [`random`](src/random/mod.rs) | explicit-key random sampler contracts |
+| [`units`](src/units/mod.rs) | physical-dimension contracts over any `Real` carrier |
 
-- `euclid::algebra` for semirings, dioids, rings, fields, and related algebraic
-  traits.
-- `euclid::numeric` for generic scalar traits such as `Scalar`, `LazyReal`,
-  `LazyComplex`, `Real`, and `Complex`.
-- `euclid::units` for quantities, unit conversion, data wrappers, and typed
-  quantity operations.
+## Numeric Traits
 
-`LazyReal` is the formula substrate for scalar-valued lazy backends — the whole
-*elementwise analysis surface*, designed so a formula written once runs on `f64`
-today and lowers to a tensor backend (eventually XLA) tomorrow. It carries:
+The numeric traits are layered by algebraic structure. Pick the first layer that
+has the operation you need.
 
-- the **transcendentals** — `exp`/`ln`/`sqrt`, the trig family (`sin`/`cos`/`tan`,
-  `atan2`/`hypot`, the hyperbolics), `powf`/`powi`/`cbrt`, rounding and sign;
-- the comparison-free **selectors** `min`/`max`/`clamp` (a tensor lowers these to
-  `Max`/`Min`/`Clamp`, so piecewise formulas stay portable without a `bool`);
-- the **special functions** `erf`/`erfc`/`erf_inv`/`erfcx`, `ln_gamma`/`digamma`/
-  `trigamma`, the regularized incomplete gamma `gamma_lr`/`gamma_ur`, the
-  regularized incomplete beta `beta_reg`, the scaled modified Bessel
-  `bessel_i0e`/`bessel_i1e`, and the stable `ln_1m_exp` — the CDF / entropy /
-  divergence kernels of probability theory, each with a direct tensor-op analogue.
-  Their concrete `f64` reference lives in `euclid::special`;
-- a library of lifted **constants** — `half()`, `pi()`, `half_ln_tau()`, Euler's
-  number `e()`, the log-base conversions (`log2_e()`, `log10_e()`, `ln_10()`,
-  `log2_10()`, `log10_2()`), and the Euler–Mascheroni constant `euler_gamma()`.
+- `Element`: carrier-defined `zero` and `one`. This is shared by numeric,
+  integer, natural, and boolean carriers.
+- `Semiring`: `Element` plus `+` and `*`.
+- `Natural`: unsigned count/index operations on top of `Semiring`, including
+  `div_rem`, conversion to integer/real carriers, and count combinatorics.
+- `Ring`: `Semiring` plus subtraction and negation.
+- `Integer`: signed count/index operations on top of `Ring`, including
+  Euclidean `div_rem` and conversion to real carriers.
+- `Arithmetic`: `Ring` plus division.
+- `Real`: real analysis over `Arithmetic`: lifted constants, powers,
+  transcendentals, rounding/sign operations, masks, selectors, special
+  functions, and stable log-domain helpers.
+- `NormedDivisionAlgebra`: the real/complex/quaternionic surface used by tensor
+  algebra: conjugation, magnitude, real part, and real-axis lifting.
+- `Complex` and `Quaternion`: construction and component access for the
+  complex and quaternionic refinements.
+- `Boolean` and `Compare`: mask algebra, comparisons, and `select`.
 
-The concrete `Real` tier keeps only what a tensor *cannot* produce — the associated
-constants (`PI`/`TAU`/`SQRT_2`/`E`/…) and the `bool`-returning predicates
-(`is_finite`/`is_nan`/`is_sign_negative`). Vector, tensor, and shaped construction
-stays in the backend that owns those containers.
+`Real` also includes probability/statistics primitives such as `erf`, `erfc`,
+`erf_inv`, `erfcx`, `ln_gamma`, `digamma`, `trigamma`, `gamma_lr`, `gamma_ur`,
+`beta_reg`, `bessel_i0e`, `bessel_i1e`, `xlogy`, and `xlog1py`.
 
-Common quantity types and traits are also re-exported from the crate root:
+## Array Traits
 
-```rust
-use euclid::{LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
+The array surface is a single rank-graded trait, `Tensor`. A vector is a rank-1
+tensor and a matrix a rank-2 tensor; there are no separate `Vector`/`Matrix`
+contracts.
 
-let distance = LengthMeters::new(100.0);
-let elapsed = TimeSeconds::new(10.0);
-let speed: SpeedMs = distance / elapsed;
+`Tensor` starts at `Clone`, so structural operations (shape, reshape,
+indexing/gather, control flow) work for real, complex, integer, natural, and
+boolean tensors alike. Arithmetic methods add the bounds they need: `sum` and
+`matmul` require `Ring`, `prod` requires `Semiring`, `min`/`max` require `Real`,
+`mean` requires `NormedDivisionAlgebra`, and `any`/`all` require `Boolean`.
 
-assert_eq!(speed.as_ms(), 10.0);
-```
+Beyond the core, opt-in **capability extension** traits grow the surface a
+carrier can offer without widening the base contract:
 
-Use structured module paths when you want the implementation layout:
+- `TensorReduce`: statistical and scan reductions — `var`, `std`,
+  `logsumexp`, `softmax`, `log_softmax`, `cumsum`.
+- `TensorSort`: order statistics — `sort`, `argsort`, `argmax`, `argmin`,
+  `top_k` (index results use `Tensor::Index`).
+- `TensorContract`: general contraction — `dot_general` and the `einsum1` /
+  `einsum2` Einstein-summation forms.
+- `TensorIndexing`: range and categorical encoding — `iota`, `one_hot`,
+  `bincount`.
+- `TensorTransform`: structural conveniences — `roll`, `tile`, `clip`.
 
-```rust
-use euclid::units::conversion::{UnitOfMeasure, dim};
-use euclid::units::measure::length::LengthMeters;
-use euclid::units::ops::Interval;
-```
+euclid declares the array trait but does not include a concrete tensor type.
+Consumers provide implementations for the carrier types they want to use.
+
+## Interpolation
+
+`Interpolate`, its own top-level module, defines scalar-parameterized
+interpolation with explicit `lerp` and `midpoint` methods. `midpoint` is
+explicit because some carriers need a different implementation than
+`lerp(a, b, 0.5)`.
+
+## Random Traits
+
+The random module defines a small explicit-key sampler surface:
+
+- `RandomKey`: immutable key construction, splitting, and folding.
+- `RandomSampler`: basic `uniform`, `normal`, `bernoulli`, and `randint`
+  draws over a host-known `shape`.
+
+Scalar backends such as an `f64` sampler use `&[]` as the shape. Array,
+dataframe, and graph backends can interpret non-empty shapes in their native
+way, which keeps generic sampler code small enough to target JAX-like arrays,
+Polars-style expressions, or eager scalar values without separate random APIs.
+The module does not prescribe a concrete PRNG, storage type, tensor runtime, or
+state representation.
 
 ## Units
 
-The `units` module is organized by responsibility:
+`units` ships dimension *contracts*, not concrete unit types. A quantity is any
+`Real`-backed carrier that implements `Quantity`; `ScalarQuantity` and
+`LinearQuantity` add the comparison-free scalar and vector-space operations. The
+dimension traits — `Length`, `Time`, `Speed`, `Area`, and `Angle` — refine
+those with the cross-dimensional algebra (`length × length = area`,
+`length / time = speed`, …) expressed through associated quantity types. A
+consumer defines its own `Meters`/`Seconds` carriers and implements these
+traits; euclid does not ship them.
 
-- `units::quantity` defines `Dimension`, `Quantity`, `ScalarQuantity`,
-  `LinearQuantity`, and `QuantityError`.
-- `units::conversion` defines `UnitOfMeasure` and the type-level `dim` markers.
-- `units::measure` contains base measurements: length, time, angle, mass,
-  temperature, factor, and percentage.
-- `units::derived` contains derived measurements: speed, area, and acceleration.
-- `units::ops` contains quantity operations: dimensional arithmetic, affine
-  points, and uncertainty intervals.
-- `units::data` contains boundary/storage wrappers: bytes, counts, epoch
-  timestamps, centiseconds, and decimeters.
+The trait surface covers the seven SI base dimensions, all 22 SI named derived
+units, and a broad set of further derived quantities, grouped by domain:
+`geometry`, `kinematics`, `mechanics` (including mass flow rate, kinematic
+viscosity, specific energy, energy density, action), `electromagnetism`
+(including current density, field strength, permittivity, permeability,
+resistivity, conductivity), `thermal` (including specific heat capacity, thermal
+resistance, heat flux), `photometry` (including luminance), `chemistry`
+(including molar energy, molar volume, molality), and `radiology` (the
+becquerel, gray, and sievert). Commensurable-but-distinct names (energy vs.
+torque, absorbed dose vs. dose equivalent vs. specific energy) are tracked
+separately by name while sharing a base-dimension signature.
 
-## Conversion
+## Implemented Here
 
-Every scalar unit declares its dimension and how to express itself in that
-dimension's primary unit. `UnitOfMeasure::convert` works only between units with
-the same type-level dimension.
+- `f64` and `f32` implement `Element`, `Arithmetic`, `Real`,
+  `NormedDivisionAlgebra`, and `Interpolate`.
+- `i32`, `i64`, and `i128` implement `Element` and `Integer`.
+- `u32`, `u64`, and `u128` implement `Element` and `Natural`.
+- `bool` implements `Element` and `Boolean`.
 
-```rust
-use euclid::{LengthFeet, LengthKm, LengthMeters, UnitOfMeasure};
-
-let distance = LengthKm::new(1.0);
-let meters: LengthMeters = distance.convert();
-let feet: LengthFeet = distance.convert();
-
-assert_eq!(meters.as_meters(), 1000.0);
-assert!((feet.as_feet() - 3280.839_895).abs() < 1e-6);
-```
-
-Temperature conversion is offset-aware, so absolute temperatures can convert
-between Kelvin, Celsius, and Fahrenheit without becoming vector quantities.
-
-## Arithmetic
-
-`ScalarQuantity` provides shared helpers for finite construction, ordering,
-rounding, finiteness checks, and typed approximate equality.
-
-`LinearQuantity` marks quantities that behave like displacements. Linear
-quantities can be added, subtracted, negated, scaled, interpolated, summed, and
-used in `Interval<Q>` and `Point<Q>`.
-
-Absolute temperatures intentionally do not implement `LinearQuantity`.
-
-Dimensional operators are intentionally defined for primary units only:
-
-```rust
-use euclid::{LengthKm, LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
-
-let distance: LengthMeters = LengthKm::new(5.0).convert();
-let elapsed = TimeSeconds::new(1800.0);
-let speed: SpeedMs = distance / elapsed;
-
-assert!((speed.as_ms() - 2.777_777_777_777_777_7).abs() < 1e-12);
-```
-
-Convert non-primary units before dimensional arithmetic. This keeps the operator
-surface small and avoids a combinatorial set of unit-pair implementations.
-
-## Boundary Types
-
-`units::data` contains compact wrappers for values that cross storage, wire, or
-system boundaries:
-
-- `Bytes` and `ByteRange`
-- `Count` and `ThreadCount`
-- `UnixSeconds` and `UnixMillis`
-- `TimeCentiseconds` and `DistanceDecimeters`
-
-These types name raw values and serialization contracts. Route-cost sentinels,
-workflow state, graph-specific ordering, and application control-flow types
-belong in the crates that use `euclid`.
-
-## Adding Units
-
-When adding a scalar unit:
-
-1. Add a transparent newtype under `units::measure` or `units::derived`.
-2. Implement `Quantity` with a private payload, named constructor, accessor,
-   runtime dimension, and unit symbol.
-3. Implement `LinearQuantity` only for displacement-like quantities.
-4. Add the `UnitOfMeasure` implementation in `units::conversion`.
-5. Add same-unit operator support if the type is linear.
-6. Re-export the type from its local module, `units`, and the crate root if it
-   should be part of the ergonomic API.
-7. Add conversion, arithmetic, serde, and boundary tests matching nearby
-   modules.
+euclid does not ship concrete tensor, unit, random backend, complex, or
+quaternion implementations. Those traits are contracts for consumer-provided
+carrier types.
 
 ## Validation
 
@@ -159,3 +185,7 @@ cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
 cargo test --doc
 ```
+
+## License
+
+Proprietary. © Raymond Mead.
