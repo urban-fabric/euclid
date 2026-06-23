@@ -69,5 +69,5 @@ pub use random::{CountSampler, GammaSampler, RandomKey, RandomSampler};
 pub use spec::{Cast, DType, HasTensorSpec, TensorSpec};
 pub use tensor::Tensor;
 pub use units::{
-    Angle, Area, Dimension, Length, LinearQuantity, Quantity, ScalarQuantity, Speed, Time,
+    Angle, Area, Dimension, Length, LinearQuantity, Measure, Quantity, ScalarQuantity, Speed, Time,
 };
