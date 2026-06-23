@@ -92,6 +92,11 @@ pub enum Dimension {
     AbsorbedDose,
     DoseEquivalent,
 
+    // --- information ---
+    /// Data size (bytes, bits). Dimensionless in SI base dimensions, but tracked as a distinct
+    /// name so a byte count is not conflated with a bare number.
+    Information,
+
     // --- pure number ---
     Dimensionless,
 }
@@ -194,6 +199,8 @@ impl Dimension {
             Self::Radioactivity => [0, 0, -1, 0, 0, 0, 0],
             Self::AbsorbedDose => [2, 0, -2, 0, 0, 0, 0],
             Self::DoseEquivalent => [2, 0, -2, 0, 0, 0, 0],
+
+            Self::Information => [0, 0, 0, 0, 0, 0, 0],
 
             Self::Dimensionless => [0, 0, 0, 0, 0, 0, 0],
         }

@@ -56,8 +56,7 @@ pub trait CountSampler: RandomSampler {
     fn poisson(key: &Self::Key, shape: &[usize], rate: Self::Real) -> Self::Int;
 
     /// Draw from `Binomial(trials, p)` over `shape`. `trials` is a (real-valued) count `n`.
-    fn binomial(key: &Self::Key, shape: &[usize], trials: Self::Real, p: Self::Real)
-    -> Self::Int;
+    fn binomial(key: &Self::Key, shape: &[usize], trials: Self::Real, p: Self::Real) -> Self::Int;
 
     /// Draw from `BetaBinomial(trials, a, b)` over `shape` — `p ~ Beta(a, b)` then
     /// `Binomial(trials, p)`.

@@ -19,8 +19,8 @@ use super::{
     ElectricField, Energy, EnergyDensity, Force, Frequency, HeatCapacity, HeatFlux, Illuminance,
     Inductance, Jerk, KinematicViscosity, Length, LinearQuantity, Luminance, LuminousFlux,
     LuminousIntensity, MagneticFieldStrength, MagneticFlux, MagneticFluxDensity, Mass,
-    MassFlowRate, Molality, MolarEnergy, MolarMass, MolarVolume, MomentOfInertia, Momentum,
-    Permeability, Permittivity, Power, Pressure, Quantity, Radioactivity, Resistance, Resistivity,
+    MassFlowRate, Measure, Molality, MolarEnergy, MolarMass, MolarVolume, MomentOfInertia,
+    Momentum, Permeability, Permittivity, Power, Pressure, Radioactivity, Resistance, Resistivity,
     ScalarQuantity, SolidAngle, SpecificEnergy, SpecificHeatCapacity, Speed, SurfaceTension,
     Temperature, ThermalConductivity, ThermalResistance, Time, Torque, Voltage, Volume,
     VolumetricFlowRate, dim,
@@ -39,7 +39,7 @@ macro_rules! scalar_carrier {
         #[derive(Clone, Debug, PartialEq)]
         struct $name(f64);
 
-        impl Quantity for $name {
+        impl Measure for $name {
             type Repr = f64;
             const DIMENSION: Dimension = $dim;
             const UNIT_NAME: &'static str = $sym;

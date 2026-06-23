@@ -74,13 +74,16 @@ pub mod photometry;
 pub mod radiology;
 pub mod thermal;
 
+mod affine;
 mod dimension;
 mod dimensioned;
 mod dimensionless;
+mod discrete;
 mod linear;
 mod quantity;
 mod scalar;
 
+pub use affine::Instant;
 pub use chemistry::{
     AmountOfSubstance, CatalyticActivity, Concentration, Molality, MolarEnergy, MolarMass,
     MolarVolume,
@@ -88,6 +91,7 @@ pub use chemistry::{
 pub use dimension::{BaseExponents, Dimension};
 pub use dimensioned::{Dimensioned, dim};
 pub use dimensionless::Dimensionless;
+pub use discrete::DiscreteQuantity;
 pub use electromagnetism::{
     Capacitance, Conductance, Conductivity, CurrentDensity, ElectricCharge, ElectricCurrent,
     ElectricField, Inductance, MagneticFieldStrength, MagneticFlux, MagneticFluxDensity,
@@ -105,7 +109,7 @@ pub use mechanics::{
     SpecificEnergy, SurfaceTension, Torque,
 };
 pub use photometry::{Illuminance, Luminance, LuminousFlux, LuminousIntensity};
-pub use quantity::{Mask, Quantity};
+pub use quantity::{Mask, Measure, Quantity};
 pub use radiology::{AbsorbedDose, DoseEquivalent, Radioactivity};
 pub use scalar::ScalarQuantity;
 pub use thermal::{

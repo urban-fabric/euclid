@@ -117,6 +117,8 @@ markers!(
     Radioactivity,
     AbsorbedDose,
     DoseEquivalent,
+    // information
+    Information,
     // pure number
     Dimensionless,
 );
