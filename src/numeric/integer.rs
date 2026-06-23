@@ -28,6 +28,11 @@ pub trait Integer: Ring {
     /// `beta_reg` / … . Beyond `2^53` the `f64` cast rounds, as the hardware does.
     fn to_real(&self) -> Self::Real;
 
+    /// Round a real back into this integer substrate — the inverse of [`to_real`](Self::to_real),
+    /// the boundary a discrete *quantile* crosses. Values beyond the carrier's range saturate, as
+    /// the hardware's float→int conversion does.
+    fn from_real(r: Self::Real) -> Self;
+
     /// The sign as one of `-1`, `0`, `1`.
     fn signum(self) -> Self;
 

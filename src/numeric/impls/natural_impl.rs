@@ -13,6 +13,10 @@ impl Natural for u32 {
         x as u32
     }
     #[inline]
+    fn from_real(r: f32) -> Self {
+        r.round() as u32
+    }
+    #[inline]
     fn to_real(&self) -> f32 {
         *self as f32
     }
@@ -50,6 +54,10 @@ impl Natural for u64 {
         x
     }
     #[inline]
+    fn from_real(r: f64) -> Self {
+        r.round() as u64
+    }
+    #[inline]
     fn to_real(&self) -> f64 {
         *self as f64
     }
@@ -85,6 +93,10 @@ impl Natural for u128 {
     #[inline]
     fn from_u64(x: u64) -> Self {
         x as u128
+    }
+    #[inline]
+    fn from_real(r: f64) -> Self {
+        r.round() as u128
     }
     #[inline]
     fn to_real(&self) -> f64 {

@@ -11,6 +11,10 @@ impl Integer for i32 {
         x as i32
     }
     #[inline]
+    fn from_real(r: f32) -> Self {
+        r.round() as i32
+    }
+    #[inline]
     fn to_real(&self) -> f32 {
         *self as f32
     }
@@ -35,6 +39,10 @@ impl Integer for i64 {
         x
     }
     #[inline]
+    fn from_real(r: f64) -> Self {
+        r.round() as i64
+    }
+    #[inline]
     fn to_real(&self) -> f64 {
         *self as f64
     }
@@ -57,6 +65,10 @@ impl Integer for i128 {
     #[inline]
     fn from_i64(x: i64) -> Self {
         x as i128
+    }
+    #[inline]
+    fn from_real(r: f64) -> Self {
+        r.round() as i128
     }
     #[inline]
     fn to_real(&self) -> f64 {
