@@ -318,35 +318,98 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     // --- special functions ---
     // The analytic functions a probability formula reaches for past pure algebra. Each has
     // a direct tensor-op analogue (`Erf`/`Lgamma`/`Igamma`/…); the `f64`/`f32` reference
-    // impls live in the crate-internal `numeric::special` module. `self` is always the
+    // impls live in the crate-internal `kernels` module. `self` is always the
     // evaluation point, with any parameters following.
 
     /// The error function `erf(x)`.
     fn erf(self) -> Self;
-    /// The complementary error function `erfc(x) = 1 − erf(x)`. Formed by complementation, so
-    /// it loses relative precision — and eventually underflows to `0` — in the right tail
-    /// (`x ≳ 5`); for a stable large-`x` value, reach for the scaled
-    /// [`erfcx`](Self::erfcx) (`e^{x²} erfc(x)`) instead.
+    /// The complementary error function `erfc(x) = 1 − erf(x)`.
+    ///
+    /// Underflows to `0` in the right tail, around `x ≳ 27`, exactly as the true value does;
+    /// for a value that stays in range, reach for the scaled [`erfcx`](Self::erfcx)
+    /// (`e^{x²} erfc(x)`) instead.
+    ///
+    /// # Precision
+    /// Machine precision: measured below `1e-14` relative (worst `9.4e-15`, near `x = 1.2`).
+    /// Only `|x| ≲ 2` is formed by complementation; above that a continued fraction computes it
+    /// directly, so the relative loss the name suggests is confined to the region where `erfc`
+    /// is still `O(1)` and the loss is therefore harmless. The handover used to sit at `x = 4`,
+    /// which left a band peaking at `1.2e-9`.
     fn erfc(self) -> Self;
     /// The inverse error function, `erf_inv(erf(x)) = x`.
     fn erf_inv(self) -> Self;
     /// `ln Γ(x)`.
     fn ln_gamma(self) -> Self;
     /// The digamma function `ψ(x) = d/dx ln Γ(x)`.
+    ///
+    /// # Precision
+    /// Machine precision: measured below `1e-15` relative against the exact
+    /// `ψ(n) = −γ + H_{n−1}`. The recurrence walks the argument up to `20` before the
+    /// asymptotic series, which is what puts the series' first omitted term below `ε`; at the
+    /// `10` used previously the floor was `7.4e-13`.
+    ///
+    /// `ψ` has a zero near `1.4616`, where only *absolute* accuracy is meaningful; it is
+    /// `1.2e-15` there.
     fn digamma(self) -> Self;
     /// The trigamma function `ψ₁(x) = d²/dx² ln Γ(x)`.
+    ///
+    /// # Precision
+    /// Measured below `5e-14` relative against the exact `ψ₁(n) = ζ(2) − Σ_{k<n} k^{−2}`;
+    /// shares [`digamma`](Self::digamma)'s recurrence shift.
     fn trigamma(self) -> Self;
     /// Regularized **lower** incomplete gamma `P(shape, self)` — the Gamma /
     /// chi-squared / Poisson CDF kernel, with `self` the (already-scaled) point.
+    ///
+    /// # Precision
+    /// Machine precision for ordinary shapes, from a power series below `x = shape + 1` and a
+    /// continued fraction above it.
+    ///
+    /// **Above `shape ≈ 3e7`** (`1e3` on `f32`) neither converges — the series needs `O(√a)`
+    /// terms, and the front factor `exp(a ln x − x − lnΓ(a))` subtracts three `O(a ln a)`
+    /// quantities — so an Edgeworth-corrected normal approximation takes over, with absolute
+    /// error `O(1/a)`. That is `3e-8` at the crossover and shrinks from there, reaching exact
+    /// in the limit; it is the more accurate of the two routes at every shape above it.
+    ///
+    /// `P` and `Q` are probabilities at every shape: both lie in `[0, 1]`, sum to `1`, and are
+    /// monotone in `self`.
     fn gamma_lr(self, shape: Self) -> Self;
     /// Regularized **upper** incomplete gamma `Q(shape, self) = 1 − P(shape, self)`.
+    ///
+    /// # Precision
+    /// As [`gamma_lr`](Self::gamma_lr). Formed so a small upper tail keeps its *relative*
+    /// accuracy rather than being lost to the complement — which is the reason it is a named
+    /// operation and not `1 - p`.
     fn gamma_ur(self, shape: Self) -> Self;
     /// Regularized incomplete beta `I_self(a, b)` — the Beta / Student-t / F CDF
     /// kernel, with `self ∈ [0, 1]` the point and `(a, b)` the shape parameters.
+    ///
+    /// # Precision
+    /// Machine precision for ordinary parameters, from a continued fraction taken on whichever
+    /// side of the median converges faster.
+    ///
+    /// Two limits appear as the parameters grow, and they mirror
+    /// [`gamma_lr`](Self::gamma_lr)'s. The fraction converges slowest at exactly `x ≈ a/(a+b)`,
+    /// needing `O(a^{1/3})` terms; and its front factor
+    /// `exp(a ln x + b ln(1−x) − ln B(a,b))` subtracts three quantities of size `≈1.386(a+b)`,
+    /// so it carries `≈1.386(a+b)ε` of relative error however long the fraction runs —
+    /// `4.7e-10` at `a = b = 1e6`, which is the worst point of the whole surface.
+    ///
+    /// **Above `min(a, b) ≈ 1e7`** an Edgeworth-corrected normal takes over, with absolute
+    /// error `≈ 0.06/min(a,b)`; it is the more accurate route from there up. The gate is on the
+    /// *smaller* parameter because `Beta(a,b)` approaches a normal only as both grow — its
+    /// skewness is `≈ 2/√min(a,b)`, so `Beta(1, 1e8)` is nothing like a normal however large
+    /// the sum.
+    ///
+    /// The symmetric case is exact: `I_{1/2}(a, a) = ½` to the last bit at every `a`, since
+    /// `Beta(a,a)` has zero skewness.
     fn beta_reg(self, a: Self, b: Self) -> Self;
 
     /// Numerically-stable `ln(1 − e^x)` (`log1mexp`), the complement of
-    /// [`ln_1p_exp`](Self::ln_1p_exp); defined for `x < 0`.
+    /// [`ln_1p_exp`](Self::ln_1p_exp); defined for `x ≤ 0`.
+    ///
+    /// `x = 0` is the boundary and returns `−∞`, which is the limit from inside the domain and
+    /// matches [`ln_1m`](Self::ln_1m) at `1` — the same mathematical point reached the other
+    /// way. Above zero there is no real value and the result is `NaN`.
     fn ln_1m_exp(&self) -> Self;
     /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)` — the stable
     /// kernel of a Gaussian / Wald log-CDF tail.
@@ -432,6 +495,12 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
+    ///
+    /// # Precision
+    /// Machine precision at every pair of arguments, including the extremes:
+    /// `ln B(1e300, 1)` is exact. It is *not* evaluated as written — that form cancels
+    /// whenever `a + b ≫ min(a, b)`, and past `a = 1/ε` the sum `a + b` rounds back to `a` so
+    /// the answer vanishes entirely. The rising-factorial form is used instead.
     fn ln_beta(self, b: Self) -> Self;
 
     /// `B(a, b) = exp(ln B(a, b))`, with `self = a`.
@@ -469,6 +538,14 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// Knuth's two-sum. The building block of compensated (Kahan–Babuška–Neumaier) summation:
     /// carrying `error` forward lets a long sum stay accurate where naive accumulation drifts
     /// linearly in the term count.
+    ///
+    /// # Non-finite results
+    /// If `value` is not finite the identity cannot hold — the exact sum of `f64::MAX` with
+    /// itself is `3.6e308`, which no `f64` represents — so `error` is **zero** rather than
+    /// whatever the algebra produces. That keeps `value + error == value`, which makes a
+    /// compensated reduction saturate to `±∞`; the alternative is a `NaN` error term that
+    /// poisons the correction accumulator permanently, long after the overflowing term has
+    /// passed.
     fn two_sum(self, rhs: Self) -> (Self, Self);
 
     /// Exact product: returns `(value, error)` with `value = self * rhs` rounded, and `error`
@@ -476,6 +553,10 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     ///
     /// Cheap wherever a fused multiply-add is available, since `error = fma(a, b, −value)`.
     /// The companion to [`two_sum`](Self::two_sum) for accurate dot products.
+    ///
+    /// # Non-finite results
+    /// As for [`two_sum`](Self::two_sum): `error` is zero when `value` is not finite, since
+    /// `fma(a, b, −∞)` is `−∞` and that is not a remainder.
     fn two_product(self, rhs: Self) -> (Self, Self);
 
     // --- cancellation-prone elementary forms ---
@@ -661,4 +742,255 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// small `q` directly rather than `(1 - q).ndtri()` — the subtraction is what loses the
     /// digits.
     fn ndtri(self) -> Self;
+
+    // --- classical special functions ---
+    // The named transcendentals of classical analysis: the rest of the Bessel family, the
+    // elementary integrals that have no elementary antiderivative, the Lambert `W`, and the
+    // Riemann zeta. Elementwise unary maps like the rest of this surface, with the `f64`/`f32`
+    // reference implementations in the crate-internal `kernels` module.
+    //
+    // A note on what "precision" means for the oscillatory members. `J`, `Y`, `Si` and `Ci`
+    // all cross zero infinitely often, and at a zero no implementation can be accurate in the
+    // *relative* sense: the zeros are irrational, so a representable argument near one already
+    // differs from the argument the caller meant by up to `ε·x`, and a non-vanishing
+    // derivative there turns that input uncertainty into output error. Absolute accuracy is
+    // the meaningful contract, and it is the one quoted below.
+
+    /// The Bessel function of the first kind `J₀(x)`, even in `x`.
+    ///
+    /// # Precision
+    /// Machine precision in absolute terms at every argument (measured below `1e-15`). Below
+    /// `|x| = 18` this comes from an *aliased trapezoidal rule* — `J₀`'s integral
+    /// representation is periodic and entire, so an equally-spaced rule is exact except for
+    /// the Fourier modes it aliases, and those are `J_N(x)` for `N` above `x`, already below
+    /// rounding. Above `18`, from the Hankel expansion. See the note above regarding the zeros.
+    fn bessel_j0(self) -> Self;
+
+    /// The Bessel function of the first kind `J₁(x)`, odd in `x`.
+    ///
+    /// # Precision
+    /// As [`bessel_j0`](Self::bessel_j0).
+    fn bessel_j1(self) -> Self;
+
+    /// The Bessel function of the second kind `Y₀(x)`, for `x > 0`; `NaN` below zero, where it
+    /// is not real, and `−∞` at the origin, where it has a logarithmic singularity.
+    ///
+    /// # Precision
+    /// Machine precision in absolute terms at every argument (measured below `1e-15`). `Y` has
+    /// no quadrature as clean as `J`'s, so the middle range is reached by **marching Bessel's
+    /// equation outward** from where the power series is still exact — stable here precisely
+    /// because `J` and `Y` both decay like `x^{−1/2}`, so neither dominates the other and
+    /// error introduced at one step is not amplified at the next.
+    fn bessel_y0(self) -> Self;
+
+    /// The Bessel function of the second kind `Y₁(x)`, for `x > 0`.
+    ///
+    /// # Precision
+    /// As [`bessel_y0`](Self::bessel_y0); the two are produced by the same march, since
+    /// `Y₀′ = −Y₁` makes them mutually consistent by construction.
+    fn bessel_y1(self) -> Self;
+
+    /// The modified Bessel function of the second kind `K₀(x)`, for `x > 0`.
+    ///
+    /// Decays like `e^{−x}`, so it **underflows to zero for `x ≳ 746`** exactly as the true
+    /// value does; reach for [`bessel_k0e`](Self::bessel_k0e) when the argument may be large.
+    ///
+    /// # Precision
+    /// Machine precision at every argument (measured below `1e-14` relative, and below `1e-15`
+    /// away from the series/quadrature join). Unlike the oscillatory members this is a genuine
+    /// *relative* guarantee: `K` has no zeros, and the method — the trapezoidal rule on
+    /// `K₀(x) = ∫₀^∞ e^{−x cosh t}dt` — is a sum of positive terms, so nothing cancels at any
+    /// argument.
+    fn bessel_k0(self) -> Self;
+
+    /// The modified Bessel function of the second kind `K₁(x)`, for `x > 0`.
+    ///
+    /// Has a simple pole at the origin (`K₁ ~ 1/x`) and underflows for large `x` like
+    /// [`bessel_k0`](Self::bessel_k0).
+    ///
+    /// # Precision
+    /// As [`bessel_k0`](Self::bessel_k0).
+    fn bessel_k1(self) -> Self;
+
+    /// The exponentially-scaled `K₀ᵉ(x) = e^{x}K₀(x)`, finite for every positive argument.
+    ///
+    /// The overflow-free companion to [`bessel_k0`](Self::bessel_k0), and the primitive of the
+    /// two: `K₀(746)` underflows to zero while `K₀ᵉ(746)` is an ordinary `0.046`, and the
+    /// quadrature computes the scaled form directly rather than scaling back down.
+    ///
+    /// # Precision
+    /// Machine precision at every argument, including `1e8` and beyond.
+    fn bessel_k0e(self) -> Self;
+
+    /// The exponentially-scaled `K₁ᵉ(x) = e^{x}K₁(x)`.
+    ///
+    /// # Precision
+    /// As [`bessel_k0e`](Self::bessel_k0e).
+    fn bessel_k1e(self) -> Self;
+
+    /// The sine integral `Si(x) = ∫₀ˣ sin(t)/t dt`. Odd in `x`, with `Si(±∞) = ±π/2`.
+    ///
+    /// # Precision
+    /// Machine precision at every argument (measured below `1e-15`). Reached through the
+    /// *same continued fraction* as [`exp_int_e1`](Self::exp_int_e1), evaluated on the
+    /// imaginary axis where `E₁(ix) = −Ci(x) + i(Si(x) − π/2)`, so `Si` and `Ci` come from one
+    /// pass and stay mutually consistent. See the note above regarding the zeros.
+    fn sin_int(self) -> Self;
+
+    /// The cosine integral `Ci(x) = γ + ln x + ∫₀ˣ (cos t − 1)/t dt`, for `x > 0`; `NaN` below
+    /// zero and `−∞` at the origin.
+    ///
+    /// # Precision
+    /// As [`sin_int`](Self::sin_int).
+    fn cos_int(self) -> Self;
+
+    /// The exponential integral `E₁(x) = ∫ₓ^∞ e^{−t}/t dt`, for `x > 0`; `+∞` at the origin
+    /// and `NaN` below it.
+    ///
+    /// # Precision
+    /// Machine precision at every argument (measured below `1e-15`), from the power series
+    /// below `x = 1` and a continued fraction above it.
+    fn exp_int_e1(self) -> Self;
+
+    /// The exponential integral `Ei(x)`, the principal value of `−∫_{−x}^∞ e^{−t}/t dt`.
+    ///
+    /// Related to [`exp_int_e1`](Self::exp_int_e1) by `Ei(−x) = −E₁(x)`, which is how negative
+    /// arguments are evaluated. Grows like `e^x/x`, so it overflows for `x ≳ 710`.
+    ///
+    /// # Precision
+    /// Machine precision at every argument (measured below `1e-15`).
+    fn exp_int_ei(self) -> Self;
+
+    /// The principal branch of the Lambert `W` function: the `w ≥ −1` satisfying `w·e^w = x`.
+    ///
+    /// Defined for `x ≥ −1/e`, and `NaN` below that, where the real branches end. This is the
+    /// function to reach for whenever an unknown appears both inside and outside an
+    /// exponential.
+    ///
+    /// # Precision
+    /// Machine precision away from the branch point, from Halley's method (which triples the
+    /// correct digits per step) started from a regime-appropriate guess.
+    ///
+    /// **At the branch point accuracy is inherently halved.** `W` behaves like
+    /// `−1 + √(2(1 + ex))` there, so a relative perturbation `ε` in `x` moves `w + 1` by
+    /// `√ε` — about `1e-8` rather than `1e-16`. That is a property of the function, not of the
+    /// method: the derivative of `w·e^w` vanishes at `w = −1`, so the inverse is not
+    /// Lipschitz there.
+    fn lambert_w(self) -> Self;
+
+    /// The Riemann zeta function `ζ(s)` for real `s`, with `+∞` at the pole `s = 1`.
+    ///
+    /// For `s > 1` this is the Euler–Maclaurin summation of the defining series; for `s < 1`
+    /// the functional equation continues it, with the trivial zeros at the negative even
+    /// integers returned as exact zeros rather than left to cancellation.
+    ///
+    /// # Precision
+    /// Measured below `1e-13` relative across `s ∈ [−10, 200]`.
+    fn zeta(self) -> Self;
+
+    // --- the Airy family ---
+    // The two solutions of `y″ = xy`, the equation of a linear turning point. They are the one
+    // family on this surface that changes character *within* its domain: exponential for
+    // `x > 0`, oscillatory for `x < 0`. So both contracts above apply, each on its own side —
+    // a relative guarantee on the right, and the absolute one the oscillatory note describes
+    // on the left.
+
+    /// The Airy function of the first kind `Ai(x)`, the solution of `y″ = xy` that decays.
+    ///
+    /// Decays like `e^{−ζ}` with `ζ = ⅔x^{3/2}`, so it **underflows to zero for `x ≳ 104`**
+    /// exactly as the true value does; reach for [`airy_ai_e`](Self::airy_ai_e) there.
+    ///
+    /// # Precision
+    /// Machine precision, delivered by three methods meeting: a Maclaurin series near the
+    /// origin, the `K_{1/3}` quadrature on the positive axis, and an outward march of the
+    /// equation itself through the band on the negative axis where neither series nor
+    /// asymptotic reaches it.
+    ///
+    /// - `x < 0`: **absolute**, and degrading as `ζ·ε` with `ζ = ⅔|x|^{3/2}` — below `1e-15`
+    ///   out to `|x| ≈ 8`, and below `1e-13` out to `|x| = 30` (measured worst `3.7e-14`, in
+    ///   the derivatives, which carry the larger amplitude). `ζ` is the *phase* on this side,
+    ///   so its own rounding transfers straight into the value: one ulp of `ζ ≈ 98` is already
+    ///   `1.4e-14`. `J` and `Y` carry the same mechanism, but in their argument directly rather
+    ///   than through a `3/2` power, so it bites them far later.
+    ///
+    ///   Relative accuracy is not promised here, and cannot be — `Ai` has infinitely many zeros
+    ///   on this axis; see the note above.
+    /// - `0 ≤ x ≲ 50`: below `1e-14` relative (measured `5e-15`).
+    /// - `50 ≲ x ≲ 104`: the relative error grows like `ζ·ε` with `ζ = ⅔x^{3/2}`, reaching
+    ///   `1.5e-13` at `x = 100` just before the value underflows away. That term is the price
+    ///   of the `e^{−ζ}` that recovers this function from the scaled one, and `ζ`'s own
+    ///   rounding is amplified by it. [`airy_ai_e`](Self::airy_ai_e) never forms it and stays
+    ///   below `1e-15` at every argument; prefer it if this range matters.
+    ///
+    /// Above `|x| ≈ 1e11` the *phase* `ζ` can no longer be resolved in `f64` — `ulp(ζ)` passes
+    /// `2π` — so on the negative axis the values there are bounded by the envelope
+    /// `π^{−1/2}|x|^{−1/4}` and on it, but no longer accurate pointwise. This is the same
+    /// limit `J` and `Y` carry, and for the same reason.
+    fn airy_ai(self) -> Self;
+
+    /// The derivative `Ai′(x)`.
+    ///
+    /// # Precision
+    /// As [`airy_ai`](Self::airy_ai); produced by the same march and the same quadrature, at
+    /// order `2/3` rather than `1/3`.
+    fn airy_ai_prime(self) -> Self;
+
+    /// The Airy function of the second kind `Bi(x)`, the solution of `y″ = xy` that grows.
+    ///
+    /// Grows like `e^{+ζ}`, so it **overflows for `x ≳ 104`** exactly as the true value does;
+    /// reach for [`airy_bi_e`](Self::airy_bi_e) there.
+    ///
+    /// # Precision
+    /// As [`airy_ai`](Self::airy_ai), including the `ζ·ε` term above `x ≈ 50`. On the positive
+    /// axis `Bi` is the easier of the two — it is a *sum* of positive series terms there, with
+    /// none of `Ai`'s cancellation — so the series carries it to `x = 9` before the `I`
+    /// asymptotic takes over, against `x = 1` for `Ai`.
+    fn airy_bi(self) -> Self;
+
+    /// The derivative `Bi′(x)`.
+    ///
+    /// # Precision
+    /// As [`airy_bi`](Self::airy_bi).
+    fn airy_bi_prime(self) -> Self;
+
+    /// The scaled `Aiᵉ(x) = e^{ζ}Ai(x)` for `x > 0`, and `Ai(x)` itself for `x ≤ 0`.
+    ///
+    /// The overflow-free companion to [`airy_ai`](Self::airy_ai), and the primitive from which
+    /// it is recovered: finite at every finite argument, tending to zero like
+    /// `1/(2√π·x^{1/4})`.
+    ///
+    /// **On the negative axis this returns the unscaled value**, because there `ζ` is a phase
+    /// rather than a magnitude and the function already sits inside a decaying envelope.
+    /// Scaling it would mean multiplying by `e^{iζ}`'s modulus, which is `1`. The mathematics
+    /// does not settle this; the convention is chosen so that the scaled form always does what
+    /// scaled forms are *for* — keep a value in range — and never changes one that is already
+    /// in range.
+    ///
+    /// # Precision
+    /// Below `1e-15` relative at **every** positive argument — measured worst `2.7e-16` across
+    /// `x ∈ [20, 1e100]` — because the exponential is never formed. This is the accurate form;
+    /// [`airy_ai`](Self::airy_ai) is the convenient one. On the negative axis, as
+    /// [`airy_ai`](Self::airy_ai), the two being the same function there.
+    fn airy_ai_e(self) -> Self;
+
+    /// The scaled `Aiᵉ′(x) = e^{ζ}Ai′(x)` for `x > 0`, and `Ai′(x)` itself for `x ≤ 0`.
+    ///
+    /// # Precision
+    /// As [`airy_ai_e`](Self::airy_ai_e). Grows like `−x^{1/4}/(2√π)` rather than decaying.
+    fn airy_ai_e_prime(self) -> Self;
+
+    /// The scaled `Biᵉ(x) = e^{−ζ}Bi(x)` for `x > 0`, and `Bi(x)` itself for `x ≤ 0`.
+    ///
+    /// The overflow-free companion to [`airy_bi`](Self::airy_bi), tending to zero like
+    /// `1/(√π·x^{1/4})`. See [`airy_ai_e`](Self::airy_ai_e) for the negative-axis convention.
+    ///
+    /// # Precision
+    /// As [`airy_ai_e`](Self::airy_ai_e): below `1e-15` relative at every positive argument.
+    fn airy_bi_e(self) -> Self;
+
+    /// The scaled `Biᵉ′(x) = e^{−ζ}Bi′(x)` for `x > 0`, and `Bi′(x)` itself for `x ≤ 0`.
+    ///
+    /// # Precision
+    /// As [`airy_bi_e`](Self::airy_bi_e). Grows like `x^{1/4}/√π`.
+    fn airy_bi_e_prime(self) -> Self;
 }

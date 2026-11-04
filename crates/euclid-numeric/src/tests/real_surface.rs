@@ -1,3 +1,19 @@
+//! **Does a formula written once against [`Real`] run on every real carrier?**
+//!
+//! The analysis tier's portability suite. Each test writes a formula with no mention of a
+//! concrete number type — `shifted_quadratic`, `softplus`, an inverse-hyperbolic round trip —
+//! and then evaluates it on both `f64` and `f32`, asserting they agree to each format's
+//! precision.
+//!
+//! That is a weaker claim than accuracy and a different one: [`super::accuracy`] asks whether
+//! `erf` is close to the true `erf`, while this asks whether *every method the trait names* is
+//! actually callable on a generic `T: Real` and returns something sane. A method that compiles
+//! only for `f64` — because an implementation reached for a host intrinsic the trait does not
+//! expose — fails here and nowhere else.
+//!
+//! The peer suites cover the other tiers: [`super::masks`] the comparison/selection tier,
+//! [`super::discrete`] the semiring and ring tiers, [`super::control_flow`] the loop contract.
+
 use super::*;
 
 /// A formula written once over the real analysis base — analysis plus a scalar constant.
@@ -40,8 +56,13 @@ fn euler_constants_lift_on_every_real_tier() {
     assert!((f64::log10_e() * f64::ln_10() - 1.0).abs() < 1e-12);
     assert!((f64::log2_10() * f64::log10_2() - 1.0).abs() < 1e-12);
 
-    assert!((f64::euler_gamma() - 0.577_215_664_901_532_9).abs() < 1e-15);
-    assert!((f32::euler_gamma() - 0.577_215_7).abs() < 1e-6);
+    // Against `euclid_utils`' independent copy of the digits rather than a literal retyped
+    // here. The crate's own catalogue takes `EULER_GAMMA` from `core` as of Rust 1.99, so a
+    // literal in this file would now be comparing `core` against itself; the helper crate
+    // keeps a deliberately separate copy so this stays a real check. See its doc comment.
+    let gamma = euclid_utils::EULER_GAMMA;
+    assert!((f64::euler_gamma() - gamma).abs() < 1e-15);
+    assert!((f64::from(f32::euler_gamma()) - gamma).abs() < 1e-6);
 }
 
 /// `powf` takes its exponent in the same real substrate, so a power law is write-once over
@@ -213,10 +234,10 @@ fn lazy_real_special_functions_run_on_f64_and_f32() {
     assert!((x.erfcx() * (-x * x).exp() - Real::erfc(x)).abs() < 1e-12);
     assert!((Real::ln_1m_exp(&(-0.5_f64)).exp() - (1.0 - (-0.5_f64).exp())).abs() < 1e-12);
     let k = 2.5_f64;
-    assert!((k.bessel_i0e().ln() + k - crate::special::bessel::ln_i0(k)).abs() < 1e-9);
-    assert!((k.ln_bessel_i0() - crate::special::bessel::ln_i0(k)).abs() < 1e-9);
-    assert!((k.bessel_i1_over_i0() - crate::special::bessel::i1_over_i0(k)).abs() < 1e-9);
-    assert!((k.bessel_i1e() / k.bessel_i0e() - crate::special::bessel::i1_over_i0(k)).abs() < 1e-9);
+    assert!((k.bessel_i0e().ln() + k - crate::kernels::bessel::ln_i0(k)).abs() < 1e-9);
+    assert!((k.ln_bessel_i0() - crate::kernels::bessel::ln_i0(k)).abs() < 1e-9);
+    assert!((k.bessel_i1_over_i0() - crate::kernels::bessel::i1_over_i0(k)).abs() < 1e-9);
+    assert!((k.bessel_i1e() / k.bessel_i0e() - crate::kernels::bessel::i1_over_i0(k)).abs() < 1e-9);
     // Native f32 paths stay close to the f64 reference.
     assert!((0.5_f32.erfcx() - 0.5_f64.erfcx() as f32).abs() < 1e-6);
     assert!((Real::beta(2.0_f32, 3.0) - 1.0 / 12.0).abs() < 1e-5);

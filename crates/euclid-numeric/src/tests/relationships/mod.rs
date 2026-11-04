@@ -24,6 +24,7 @@
 //!
 //! Split by edge kind; the shared densities live in [`support`].
 
+mod classical;
 mod closed_forms;
 mod closure;
 mod derivatives;

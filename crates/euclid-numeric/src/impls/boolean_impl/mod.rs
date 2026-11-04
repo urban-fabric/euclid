@@ -1,6 +1,7 @@
 //! Concrete impls of the boolean/comparison tier. `bool` implements [`Element`] and [`Boolean`];
 //! the ordered host carriers (`f64`/`f32`, `i32`/`i64`/`i128`, `u32`/`u64`/`u128`) implement
-//! [`Compare`] with a `bool` [`Mask`](Compare::Mask). The trait *definitions* live in
+//! [`Compare`](crate::Compare) with a `bool` [`Mask`](crate::Compare::Mask). The trait
+//! *definitions* live in
 //! [`boolean`](crate::boolean). (Complex is unordered, so it carries no comparison.)
 
 use crate::{Boolean, Element};

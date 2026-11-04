@@ -84,6 +84,42 @@
 //! [`Real`] (`T::pi()`, `T::euler_gamma()`); concrete `f64`/`f32` code reaches into
 //! [`constants`] for the full catalogue. Every value there is verified against an identity
 //! rather than trusted as transcribed digits.
+//!
+//! ## Where Things Live
+//!
+//! The source is laid out by **role**, not by function family, because the distinction this
+//! crate exists to maintain is the one between a contract and an implementation of it:
+//!
+//! | | what it holds | public? |
+//! |---|---|---|
+//! | this file | the crate docs, and the five tier traits below | yes |
+//! | `real.rs`, `boolean.rs`, `integer.rs`, `natural.rs`, `complex.rs`, `interpolate.rs`, `control_flow.rs` | one trait definition each | via the root re-exports |
+//! | [`constants`] | the constant catalogue | yes |
+//! | `impls/` | the `f64`/`f32`/`i*`/`u*`/`bool` `impl` blocks | no — exports nothing |
+//! | `kernels/` | the concrete scalar algorithms those impls forward to | no |
+//! | `tests/` | the trait-surface test suites, organized by question asked | no |
+//!
+//! Two consequences worth knowing before navigating it.
+//!
+//! **The contracts are about 6% of the lines.** `kernels/` and `tests/` are four-fifths of the
+//! crate between them, and that ratio is deliberate: a trait that promises `erf` is accurate to
+//! `1e-15` is only worth as much as the evidence behind it. Someone reading for the *contract*
+//! should stay in the files above and never need to open `kernels/`.
+//!
+//! **One function is therefore spread across several files.** `erf` is declared on [`Real`],
+//! forwarded in `impls/real_f64.rs`, computed in `kernels/erf/`, and tested from four
+//! directions in `tests/`. That is the cost of the role-based split, paid knowingly — the
+//! alternative, a directory per function holding its own trait method, would scatter the trait
+//! itself and make the contract impossible to read in one sitting.
+//!
+//! ## Trait Definitions in Two Places
+//!
+//! [`Element`], [`Semiring`], [`Ring`], [`Arithmetic`] and [`NormedDivisionAlgebra`] are
+//! defined in this file; the other nine traits each get their own module. The split is not
+//! arbitrary: those five are the *tier skeleton*, four of them blanket-implemented one-liners
+//! over the operator bounds, and they have to sit below everything that refers to them. Keeping
+//! them beside the tier table that explains them is more useful than a `tiers.rs` nobody would
+//! open. Anything with real method bodies gets a file.
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
@@ -139,22 +175,30 @@ pub trait NormedDivisionAlgebra: Arithmetic {
     fn magnitude(&self) -> Self::RealPart;
 }
 
+/// The constant catalogue — the one public module, because it is the one thing here that is a
+/// genuine *namespace* rather than a single item. `constants::f64::CATALAN` reads correctly;
+/// flattening thirty-odd constants into the crate root would not.
 pub mod constants;
-pub mod control_flow;
-pub mod interpolate;
 
+// Every trait lives in a private module and is re-exported at the root below, so each has
+// exactly one public path. `control_flow` and `interpolate` were `pub mod` for a while, which
+// gave `ControlFlow` and `Interpolate` two paths apiece and made them look like namespaced
+// sub-features rather than peers of `Real`. They are not: each file holds one trait and
+// nothing else.
 mod boolean;
 mod complex;
+mod control_flow;
 mod impls;
 mod integer;
+mod interpolate;
 mod natural;
 mod real;
 #[cfg(test)]
 mod tests;
 
-/// Crate-internal reference implementations of the special functions the public [`Real`] trait
-/// names (`erf`/`ln_gamma`/`beta_reg`/`bessel_i0e`/…).
-pub(crate) mod special;
+/// The concrete scalar algorithms the public trait methods forward to — special functions,
+/// format primitives, and host combinatorics. Crate-internal; see [`kernels`] for the map.
+pub(crate) mod kernels;
 
 pub use boolean::{Boolean, Compare};
 pub use complex::{Complex, Quaternion};

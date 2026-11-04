@@ -30,19 +30,19 @@ impl Natural for u32 {
     }
     #[inline]
     fn ln_factorial(&self) -> f32 {
-        crate::special::host::factorial::ln_factorial_u32(*self)
+        crate::kernels::host::factorial::ln_factorial_u32(*self)
     }
     #[inline]
     fn factorial(&self) -> f32 {
-        crate::special::host::factorial::factorial_u32(*self)
+        crate::kernels::host::factorial::factorial_u32(*self)
     }
     #[inline]
     fn ln_binomial(&self, k: &Self) -> f32 {
-        crate::special::host::factorial::ln_binomial_u32(*self, *k)
+        crate::kernels::host::factorial::ln_binomial_u32(*self, *k)
     }
     #[inline]
     fn binomial(&self, k: &Self) -> f32 {
-        crate::special::host::factorial::binomial_u32(*self, *k)
+        crate::kernels::host::factorial::binomial_u32(*self, *k)
     }
     #[inline]
     fn gcd(self, other: Self) -> Self {
@@ -94,19 +94,19 @@ impl Natural for u64 {
     }
     #[inline]
     fn ln_factorial(&self) -> f64 {
-        crate::special::host::factorial::ln_factorial(*self)
+        crate::kernels::host::factorial::ln_factorial(*self)
     }
     #[inline]
     fn factorial(&self) -> f64 {
-        crate::special::host::factorial::factorial(*self)
+        crate::kernels::host::factorial::factorial(*self)
     }
     #[inline]
     fn ln_binomial(&self, k: &Self) -> f64 {
-        crate::special::host::factorial::ln_binomial(*self, *k)
+        crate::kernels::host::factorial::ln_binomial(*self, *k)
     }
     #[inline]
     fn binomial(&self, k: &Self) -> f64 {
-        crate::special::host::factorial::binomial(*self, *k)
+        crate::kernels::host::factorial::binomial(*self, *k)
     }
     #[inline]
     fn gcd(self, other: Self) -> Self {
@@ -166,7 +166,7 @@ impl Natural for u128 {
             sum
         } else {
             let n = *self as f64;
-            crate::special::gamma::ln_gamma(n + 1.0)
+            crate::kernels::gamma::ln_gamma(n + 1.0)
         }
     }
     #[inline]
@@ -188,9 +188,9 @@ impl Natural for u128 {
         }
         let n = *self as f64;
         let k = *k as f64;
-        crate::special::gamma::ln_gamma(n + 1.0)
-            - crate::special::gamma::ln_gamma(k + 1.0)
-            - crate::special::gamma::ln_gamma(n - k + 1.0)
+        crate::kernels::gamma::ln_gamma(n + 1.0)
+            - crate::kernels::gamma::ln_gamma(k + 1.0)
+            - crate::kernels::gamma::ln_gamma(n - k + 1.0)
     }
     #[inline]
     fn binomial(&self, k: &Self) -> f64 {

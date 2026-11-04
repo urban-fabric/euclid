@@ -1,3 +1,17 @@
+//! **Do the count tiers carry a formula across every width, and bridge into the reals?**
+//!
+//! The semiring and ring tiers' portability suite. [`Natural`] (`u32`/`u64`/`u128`) has `+` and
+//! `*` but no negation; [`Integer`] (`i32`/`i64`/`i128`) adds `-`. A formula bounded at the
+//! narrower tier must therefore run at the wider one too, and the same source must compile at
+//! all three widths of each.
+//!
+//! The *bridges* are the part worth testing. Discrete distribution work starts in exact integer
+//! arithmetic — a binomial coefficient, a factorial — and has to reach the real surface without
+//! silently losing the exactness on the way. These tests walk both steps: natural into the
+//! integer ring, then integer into [`Real`], checking the value survives.
+//!
+//! See [`super::real_surface`] for the analysis tier these feed into.
+
 use super::*;
 
 /// A write-once ring formula (`+ - *`, no division). The binomial step `(n − k)·(k + 1)` is

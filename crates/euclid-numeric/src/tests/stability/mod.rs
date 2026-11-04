@@ -13,6 +13,7 @@
 //! Split by failure mode.
 
 mod cancellation;
+mod classical;
 mod extremes;
 mod saturation;
 mod tails;

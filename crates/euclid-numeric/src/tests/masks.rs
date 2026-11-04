@@ -1,3 +1,19 @@
+//! **Does branchless selection work without ever producing a scalar `bool`?**
+//!
+//! The comparison tier's portability suite. Nothing on this crate's generic surface returns a
+//! host `bool` from a comparison: [`Compare`] yields a [`Compare::Mask`], consumed by `select`
+//! or `if_then_else`. That indirection exists so an expression or tensor carrier — which cannot
+//! branch on a value it has not computed yet — can lower the same written-once kernel to its
+//! own representation.
+//!
+//! These tests pin that contract from both ends. The *eager* carriers (`f64`/`f32`, whose mask
+//! is a real `bool`) must behave like an ordinary `if`; the mask algebra must compose; and the
+//! non-finite predicates and their recovery composites must agree with the sentinels they test
+//! for. A `select` that evaluated both arms and then discarded one would pass the first of
+//! those and fail the third.
+//!
+//! See [`super::real_surface`] for the analysis tier this sits beside.
+
 use super::*;
 
 /// A write-once piecewise kernel over the mask tier: `relu(x) = select(x > 0, x, 0)`, a

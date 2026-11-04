@@ -45,19 +45,22 @@ return masks, consumed by `Compare::select` or `Compare::if_then_else`.
 
 ## Also Here
 
-- **`interpolate`** — `Interpolate` defines scalar-parameterized interpolation
-  with explicit `lerp` and `midpoint`. `midpoint` is required separately because
-  some carriers need a more stable formula than `lerp(a, b, 0.5)`. It is
-  deliberately opt-in rather than blanket-implemented over the algebra tiers: the
-  affine `lerp` is the wrong interpolation for some division algebras (a unit
-  quaternion wants `slerp`).
-- **`control_flow`** — `ControlFlow: Compare` is the explicit graph
-  conditional/loop contract, for carriers that can represent `cond` and
-  `while_loop` as graph nodes.
+- **`Interpolate`** — scalar-parameterized interpolation with explicit `lerp` and
+  `midpoint`. `midpoint` is required separately because some carriers need a more
+  stable formula than `lerp(a, b, 0.5)`. It is deliberately opt-in rather than
+  blanket-implemented over the algebra tiers: the affine `lerp` is the wrong
+  interpolation for some division algebras (a unit quaternion wants `slerp`).
+- **`ControlFlow: Compare`** — the explicit graph conditional/loop contract, for
+  carriers that can represent `cond` and `while_loop` as graph nodes.
 
 Both live here rather than in crates of their own: `Interpolate`'s `f64`/`f32`
 impls are part of this crate's reference implementations, and `ControlFlow`
-refines `Compare`. Both are re-exported at the crate root.
+refines `Compare`.
+
+Like every trait here, both are named at the crate root —
+`euclid_numeric::Interpolate` — and their modules are private, so each trait has
+exactly one path. `constants` is the only public module, being the only one that
+is a namespace rather than a single item.
 
 ## Implemented Here
 

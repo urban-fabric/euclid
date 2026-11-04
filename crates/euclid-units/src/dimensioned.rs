@@ -8,7 +8,7 @@
 //!
 //! [`Dimensioned`] is the canonical bridge: it maps each marker to its runtime [`Dimension`] (and,
 //! for free, its SI [`BaseExponents`]), so a consumer that declares a dimension twice — once as a
-//! type-level marker, once as a runtime [`Quantity::DIMENSION`](super::Quantity::DIMENSION) — can
+//! type-level marker, once as a runtime [`Measure::DIMENSION`](super::Measure::DIMENSION) — can
 //! assert the two agree instead of letting them drift.
 
 use super::{BaseExponents, Dimension};

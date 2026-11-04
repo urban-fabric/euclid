@@ -230,36 +230,42 @@ impl Real for f64 {
         f64::clamp(self, lo, hi)
     }
     fn erf(self) -> Self {
-        crate::special::erf::erf(self)
+        crate::kernels::erf::erf(self)
     }
     fn erfc(self) -> Self {
-        crate::special::erf::erfc(self)
+        crate::kernels::erf::erfc(self)
     }
     fn erf_inv(self) -> Self {
-        crate::special::erf::erf_inv(self)
+        crate::kernels::erf::erf_inv(self)
     }
     fn ln_gamma(self) -> Self {
-        crate::special::gamma::ln_gamma(self)
+        crate::kernels::gamma::ln_gamma(self)
     }
     fn digamma(self) -> Self {
-        crate::special::gamma::digamma(self)
+        crate::kernels::gamma::digamma(self)
     }
     fn trigamma(self) -> Self {
-        crate::special::gamma::trigamma(self)
+        crate::kernels::gamma::trigamma(self)
     }
     fn gamma_lr(self, shape: Self) -> Self {
-        crate::special::gamma::gamma_lr(shape, self)
+        crate::kernels::gamma::gamma_lr(shape, self)
     }
     fn gamma_ur(self, shape: Self) -> Self {
-        crate::special::gamma::gamma_ur(shape, self)
+        crate::kernels::gamma::gamma_ur(shape, self)
     }
     fn beta_reg(self, a: Self, b: Self) -> Self {
-        crate::special::beta::beta_reg(a, b, self)
+        crate::kernels::beta::beta_reg(a, b, self)
     }
     fn ln_1m_exp(&self) -> Self {
         // Stable log1mexp: ln(-expm1(x)) near 0, ln1p(-exp(x)) in the tail.
         let x = *self;
-        if x >= 0.0 {
+        if x == 0.0 {
+            // `ln(1 - e^0) = ln 0`, which has the limit `-inf` from inside the domain —
+            // and `ln_1m(1)` already returns `-inf` at the very same mathematical point, so
+            // returning `NaN` here was an inconsistency rather than a domain statement.
+            // Fixing it also repairs `ln_exp_m1(0)`, which is built from this.
+            f64::NEG_INFINITY
+        } else if x > 0.0 {
             f64::NAN
         } else if x > -core::f64::consts::LN_2 {
             (-x.exp_m1()).ln()
@@ -268,19 +274,19 @@ impl Real for f64 {
         }
     }
     fn erfcx(self) -> Self {
-        crate::special::erf::erfcx(self)
+        crate::kernels::erf::erfcx(self)
     }
     fn bessel_i0(self) -> Self {
-        crate::special::bessel::i0(self)
+        crate::kernels::bessel::i0(self)
     }
     fn bessel_i1(self) -> Self {
-        crate::special::bessel::i1(self)
+        crate::kernels::bessel::i1(self)
     }
     fn bessel_i0e(self) -> Self {
-        crate::special::bessel::i0e(self)
+        crate::kernels::bessel::i0e(self)
     }
     fn bessel_i1e(self) -> Self {
-        crate::special::bessel::i1e(self)
+        crate::kernels::bessel::i1e(self)
     }
     fn xlogy(self, y: Self) -> Self {
         // 0·ln 0 = 0 (and 0·ln y = 0): short-circuit the absorbing zero so the
@@ -356,19 +362,19 @@ impl Real for f64 {
     fn gamma(self) -> Self {
         // The exact Lanczos reference: more accurate than `exp(ln Γ)` and valid for
         // negative `x` through reflection.
-        crate::special::gamma::gamma(self)
+        crate::kernels::gamma::gamma(self)
     }
     fn ln_beta(self, b: Self) -> Self {
-        crate::special::beta::ln_beta(self, b)
+        crate::kernels::beta::ln_beta(self, b)
     }
     fn beta(self, b: Self) -> Self {
-        crate::special::beta::beta(self, b)
+        crate::kernels::beta::beta(self, b)
     }
     fn ln_bessel_i0(self) -> Self {
-        crate::special::bessel::ln_i0(self)
+        crate::kernels::bessel::ln_i0(self)
     }
     fn bessel_i1_over_i0(self) -> Self {
-        crate::special::bessel::i1_over_i0(self)
+        crate::kernels::bessel::i1_over_i0(self)
     }
 
     // --- compensated arithmetic ---
@@ -376,6 +382,14 @@ impl Real for f64 {
     fn two_sum(self, rhs: Self) -> (Self, Self) {
         // Knuth's two-sum: exact under round-to-nearest, no FMA needed.
         let s = self + rhs;
+        if !s.is_finite() {
+            // Overflow or a non-finite operand. The exact sum is not representable, so no
+            // error term can satisfy `value + error == exact`; reporting zero at least keeps
+            // `value + error == value`, so a compensated reduction *saturates* rather than
+            // turning to `NaN`. The Knuth sequence would otherwise produce
+            // `inf - inf = NaN` here and poison the correction accumulator for good.
+            return (s, 0.0);
+        }
         let b_virtual = s - self;
         let err = (self - (s - b_virtual)) + (rhs - b_virtual);
         (s, err)
@@ -384,6 +398,10 @@ impl Real for f64 {
     fn two_product(self, rhs: Self) -> (Self, Self) {
         // With an FMA the discarded remainder is exactly `fma(a, b, -p)`.
         let p = self * rhs;
+        if !p.is_finite() {
+            // As in `two_sum`: `fma(a, b, -inf)` is `-inf`, which is not a remainder.
+            return (p, 0.0);
+        }
         let err = f64::mul_add(self, rhs, -p);
         (p, err)
     }
@@ -429,7 +447,7 @@ impl Real for f64 {
     }
 
     fn ln_rising_factorial(self, n: Self) -> Self {
-        crate::special::gamma::ln_rising_factorial(self, n)
+        crate::kernels::gamma::ln_rising_factorial(self, n)
     }
 
     // --- elementary completeness ---
@@ -441,41 +459,41 @@ impl Real for f64 {
         f64::exp2(self)
     }
     fn erfc_inv(self) -> Self {
-        crate::special::normal::erfc_inv(self)
+        crate::kernels::normal::erfc_inv(self)
     }
 
     // --- the standard normal distribution ---
 
     fn ndtr(self) -> Self {
-        crate::special::normal::ndtr(self)
+        crate::kernels::normal::ndtr(self)
     }
     fn log_ndtr(self) -> Self {
-        crate::special::normal::log_ndtr(self)
+        crate::kernels::normal::log_ndtr(self)
     }
     fn ndtri(self) -> Self {
-        crate::special::normal::ndtri(self)
+        crate::kernels::normal::ndtri(self)
     }
 
     fn gamma_lr_inv(self, shape: Self) -> Self {
-        crate::special::quantile::gamma_lr_inv(self, shape)
+        crate::kernels::quantile::gamma_lr_inv(self, shape)
     }
     fn beta_reg_inv(self, a: Self, b: Self) -> Self {
-        crate::special::quantile::beta_reg_inv(self, a, b)
+        crate::kernels::quantile::beta_reg_inv(self, a, b)
     }
 
     // --- floating-point representation ---
 
     fn frexp(self) -> (Self, Self) {
-        crate::special::repr::frexp(self)
+        crate::kernels::repr::frexp(self)
     }
     fn ldexp(self, exp: Self) -> Self {
-        crate::special::repr::ldexp(self, exp)
+        crate::kernels::repr::ldexp(self, exp)
     }
     fn next_after(self, toward: Self) -> Self {
-        crate::special::repr::next_after(self, toward)
+        crate::kernels::repr::next_after(self, toward)
     }
     fn ulp(self) -> Self {
-        crate::special::repr::ulp(self)
+        crate::kernels::repr::ulp(self)
     }
     fn signbit(&self) -> Self::Mask {
         f64::is_sign_negative(*self)
@@ -487,13 +505,13 @@ impl Real for f64 {
     // --- further analysis ---
 
     fn exprel(self) -> Self {
-        crate::special::polygamma::exprel(self)
+        crate::kernels::polygamma::exprel(self)
     }
     fn rgamma(self) -> Self {
-        crate::special::polygamma::rgamma(self)
+        crate::kernels::polygamma::rgamma(self)
     }
     fn polygamma(self, order: u32) -> Self {
-        crate::special::polygamma::polygamma(order, self)
+        crate::kernels::polygamma::polygamma(order, self)
     }
 
     fn golden_ratio() -> Self {
@@ -513,5 +531,73 @@ impl Real for f64 {
     }
     fn omega() -> Self {
         crate::constants::f64::OMEGA
+    }
+    // --- classical special functions ---
+
+    fn bessel_j0(self) -> Self {
+        crate::kernels::bessel::j0(self)
+    }
+    fn bessel_j1(self) -> Self {
+        crate::kernels::bessel::j1(self)
+    }
+    fn bessel_y0(self) -> Self {
+        crate::kernels::bessel::y0(self)
+    }
+    fn bessel_y1(self) -> Self {
+        crate::kernels::bessel::y1(self)
+    }
+    fn bessel_k0(self) -> Self {
+        crate::kernels::bessel::k0(self)
+    }
+    fn bessel_k1(self) -> Self {
+        crate::kernels::bessel::k1(self)
+    }
+    fn bessel_k0e(self) -> Self {
+        crate::kernels::bessel::k0e(self)
+    }
+    fn bessel_k1e(self) -> Self {
+        crate::kernels::bessel::k1e(self)
+    }
+    fn sin_int(self) -> Self {
+        crate::kernels::integrals::sin_int(self)
+    }
+    fn cos_int(self) -> Self {
+        crate::kernels::integrals::cos_int(self)
+    }
+    fn exp_int_e1(self) -> Self {
+        crate::kernels::integrals::exp_int_e1(self)
+    }
+    fn exp_int_ei(self) -> Self {
+        crate::kernels::integrals::exp_int_ei(self)
+    }
+    fn lambert_w(self) -> Self {
+        crate::kernels::transcendental::lambert_w(self)
+    }
+    fn zeta(self) -> Self {
+        crate::kernels::transcendental::zeta(self)
+    }
+    fn airy_ai(self) -> Self {
+        crate::kernels::airy::ai(self)
+    }
+    fn airy_ai_prime(self) -> Self {
+        crate::kernels::airy::ai_prime(self)
+    }
+    fn airy_bi(self) -> Self {
+        crate::kernels::airy::bi(self)
+    }
+    fn airy_bi_prime(self) -> Self {
+        crate::kernels::airy::bi_prime(self)
+    }
+    fn airy_ai_e(self) -> Self {
+        crate::kernels::airy::aie(self)
+    }
+    fn airy_ai_e_prime(self) -> Self {
+        crate::kernels::airy::aie_prime(self)
+    }
+    fn airy_bi_e(self) -> Self {
+        crate::kernels::airy::bie(self)
+    }
+    fn airy_bi_e_prime(self) -> Self {
+        crate::kernels::airy::bie_prime(self)
     }
 }

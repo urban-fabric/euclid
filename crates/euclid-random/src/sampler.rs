@@ -38,7 +38,7 @@ pub trait RandomSampler: RandomKey {
 /// closed-form transform of a uniform draw — it cannot be composed from the core
 /// [`RandomSampler`] alone. A backend implements it however suits its carrier: Marsaglia–Tsang
 /// rejection on an eager scalar, or a fixed-iteration inverse-CDF on the regularized incomplete
-/// gamma ([`Real::gamma_lr`](euclid_numeric::Real::gamma_lr)) on a graph carrier. On a
+/// gamma ([`Real::gamma_lr`]) on a graph carrier. On a
 /// differentiable carrier it should be reparameterizable (differentiable in `concentration`).
 pub trait GammaSampler: RandomSampler {
     /// Draw from `Gamma(concentration, rate = 1)` over `shape`. Divide by `rate` for a general

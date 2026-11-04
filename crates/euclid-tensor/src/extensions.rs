@@ -40,7 +40,7 @@ pub trait TensorReduce: Tensor {
         Self: Real;
 
     /// Numerically stable `ln Σ exp(x)` over `axes` (the max-shift trick). The tensor peer of
-    /// [`Real::ln_add_exp`](euclid_numeric::Real::ln_add_exp).
+    /// [`Real::ln_add_exp`].
     fn logsumexp(self, axes: &[usize]) -> Self
     where
         Self: Real;

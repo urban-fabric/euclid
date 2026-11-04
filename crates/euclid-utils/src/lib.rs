@@ -33,6 +33,13 @@
 /// Here rather than in each suite because it had been retyped in seven files. Note this is an
 /// *independent* copy of the digits: a test checking `Real::euler_gamma` against this is
 /// comparing a lifted constant to a literal, not to itself.
+///
+/// `core` gained `f64::consts::EULER_GAMMA` in Rust 1.99, and `euclid-numeric`'s catalogue now
+/// takes its value from there. This copy deliberately does **not** — the independence is the
+/// whole point. Routing both sides to `core` would turn every test that compares them into a
+/// tautology that passes no matter what the trait does, which is exactly the failure this
+/// constant exists to prevent. Hence the `allow` rather than a fix.
+#[allow(clippy::approx_constant)]
 pub const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
 
 /// Relative error, falling back to absolute error when the reference is exactly zero.
@@ -247,6 +254,39 @@ pub fn variance(xs: &[f64]) -> f64 {
 #[must_use]
 pub fn std_dev(xs: &[f64]) -> f64 {
     variance(xs).sqrt()
+}
+
+/// Assert that `f` has no step at `x`, by evaluating it at the two representable values that
+/// *straddle* `x`.
+///
+/// This is the tool for checking that a piecewise implementation's branches agree where they
+/// meet. Probing at ulp resolution rather than with a hand-chosen `h` is what makes it sharp:
+/// the interval is as small as the format allows, so the function's own slope contributes
+/// almost nothing and what remains is the disagreement between the two methods joining at `x`.
+///
+/// "Almost nothing" is not nothing, though, and the bound has to carry it. `Ei` changes by 42
+/// across one ulp of `x = 40` — not a defect but exactly `Ei′(40)·ulp(40)` — so a bound built
+/// only from `f` would reject a perfectly continuous function. Hence both terms:
+///
+/// - `derivative · (above − below)`, the change the function is *entitled* to make, and
+/// - `relative · |f(x)|`, the accuracy to which the two methods are documented to agree.
+///
+/// A genuine branch mismatch is orders larger than either and still fails.
+///
+/// # Panics
+/// If `f` steps at `x` by more than that bound.
+pub fn no_step_across(name: &str, f: impl Fn(f64) -> f64, x: f64, derivative: f64, relative: f64) {
+    let below = x.next_down();
+    let above = x.next_up();
+    let (lo, at, hi) = (f(below), f(x), f(above));
+    let bound = derivative.abs() * (above - below) + relative * at.abs() + f64::MIN_POSITIVE;
+    assert!(
+        (at - lo).abs() <= bound && (hi - at).abs() <= bound,
+        "{name} steps at the {x} threshold: {lo:e} / {at:e} / {hi:e} \
+         (changes {:e} and {:e}, bound {bound:e})",
+        at - lo,
+        hi - at
+    );
 }
 
 #[cfg(test)]

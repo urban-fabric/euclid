@@ -10,10 +10,16 @@
 //!
 //! Split by function family.
 
+mod airy_family;
+mod bessel_family;
 mod beta_family;
+mod beta_range;
 mod cross_precision;
 mod erf_family;
 mod exp_log;
 mod gamma_family;
+mod gamma_large_shape;
+mod gamma_range;
 mod logistic;
+mod transcendental_family;
 mod trigonometry;

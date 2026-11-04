@@ -8,7 +8,7 @@ use euclid_numeric::{Boolean, Compare, Element, NormedDivisionAlgebra, Real, Rin
 /// and boolean tensors can participate without pretending to be rings. The element kind is a
 /// refinement that individual methods ask for: [`sum`](Tensor::sum) and
 /// [`matmul`](Tensor::matmul) require [`Ring`], [`max`](Tensor::max) requires [`Real`], and a
-/// boolean tensor can implement [`Boolean`](euclid_numeric::Boolean).
+/// boolean tensor can implement [`Boolean`].
 ///
 /// Axis naming, mask representation, broadcast/gather/scatter details, and precision policy
 /// are outside this contract.

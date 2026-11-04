@@ -54,16 +54,23 @@ a test suite that takes well under a second on a laptop. The consequence is that
 **the checks are your responsibility before you push** — nothing downstream will
 catch a regression for you.
 
-Run all four, from the workspace root:
+Run all five, from the workspace root:
 
 ```sh
 cargo fmt --all --check
 cargo test --all-targets --workspace
 cargo clippy --all-targets --workspace -- -D warnings
 cargo test --doc --workspace
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 ```
 
-All four must be clean.
+All five must be clean.
+
+The last one is not redundant with `cargo test --doc`: that runs doctests, while
+this resolves **intra-doc links**. Nothing else catches a `[`foo`](path)` whose
+path has gone stale, and a broken link is worse than a missing one — it silently
+points somewhere plausible. `--document-private-items` is needed because most of
+`euclid-numeric` is `pub(crate)`, so the default doc build never looks at it.
 
 **A git `pre-push` hook will not help you here.** `jj` does not run git hooks, so
 a `.git/hooks/pre-push` script is silently skipped on `jj git push` — exactly when
@@ -78,6 +85,7 @@ check = ["util", "exec", "--", "sh", "-c", """
   cargo test --all-targets --workspace
   cargo clippy --all-targets --workspace -- -D warnings
   cargo test --doc --workspace
+  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 """]
 ```
 
@@ -136,18 +144,25 @@ euclid ships contracts, so the usual question is not "does the code work" but
 
 Numeric changes carry risk that ordinary review does not catch, so they get their
 own bar. The suites in `euclid-numeric/src/tests/` are organized by the property
-under test:
+under test rather than by the function under test, so one function is exercised
+from several directions at once.
 
-| suite | question it answers |
-|-------|--------------------|
-| `accuracy` | how close is this to the true value, across the domain? |
-| `stability` | does it survive the inputs where the naive formula fails? |
-| `identities` | does it satisfy the mathematical relations it must? |
-| `relationships` | do the functions agree *with each other*? |
-| `edge_cases` | what happens at `0`, `±∞`, `NaN`, and the representable limits? |
-| `conventions` | which convention does an ambiguous std-mirroring method follow? |
-| `constants` | are the lifted constants right, on both carriers? |
-| `f32_surface` | is the separate single-precision implementation as good? |
+**The module header of `euclid-numeric/src/tests/mod.rs` is the authoritative
+index** — every suite, what question it answers, and the house rules on file size
+and tolerances. Read it before adding a suite, and update it when you do. It
+lives there rather than here because a list in two places is a list that goes
+stale in one of them.
+
+Two rules from that header are worth repeating, because they are easy to breach
+without noticing:
+
+- **A test belongs beside the implementation** (a `#[cfg(test)]` child module)
+  only when it needs private series, quadrature or crossover constants that the
+  `tests/` tree cannot see. Anything reachable through the trait surface belongs
+  in `tests/`, where it keeps passing when the algorithm behind it is replaced.
+- **No file carrying tests goes over 400 lines.** Split by sub-topic into a
+  directory whose header explains the split. Pure trait or impl surface is exempt,
+  having no sub-topics to split along.
 
 `relationships` is the one worth understanding before adding a function. It ties
 functions together through the formulas relating them — `ln_gamma' = digamma`,

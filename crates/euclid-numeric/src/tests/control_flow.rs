@@ -1,3 +1,17 @@
+//! **Can an iterative algorithm be written once and still lower to a carrier's own loop?**
+//!
+//! The loop tier's portability suite, and the narrowest of the four — one test, because there
+//! is one contract: [`Compare::while_loop`] must drive a bracket to convergence for a carrier
+//! whose mask is a host `bool`, while remaining expressible by a carrier that has to *emit* a
+//! loop rather than run one.
+//!
+//! Bisection is the chosen shape because it is what a generic inverse CDF is: a fixed trip
+//! count, a monotone predicate, and state threaded through each turn. A contract that can carry
+//! this can carry the quantile functions in [`super::quantiles`]; one that cannot would force
+//! every iterative routine to be written twice.
+//!
+//! See [`super::real_surface`] for the analysis tier this composes with.
+
 use super::*;
 
 /// A write-once bisection over [`Real`]: drive a `(lo, hi, trip)` bracket toward the
