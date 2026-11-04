@@ -420,4 +420,61 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// The ratio compounds both Bessel errors: measured worst case **2e-7 relative**. See
     /// [`bessel_i0e`](Self::bessel_i0e).
     fn bessel_i1_over_i0(self) -> Self;
+
+    // --- compensated arithmetic ---
+    // The primitives state-of-the-art summation, dot products, and polynomial evaluation are
+    // built from. They expose the rounding error that `+` and `*` discard, which is what lets
+    // a consumer write a reduction accurate beyond the working precision. A carrier that
+    // cannot represent its own rounding error (a symbolic one, say) should return a zero
+    // error term; the identity `value + error == exact` still holds trivially.
+
+    /// Exact sum: returns `(value, error)` with `value = self + rhs` rounded, and `error` the
+    /// discarded remainder, so `value + error` is the exact sum.
+    ///
+    /// Knuth's two-sum. The building block of compensated (Kahan–Babuška–Neumaier) summation:
+    /// carrying `error` forward lets a long sum stay accurate where naive accumulation drifts
+    /// linearly in the term count.
+    fn two_sum(self, rhs: Self) -> (Self, Self);
+
+    /// Exact product: returns `(value, error)` with `value = self * rhs` rounded, and `error`
+    /// the discarded remainder, so `value + error` is the exact product.
+    ///
+    /// Cheap wherever a fused multiply-add is available, since `error = fma(a, b, −value)`.
+    /// The companion to [`two_sum`](Self::two_sum) for accurate dot products.
+    fn two_product(self, rhs: Self) -> (Self, Self);
+
+    // --- cancellation-prone elementary forms ---
+
+    /// `cos(x) − 1`, without the cancellation of forming it from [`cos`](Self::cos).
+    ///
+    /// Near zero `cos x` is within one ulp of 1, so `cos(x) - 1.0` loses every significant
+    /// digit — the same failure [`exp_m1`](Self::exp_m1) exists to avoid. Computed from the
+    /// half-angle identity `cos x − 1 = −2 sin²(x/2)`, which is accurate throughout.
+    ///
+    /// This is the kernel of the haversine formula, where the cancelling form silently
+    /// destroys short-distance accuracy.
+    fn cos_m1(self) -> Self;
+
+    /// `sin(x) / x`, with the removable singularity at `0` filled in as `1`.
+    ///
+    /// The unnormalized convention (not `sin(πx)/(πx)`). Direct evaluation is `0/0` at the
+    /// origin and loses digits nearby; this is continuous and accurate across it.
+    fn sinc(self) -> Self;
+
+    /// `√(x² + y² + z²)` without intermediate overflow or underflow — the three-argument
+    /// [`hypot`](Self::hypot).
+    ///
+    /// Squaring any component of magnitude above ~1e154 overflows `f64` even when the norm is
+    /// representable, so the naive form fails on inputs the answer is fine for.
+    fn hypot3(self, y: Self, z: Self) -> Self;
+
+    /// `ln Γ(a + n) − ln Γ(a)` with `self = a` — the log of the rising factorial (Pochhammer
+    /// symbol) `(a)ₙ = a(a+1)…(a+n−1)`.
+    ///
+    /// A named operation because the difference of two [`ln_gamma`](Self::ln_gamma) values
+    /// cancels badly when `a` is large and `n` is small: both terms are large and nearly
+    /// equal, so the result loses the digits that matter. It appears wherever a ratio of
+    /// gamma functions does — binomial and beta-binomial weights, Dirichlet updates, the
+    /// Pólya urn.
+    fn ln_rising_factorial(self, n: Self) -> Self;
 }

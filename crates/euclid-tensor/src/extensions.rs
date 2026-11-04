@@ -19,12 +19,22 @@ pub trait TensorReduce: Tensor {
     where
         Self: Ring;
 
-    /// Population variance over `axes` — `mean(x²) − mean(x)²`.
+    /// Population variance over `axes` (divisor `n`).
+    ///
+    /// **Do not implement this as `mean(x²) − mean(x)²`.** That form subtracts two
+    /// nearly-equal large numbers whenever the mean dominates the spread, so it loses every
+    /// significant digit and can even return a negative variance: for `[1e9, 1e9+1, …]` the
+    /// true variance is 2 and the cancelling form returns garbage.
+    ///
+    /// Use a two-pass formulation — `mean(x)` first, then `mean((x − mean)²)` — or Welford's
+    /// online recurrence where a single pass is required. Both cost one more traversal and
+    /// remove the cancellation entirely.
     fn var(self, axes: &[usize]) -> Self
     where
         Self: Real;
 
-    /// Population standard deviation over `axes`.
+    /// Population standard deviation over `axes` — the square root of [`var`](Self::var), and
+    /// subject to the same stability requirement.
     fn std(self, axes: &[usize]) -> Self
     where
         Self: Real;

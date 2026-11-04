@@ -149,6 +149,48 @@ pub(crate) fn trigamma(x: f64) -> f64 {
     result + r + 0.5 * r2 + r2 * r * (1.0 / 6.0 - r2 * (1.0 / 30.0 - r2 * (1.0 / 42.0 - r2 / 30.0)))
 }
 
+/// `ln Γ(a + n) − ln Γ(a)`, the log rising factorial, computed without the cancellation of
+/// subtracting two nearly-equal `ln_gamma` values.
+///
+/// Three regimes:
+///
+/// 1. **`n` a small non-negative integer** — sum `ln(a+k)` directly. All terms are the same
+///    sign, so there is no cancellation at any `a`, and this is the dominant use (binomial and
+///    beta-binomial weights, Dirichlet updates).
+/// 2. **large `a`** — integrate the digamma asymptotic, `lnΓ(a+n) − lnΓ(a) = ∫ₐ^{a+n} ψ(t)dt`
+///    with `ψ(t) ≈ ln t − 1/(2t) − 1/(12t²)`. Rearranged so every term is formed with `ln_1p`
+///    on `n/a` rather than by subtracting two large logarithms:
+///    `n·ln a + (a+n)·ln1p(n/a) − n − ½·ln1p(n/a) + 1/(12(a+n)) − 1/(12a)`.
+/// 3. **otherwise** — the direct difference, which is accurate when the two terms are not
+///    nearly equal.
+pub(crate) fn ln_rising_factorial(a: f64, n: f64) -> f64 {
+    if n == 0.0 {
+        return 0.0;
+    }
+    if !a.is_finite() || !n.is_finite() {
+        return ln_gamma(a + n) - ln_gamma(a);
+    }
+    // (1) small integer n: an exact product in the log domain.
+    if n > 0.0 && n <= 64.0 && n.fract() == 0.0 {
+        let mut total = 0.0f64;
+        let mut k = 0.0f64;
+        while k < n {
+            total += (a + k).ln();
+            k += 1.0;
+        }
+        return total;
+    }
+    // (2) large a: integrated digamma asymptotic, cancellation-free in n/a.
+    if a > 1e4 && a + n > 1e4 {
+        let r = n / a;
+        let l1p = r.ln_1p();
+        return n * a.ln() + (a + n) * l1p - n - 0.5 * l1p + 1.0 / (12.0 * (a + n))
+            - 1.0 / (12.0 * a);
+    }
+    // (3) the terms are not nearly equal; the direct difference is fine.
+    ln_gamma(a + n) - ln_gamma(a)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {

@@ -303,4 +303,42 @@ impl Real for Dense {
     fn beta_reg(self, a: Self, b: Self) -> Self {
         self.zip3(&a, &b, <f64 as Real>::beta_reg)
     }
+
+    // --- compensated arithmetic, elementwise ---
+    //
+    // A tensor carrier returns the error lane-by-lane, which is what a compensated reduction
+    // over an array needs.
+
+    fn two_sum(self, rhs: Self) -> (Self, Self) {
+        let sum = self.clone() + rhs.clone();
+        let err = self.zip3(&rhs, &sum, |a, b, s| {
+            let bv = s - a;
+            (a - (s - bv)) + (b - bv)
+        });
+        (sum, err)
+    }
+
+    fn two_product(self, rhs: Self) -> (Self, Self) {
+        let prod = self.clone() * rhs.clone();
+        let err = self.zip3(&rhs, &prod, |a, b, p| f64::mul_add(a, b, -p));
+        (prod, err)
+    }
+
+    // --- cancellation-prone elementary forms, elementwise ---
+
+    fn cos_m1(self) -> Self {
+        self.map_values(<f64 as Real>::cos_m1)
+    }
+
+    fn sinc(self) -> Self {
+        self.map_values(<f64 as Real>::sinc)
+    }
+
+    fn hypot3(self, y: Self, z: Self) -> Self {
+        self.zip3(&y, &z, <f64 as Real>::hypot3)
+    }
+
+    fn ln_rising_factorial(self, n: Self) -> Self {
+        self.zip(&n, <f64 as Real>::ln_rising_factorial)
+    }
 }

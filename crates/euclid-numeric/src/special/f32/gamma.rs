@@ -152,6 +152,34 @@ pub(crate) fn trigamma(x: f32) -> f32 {
     result + r + 0.5 * r2 + r2 * r * (1.0 / 6.0 - r2 * (1.0 / 30.0 - r2 * (1.0 / 42.0 - r2 / 30.0)))
 }
 
+/// Single-precision [`ln_rising_factorial`](super::gamma::ln_rising_factorial); see that
+/// function for the regime split.
+pub(crate) fn ln_rising_factorial(a: f32, n: f32) -> f32 {
+    if n == 0.0 {
+        return 0.0;
+    }
+    if !a.is_finite() || !n.is_finite() {
+        return ln_gamma(a + n) - ln_gamma(a);
+    }
+    if n > 0.0 && n <= 64.0 && n.fract() == 0.0 {
+        let mut total = 0.0f32;
+        let mut k = 0.0f32;
+        while k < n {
+            total += (a + k).ln();
+            k += 1.0;
+        }
+        return total;
+    }
+    // The threshold is lower than the f64 one because f32 loses the difference much sooner.
+    if a > 1e2 && a + n > 1e2 {
+        let r = n / a;
+        let l1p = r.ln_1p();
+        return n * a.ln() + (a + n) * l1p - n - 0.5 * l1p + 1.0 / (12.0 * (a + n))
+            - 1.0 / (12.0 * a);
+    }
+    ln_gamma(a + n) - ln_gamma(a)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {

@@ -360,4 +360,65 @@ impl Real for f32 {
     fn bessel_i1_over_i0(self) -> Self {
         crate::special::f32::bessel::i1_over_i0(self)
     }
+
+    // --- compensated arithmetic ---
+
+    fn two_sum(self, rhs: Self) -> (Self, Self) {
+        // Knuth's two-sum: exact under round-to-nearest, no FMA needed.
+        let s = self + rhs;
+        let b_virtual = s - self;
+        let err = (self - (s - b_virtual)) + (rhs - b_virtual);
+        (s, err)
+    }
+
+    fn two_product(self, rhs: Self) -> (Self, Self) {
+        // With an FMA the discarded remainder is exactly `fma(a, b, -p)`.
+        let p = self * rhs;
+        let err = f32::mul_add(self, rhs, -p);
+        (p, err)
+    }
+
+    // --- cancellation-prone elementary forms ---
+
+    fn cos_m1(self) -> Self {
+        // cos x - 1 = -2 sin^2(x/2): accurate near zero, where `cos(x) - 1` is not.
+        let h = f32::sin(self * 0.5);
+        -2.0 * h * h
+    }
+
+    fn sinc(self) -> Self {
+        if self == 0.0 {
+            return 1.0;
+        }
+        // The Taylor series is better conditioned than sin(x)/x for small |x|, and avoids
+        // the 0/0 form entirely.
+        if f32::abs(self) < 1e-2 {
+            let x2 = self * self;
+            return 1.0 - x2 / 6.0 + x2 * x2 / 120.0 - x2 * x2 * x2 / 5040.0;
+        }
+        f32::sin(self) / self
+    }
+
+    fn hypot3(self, y: Self, z: Self) -> Self {
+        // Scale by the largest magnitude so no square can overflow or underflow.
+        let (a, b, c) = (f32::abs(self), f32::abs(y), f32::abs(z));
+        let m = f32::max(f32::max(a, b), c);
+        if m == 0.0 {
+            return 0.0;
+        }
+        if !m.is_finite() {
+            // An infinite component dominates; a NaN component must still propagate.
+            return if a.is_nan() || b.is_nan() || c.is_nan() {
+                f32::NAN
+            } else {
+                f32::INFINITY
+            };
+        }
+        let (a, b, c) = (a / m, b / m, c / m);
+        m * f32::sqrt(a * a + b * b + c * c)
+    }
+
+    fn ln_rising_factorial(self, n: Self) -> Self {
+        crate::special::f32::gamma::ln_rising_factorial(self, n)
+    }
 }
