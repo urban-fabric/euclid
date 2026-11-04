@@ -86,8 +86,31 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     fn log10_2() -> Self;
 
     /// The Euler–Mascheroni constant `γ ≈ 0.5772…` (`= −ψ(1)`); the additive term in the
-    /// Gumbel/Weibull/Gamma entropies. Not a `core` constant, so lifted from its digits.
+    /// Gumbel/Weibull/Gamma entropies.
     fn euler_gamma() -> Self;
+
+    /// The golden ratio `φ ≈ 1.6180…`, the positive root of `x² = x + 1`.
+    fn golden_ratio() -> Self;
+
+    /// `√π ≈ 1.7725…`, equal to `Γ(½)` — the Gaussian normalizer.
+    fn sqrt_pi() -> Self;
+
+    /// `√τ = √(2π) ≈ 2.5066…`, the normal density's normalizing divisor.
+    fn sqrt_tau() -> Self;
+
+    /// Apéry's constant `ζ(3) ≈ 1.2021…`, equal to `−ψ''(1)/2`.
+    fn apery() -> Self;
+
+    /// Catalan's constant `G ≈ 0.9160…`, the value of `Σ (−1)ⁿ/(2n+1)²`.
+    fn catalan() -> Self;
+
+    /// The omega constant `Ω ≈ 0.5671…`, the unique real solution of `Ω e^Ω = 1`.
+    fn omega() -> Self;
+
+    // The wider catalogue — the lemniscate and plastic numbers, Gauss's constant, the Dottie
+    // number, `ζ(2)`, `ζ(4)` — lives in [`constants`](crate::constants) rather than here.
+    // A constant earns a trait method when a carrier-generic formula needs to lift it; the
+    // rest are reachable directly by code that is already concrete.
 
     /// `-1`.
     #[inline]
@@ -541,6 +564,94 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     ///
     /// Solved on a known bracket (`[0, 1]`), so convergence is guaranteed for any `a`, `b`.
     fn beta_reg_inv(self, a: Self, b: Self) -> Self;
+
+    // --- floating-point representation ---
+    //
+    // How a value decomposes into mantissa and exponent, and how far apart representable
+    // values are. These are the primitives overflow-safe scaling and tolerance reasoning are
+    // built from — a norm that rescales before squaring, a bisection that stops when the
+    // bracket is one representable step wide, a comparison expressed in ulp rather than a
+    // guessed epsilon. Without them a consumer has to reach for bit casts.
+    //
+    // Exponents are carried as `Self`, holding an integral value, rather than as
+    // [`Integer`](Self::Integer). That is deliberate: `Self::Integer` is a *scalar* type (it is
+    // the exponent of [`powi`](Self::powi), one power applied to a whole array), whereas the
+    // exponent of a decomposition is per-element. An array carrier would have no way to return
+    // a lane-wise exponent through a scalar type.
+
+    /// Decompose into a mantissa and a power of two: returns `(m, e)` with
+    /// `self == m · 2^e` and `|m| ∈ [0.5, 1)`.
+    ///
+    /// Zero, infinities, and `NaN` are returned unchanged with `e = 0`. Subnormals are
+    /// normalized, so the mantissa is in range for them too.
+    fn frexp(self) -> (Self, Self);
+
+    /// `self · 2^exp`, the inverse of [`frexp`](Self::frexp).
+    ///
+    /// Computed without forming `2^exp` as a separate value, so it is exact and cannot
+    /// overflow for an `exp` whose *result* is representable — `1e-300.ldexp(1000)` is fine
+    /// even though `2^1000` is not.
+    fn ldexp(self, exp: Self) -> Self;
+
+    /// The next representable value after `self` in the direction of `toward`.
+    ///
+    /// Returns `toward` when the two are equal. The primitive for walking the floating-point
+    /// grid: exhausting a bisection bracket, nudging off a boundary, or building an exclusive
+    /// bound from an inclusive one.
+    fn next_after(self, toward: Self) -> Self;
+
+    /// The distance from `self` to the next representable value away from zero — one unit in
+    /// the last place.
+    ///
+    /// The honest unit for a tolerance. `ulp(1.0)` is [`EPSILON`](f64::EPSILON), but `ulp`
+    /// scales with the value, which a fixed epsilon does not, so `n * x.ulp()` expresses "n
+    /// representable steps" at any magnitude.
+    fn ulp(self) -> Self;
+
+    /// `true` where the sign bit is set.
+    ///
+    /// Distinct from a comparison against zero, and from [`signum`](Self::signum): this is the
+    /// only way to observe the sign of a negative zero, and it reports the sign of a `NaN`
+    /// rather than propagating it.
+    fn signbit(&self) -> Self::Mask;
+
+    /// Split into fractional and integral parts: returns `(fract, trunc)`, both carrying the
+    /// sign of `self`, with `fract + trunc == self`.
+    ///
+    /// Ordered fractional-first to match the usual `modf`. The two halves are available
+    /// separately as [`fract`](Self::fract) and [`trunc`](Self::trunc); this returns them as
+    /// a pair so a carrier can compute them in one pass.
+    fn modf(self) -> (Self, Self);
+
+    // --- further analysis ---
+
+    /// `(eˣ − 1) / x`, with the removable singularity at `0` filled in as `1`.
+    ///
+    /// The relative exponential. Direct evaluation is `0/0` at the origin and cancels nearby,
+    /// the same failure [`exp_m1`](Self::exp_m1) addresses — this is that fix in ratio form,
+    /// which is how it usually appears: a rate over an interval, a divided difference of an
+    /// exponential, the `(eˣ−1)/x` factor in a discretized growth model.
+    fn exprel(self) -> Self;
+
+    /// The reciprocal gamma function `1 / Γ(x)`.
+    ///
+    /// Entire — unlike `Γ` it has no poles, taking the value `0` at every non-positive
+    /// integer, which is what makes it the right form for a series coefficient. It is also
+    /// defined where `Γ` overflows: `1/Γ(175)` is a representable `1e-316`, while
+    /// `Γ(175).recip()` gives `0` because the intermediate overflowed.
+    fn rgamma(self) -> Self;
+
+    /// The polygamma function `ψ⁽ⁿ⁾(x)` — the `n`-th derivative of
+    /// [`digamma`](Self::digamma).
+    ///
+    /// `order = 0` is `digamma` and `order = 1` is [`trigamma`](Self::trigamma); this
+    /// generalizes both, and the two remain available as named methods because they are by far
+    /// the most used.
+    ///
+    /// The order is a host `u32` rather than a carrier value, for the same reason a tensor
+    /// shape is host-known: it selects *which function* to evaluate rather than being an
+    /// argument to it.
+    fn polygamma(self, order: u32) -> Self;
 
     /// The standard normal quantile (probit) `Φ⁻¹(p)`, for `p` in `[0, 1]`.
     ///

@@ -14,4 +14,6 @@ pub(crate) mod beta;
 pub(crate) mod erf;
 pub(crate) mod gamma;
 pub(crate) mod normal;
+pub(crate) mod polygamma;
 pub(crate) mod quantile;
+pub(crate) mod repr;

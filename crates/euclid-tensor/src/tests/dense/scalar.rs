@@ -185,6 +185,12 @@ impl Real for Dense {
     }
 
     real_const!(
+        golden_ratio,
+        sqrt_pi,
+        sqrt_tau,
+        apery,
+        catalan,
+        omega,
         two,
         half,
         pi,
@@ -238,6 +244,8 @@ impl Real for Dense {
     );
 
     real_unary_own!(
+        exprel,
+        rgamma,
         log10,
         exp2,
         erfc_inv,
@@ -366,5 +374,41 @@ impl Real for Dense {
 
     fn beta_reg_inv(self, a: Self, b: Self) -> Self {
         self.zip3(&a, &b, <f64 as Real>::beta_reg_inv)
+    }
+
+    // --- floating-point representation, elementwise ---
+
+    fn frexp(self) -> (Self, Self) {
+        // Two passes rather than one: the pair has to come back as two tensors, so each
+        // component is mapped separately.
+        let mantissa = self.map_values(|x| <f64 as Real>::frexp(x).0);
+        let exponent = self.map_values(|x| <f64 as Real>::frexp(x).1);
+        (mantissa, exponent)
+    }
+
+    fn ldexp(self, exp: Self) -> Self {
+        self.zip(&exp, <f64 as Real>::ldexp)
+    }
+
+    fn next_after(self, toward: Self) -> Self {
+        self.zip(&toward, <f64 as Real>::next_after)
+    }
+
+    fn ulp(self) -> Self {
+        self.map_values(<f64 as Real>::ulp)
+    }
+
+    fn signbit(&self) -> Self::Mask {
+        self.map_values(|x| f64::from(x.is_sign_negative()))
+    }
+
+    fn modf(self) -> (Self, Self) {
+        let fract = self.map_values(f64::fract);
+        let trunc = self.map_values(f64::trunc);
+        (fract, trunc)
+    }
+
+    fn polygamma(self, order: u32) -> Self {
+        self.map_values(|x| <f64 as Real>::polygamma(x, order))
     }
 }

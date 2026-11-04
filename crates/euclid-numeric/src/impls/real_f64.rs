@@ -40,13 +40,13 @@ impl Real for f64 {
         core::f64::consts::LN_2
     }
     fn ln_pi() -> Self {
-        core::f64::consts::PI.ln()
+        crate::constants::f64::LN_PI
     }
     fn ln_tau() -> Self {
-        core::f64::consts::TAU.ln()
+        crate::constants::f64::LN_TAU
     }
     fn half_ln_tau() -> Self {
-        0.5 * core::f64::consts::TAU.ln()
+        crate::constants::f64::HALF_LN_TAU
     }
     fn e() -> Self {
         core::f64::consts::E
@@ -67,7 +67,7 @@ impl Real for f64 {
         core::f64::consts::LOG10_2
     }
     fn euler_gamma() -> Self {
-        0.577_215_664_901_532_9
+        crate::constants::f64::EULER_GAMMA
     }
     fn infinity() -> Self {
         f64::INFINITY
@@ -461,5 +461,57 @@ impl Real for f64 {
     }
     fn beta_reg_inv(self, a: Self, b: Self) -> Self {
         crate::special::quantile::beta_reg_inv(self, a, b)
+    }
+
+    // --- floating-point representation ---
+
+    fn frexp(self) -> (Self, Self) {
+        crate::special::repr::frexp(self)
+    }
+    fn ldexp(self, exp: Self) -> Self {
+        crate::special::repr::ldexp(self, exp)
+    }
+    fn next_after(self, toward: Self) -> Self {
+        crate::special::repr::next_after(self, toward)
+    }
+    fn ulp(self) -> Self {
+        crate::special::repr::ulp(self)
+    }
+    fn signbit(&self) -> Self::Mask {
+        f64::is_sign_negative(*self)
+    }
+    fn modf(self) -> (Self, Self) {
+        (f64::fract(self), f64::trunc(self))
+    }
+
+    // --- further analysis ---
+
+    fn exprel(self) -> Self {
+        crate::special::polygamma::exprel(self)
+    }
+    fn rgamma(self) -> Self {
+        crate::special::polygamma::rgamma(self)
+    }
+    fn polygamma(self, order: u32) -> Self {
+        crate::special::polygamma::polygamma(order, self)
+    }
+
+    fn golden_ratio() -> Self {
+        crate::constants::f64::GOLDEN_RATIO
+    }
+    fn sqrt_pi() -> Self {
+        crate::constants::f64::SQRT_PI
+    }
+    fn sqrt_tau() -> Self {
+        crate::constants::f64::SQRT_TAU
+    }
+    fn apery() -> Self {
+        crate::constants::f64::APERY
+    }
+    fn catalan() -> Self {
+        crate::constants::f64::CATALAN
+    }
+    fn omega() -> Self {
+        crate::constants::f64::OMEGA
     }
 }

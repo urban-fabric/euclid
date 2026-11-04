@@ -75,6 +75,15 @@
 //!   rather than blanket-implemented over the algebra tiers.
 //! - [`ControlFlow`]: the explicit graph conditional/loop contract for carriers that can
 //!   represent them.
+//!
+//! ## Constants
+//!
+//! [`constants`] holds the mathematical constants `core` does not provide — the
+//! Euler–Mascheroni constant, the golden ratio, Apéry's and Catalan's constants, the omega and
+//! lemniscate constants, and others. A carrier-generic formula lifts the common ones through
+//! [`Real`] (`T::pi()`, `T::euler_gamma()`); concrete `f64`/`f32` code reaches into
+//! [`constants`] for the full catalogue. Every value there is verified against an identity
+//! rather than trusted as transcribed digits.
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
@@ -130,6 +139,7 @@ pub trait NormedDivisionAlgebra: Arithmetic {
     fn magnitude(&self) -> Self::RealPart;
 }
 
+pub mod constants;
 pub mod control_flow;
 pub mod interpolate;
 

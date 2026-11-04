@@ -7,7 +7,7 @@ use super::erf::{erf_inv, erfc, erfcx};
 
 const LN_2: f32 = core::f32::consts::LN_2;
 const FRAC_1_SQRT_2: f32 = core::f32::consts::FRAC_1_SQRT_2;
-const HALF_LN_TAU: f32 = 0.918_938_5;
+use crate::constants::f32::HALF_LN_TAU;
 
 /// The standard normal CDF.
 pub(crate) fn ndtr(x: f32) -> f32 {

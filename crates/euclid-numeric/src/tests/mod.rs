@@ -14,4 +14,5 @@ mod normal_family;
 mod quantiles;
 mod real_surface;
 mod relationships;
+mod representation;
 mod stability;

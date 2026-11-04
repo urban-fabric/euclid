@@ -255,10 +255,18 @@ mod tests {
     fn digamma_known_values() {
         // Tightened to 1e-11 after adding the 1/(240·x⁸) asymptotic term: the prior
         // truncation reached only ~1e-10 (vs the ~15-digit intent of the coefficients).
-        close(digamma(1.0), -0.577_215_664_901_532_9, 1e-11);
-        close(digamma(2.0), 1.0 - 0.577_215_664_901_532_9, 1e-11);
+        close(digamma(1.0), -crate::constants::f64::EULER_GAMMA, 1e-11);
+        close(
+            digamma(2.0),
+            1.0 - crate::constants::f64::EULER_GAMMA,
+            1e-11,
+        );
         // ψ(3) = 3/2 − γ.
-        close(digamma(3.0), 1.5 - 0.577_215_664_901_532_9, 1e-11);
+        close(
+            digamma(3.0),
+            1.5 - crate::constants::f64::EULER_GAMMA,
+            1e-11,
+        );
     }
 
     #[test]

@@ -38,13 +38,13 @@ impl Real for f32 {
         core::f32::consts::LN_2
     }
     fn ln_pi() -> Self {
-        core::f32::consts::PI.ln()
+        crate::constants::f32::LN_PI
     }
     fn ln_tau() -> Self {
-        core::f32::consts::TAU.ln()
+        crate::constants::f32::LN_TAU
     }
     fn half_ln_tau() -> Self {
-        0.5 * core::f32::consts::TAU.ln()
+        crate::constants::f32::HALF_LN_TAU
     }
     fn e() -> Self {
         core::f32::consts::E
@@ -65,7 +65,7 @@ impl Real for f32 {
         core::f32::consts::LOG10_2
     }
     fn euler_gamma() -> Self {
-        0.577_215_7
+        crate::constants::f32::EULER_GAMMA
     }
     fn infinity() -> Self {
         f32::INFINITY
@@ -457,5 +457,57 @@ impl Real for f32 {
     }
     fn beta_reg_inv(self, a: Self, b: Self) -> Self {
         crate::special::f32::quantile::beta_reg_inv(self, a, b)
+    }
+
+    // --- floating-point representation ---
+
+    fn frexp(self) -> (Self, Self) {
+        crate::special::f32::repr::frexp(self)
+    }
+    fn ldexp(self, exp: Self) -> Self {
+        crate::special::f32::repr::ldexp(self, exp)
+    }
+    fn next_after(self, toward: Self) -> Self {
+        crate::special::f32::repr::next_after(self, toward)
+    }
+    fn ulp(self) -> Self {
+        crate::special::f32::repr::ulp(self)
+    }
+    fn signbit(&self) -> Self::Mask {
+        f32::is_sign_negative(*self)
+    }
+    fn modf(self) -> (Self, Self) {
+        (f32::fract(self), f32::trunc(self))
+    }
+
+    // --- further analysis ---
+
+    fn exprel(self) -> Self {
+        crate::special::f32::polygamma::exprel(self)
+    }
+    fn rgamma(self) -> Self {
+        crate::special::f32::polygamma::rgamma(self)
+    }
+    fn polygamma(self, order: u32) -> Self {
+        crate::special::f32::polygamma::polygamma(order, self)
+    }
+
+    fn golden_ratio() -> Self {
+        crate::constants::f32::GOLDEN_RATIO
+    }
+    fn sqrt_pi() -> Self {
+        crate::constants::f32::SQRT_PI
+    }
+    fn sqrt_tau() -> Self {
+        crate::constants::f32::SQRT_TAU
+    }
+    fn apery() -> Self {
+        crate::constants::f32::APERY
+    }
+    fn catalan() -> Self {
+        crate::constants::f32::CATALAN
+    }
+    fn omega() -> Self {
+        crate::constants::f32::OMEGA
     }
 }

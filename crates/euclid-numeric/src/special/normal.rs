@@ -15,8 +15,9 @@ use super::erf::{erf_inv, erfc, erfcx};
 const LN_2: f64 = core::f64::consts::LN_2;
 /// `1/sqrt(2)`.
 const FRAC_1_SQRT_2: f64 = core::f64::consts::FRAC_1_SQRT_2;
-/// `0.5 * ln(2 pi)`, the normal density's log normalizer.
-const HALF_LN_TAU: f64 = 0.918_938_533_204_672_7;
+/// `0.5 * ln(2 pi)`, the normal density's log normalizer. Taken from the central catalogue so
+/// the digits exist in exactly one place.
+use crate::constants::f64::HALF_LN_TAU;
 
 /// The standard normal CDF `Phi(x) = P(Z <= x)`.
 ///
