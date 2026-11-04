@@ -425,4 +425,28 @@ impl Real for f64 {
     fn ln_rising_factorial(self, n: Self) -> Self {
         crate::special::gamma::ln_rising_factorial(self, n)
     }
+
+    // --- elementary completeness ---
+
+    fn log10(self) -> Self {
+        f64::log10(self)
+    }
+    fn exp2(self) -> Self {
+        f64::exp2(self)
+    }
+    fn erfc_inv(self) -> Self {
+        crate::special::normal::erfc_inv(self)
+    }
+
+    // --- the standard normal distribution ---
+
+    fn ndtr(self) -> Self {
+        crate::special::normal::ndtr(self)
+    }
+    fn log_ndtr(self) -> Self {
+        crate::special::normal::log_ndtr(self)
+    }
+    fn ndtri(self) -> Self {
+        crate::special::normal::ndtri(self)
+    }
 }

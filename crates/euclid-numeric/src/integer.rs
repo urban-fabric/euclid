@@ -37,4 +37,22 @@ pub trait Integer: Ring {
     /// Panics when `rhs == 0`, and on the overflow case `MIN.div_rem(-1)` whose quotient
     /// `|MIN|` is unrepresentable — matching Rust's `div_euclid`/`rem_euclid`.
     fn div_rem(self, rhs: Self) -> (Self, Self);
+
+    // --- exact integer arithmetic ---
+
+    /// The greatest common divisor, always **non-negative** — `gcd(-12, 18) == 6`.
+    ///
+    /// Sign is dropped because a common divisor is a magnitude; returning the non-negative
+    /// representative is the convention that makes `gcd` usable for reducing a fraction
+    /// without a separate sign fix-up.
+    ///
+    /// # Panics
+    /// On `MIN` inputs, whose absolute value is unrepresentable.
+    fn gcd(self, other: Self) -> Self;
+
+    /// The least common multiple, always **non-negative**, and `0` when either operand is `0`.
+    ///
+    /// # Panics
+    /// On an unrepresentable result, and on `MIN` inputs. See [`Natural::lcm`](super::Natural::lcm).
+    fn lcm(self, other: Self) -> Self;
 }

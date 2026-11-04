@@ -30,6 +30,25 @@ impl Integer for i32 {
     fn div_rem(self, rhs: Self) -> (Self, Self) {
         (self.div_euclid(rhs), self.rem_euclid(rhs))
     }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        // On the magnitudes, so the result is the non-negative representative.
+        let (mut a, mut b) = (self.abs(), other.abs());
+        while b != 0 {
+            let r = a % b;
+            a = b;
+            b = r;
+        }
+        a
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        if self == 0 || other == 0 {
+            return 0;
+        }
+        let g = Integer::gcd(self, other);
+        ((self / g) * other).abs()
+    }
 }
 
 impl Integer for i64 {
@@ -58,6 +77,25 @@ impl Integer for i64 {
     fn div_rem(self, rhs: Self) -> (Self, Self) {
         (self.div_euclid(rhs), self.rem_euclid(rhs))
     }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        // On the magnitudes, so the result is the non-negative representative.
+        let (mut a, mut b) = (self.abs(), other.abs());
+        while b != 0 {
+            let r = a % b;
+            a = b;
+            b = r;
+        }
+        a
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        if self == 0 || other == 0 {
+            return 0;
+        }
+        let g = Integer::gcd(self, other);
+        ((self / g) * other).abs()
+    }
 }
 
 impl Integer for i128 {
@@ -85,6 +123,25 @@ impl Integer for i128 {
     #[inline]
     fn div_rem(self, rhs: Self) -> (Self, Self) {
         (self.div_euclid(rhs), self.rem_euclid(rhs))
+    }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        // On the magnitudes, so the result is the non-negative representative.
+        let (mut a, mut b) = (self.abs(), other.abs());
+        while b != 0 {
+            let r = a % b;
+            a = b;
+            b = r;
+        }
+        a
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        if self == 0 || other == 0 {
+            return 0;
+        }
+        let g = Integer::gcd(self, other);
+        ((self / g) * other).abs()
     }
 }
 

@@ -238,6 +238,12 @@ impl Real for Dense {
     );
 
     real_unary_own!(
+        log10,
+        exp2,
+        erfc_inv,
+        ndtr,
+        log_ndtr,
+        ndtri,
         sin,
         cos,
         tan,

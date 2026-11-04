@@ -13,3 +13,4 @@ pub(crate) mod bessel;
 pub(crate) mod beta;
 pub(crate) mod erf;
 pub(crate) mod gamma;
+pub(crate) mod normal;

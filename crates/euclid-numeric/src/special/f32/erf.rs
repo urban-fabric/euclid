@@ -7,6 +7,12 @@ use core::f32::consts::PI;
 
 /// The error function `erf(x) = (2/√π) ∫₀ˣ e^{-t²} dt`.
 pub(crate) fn erf(x: f32) -> f32 {
+    if x.is_nan() {
+        return f32::NAN;
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { 1.0 } else { -1.0 };
+    }
     if x == 0.0 {
         0.0
     } else if x > 0.0 {
@@ -27,6 +33,12 @@ const ERFCX_CF_MIN: f32 = 2.0;
 /// For `x ≥ ERFCX_CF_MIN` the `1 - erf` form cancels (in `f32` it underflows to `0`
 /// by `x ≈ 4`), so there we evaluate the equal, stable `erfc(x) = e^{-x²}·erfcx(x)`.
 pub(crate) fn erfc(x: f32) -> f32 {
+    if x.is_nan() {
+        return f32::NAN;
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { 0.0 } else { 2.0 };
+    }
     if x >= ERFCX_CF_MIN {
         return (-x * x).exp() * erfcx_cf(x);
     }
@@ -46,6 +58,12 @@ fn erfcx_cf(x: f32) -> f32 {
 /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)`, finite in the right
 /// tail where `erfc` underflows. A continued fraction carries the large-`x` regime.
 pub(crate) fn erfcx(x: f32) -> f32 {
+    if x.is_nan() {
+        return f32::NAN;
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { 0.0 } else { f32::INFINITY };
+    }
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);
     }

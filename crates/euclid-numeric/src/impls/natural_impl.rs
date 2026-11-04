@@ -44,6 +44,29 @@ impl Natural for u32 {
     fn binomial(&self, k: &Self) -> f32 {
         crate::special::host::factorial::binomial_u32(*self, *k)
     }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        // Euclid. Total on the naturals: no overflow case, since the result only ever shrinks.
+        let (mut a, mut b) = (self, other);
+        while b != 0 {
+            let r = a % b;
+            a = b;
+            b = r;
+        }
+        a
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        if self == 0 || other == 0 {
+            return 0;
+        }
+        // Divide before multiplying so a representable answer never overflows on the way.
+        (self / Natural::gcd(self, other)) * other
+    }
+    #[inline]
+    fn isqrt(self) -> Self {
+        u32::isqrt(self)
+    }
 }
 
 impl Natural for u64 {
@@ -84,6 +107,29 @@ impl Natural for u64 {
     #[inline]
     fn binomial(&self, k: &Self) -> f64 {
         crate::special::host::factorial::binomial(*self, *k)
+    }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        // Euclid. Total on the naturals: no overflow case, since the result only ever shrinks.
+        let (mut a, mut b) = (self, other);
+        while b != 0 {
+            let r = a % b;
+            a = b;
+            b = r;
+        }
+        a
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        if self == 0 || other == 0 {
+            return 0;
+        }
+        // Divide before multiplying so a representable answer never overflows on the way.
+        (self / Natural::gcd(self, other)) * other
+    }
+    #[inline]
+    fn isqrt(self) -> Self {
+        u64::isqrt(self)
     }
 }
 
@@ -165,6 +211,29 @@ impl Natural for u128 {
             i += 1;
         }
         acc.round()
+    }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        // Euclid. Total on the naturals: no overflow case, since the result only ever shrinks.
+        let (mut a, mut b) = (self, other);
+        while b != 0 {
+            let r = a % b;
+            a = b;
+            b = r;
+        }
+        a
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        if self == 0 || other == 0 {
+            return 0;
+        }
+        // Divide before multiplying so a representable answer never overflows on the way.
+        (self / Natural::gcd(self, other)) * other
+    }
+    #[inline]
+    fn isqrt(self) -> Self {
+        u128::isqrt(self)
     }
 }
 

@@ -7,6 +7,13 @@ use core::f64::consts::PI;
 
 /// The error function `erf(x) = (2/√π) ∫₀ˣ e^{-t²} dt`.
 pub(crate) fn erf(x: f64) -> f64 {
+    if x.is_nan() {
+        return f64::NAN;
+    }
+    // erf saturates: the limits are exactly +/-1, not NaN.
+    if x.is_infinite() {
+        return if x > 0.0 { 1.0 } else { -1.0 };
+    }
     if x == 0.0 {
         0.0
     } else if x > 0.0 {
@@ -28,6 +35,12 @@ const ERFCX_CF_MIN: f64 = 4.0;
 /// we instead evaluate the algebraically equal `erfc(x) = e^{-x²}·erfcx(x)` through the
 /// continued fraction, which keeps full precision down to the underflow of `e^{-x²}`.
 pub(crate) fn erfc(x: f64) -> f64 {
+    if x.is_nan() {
+        return f64::NAN;
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { 0.0 } else { 2.0 };
+    }
     if x >= ERFCX_CF_MIN {
         return (-x * x).exp() * erfcx_cf(x);
     }
@@ -48,6 +61,13 @@ fn erfcx_cf(x: f64) -> f64 {
 /// tail where `erfc` underflows — the stable Gaussian/Wald log-CDF kernel. A continued
 /// fraction carries the large-`x` regime.
 pub(crate) fn erfcx(x: f64) -> f64 {
+    if x.is_nan() {
+        return f64::NAN;
+    }
+    if x.is_infinite() {
+        // erfcx(x) ~ 1/(x sqrt(pi)) -> 0 as x -> +inf; the mirrored branch diverges.
+        return if x > 0.0 { 0.0 } else { f64::INFINITY };
+    }
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);
     }

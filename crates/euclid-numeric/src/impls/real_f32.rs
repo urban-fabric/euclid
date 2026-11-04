@@ -421,4 +421,28 @@ impl Real for f32 {
     fn ln_rising_factorial(self, n: Self) -> Self {
         crate::special::f32::gamma::ln_rising_factorial(self, n)
     }
+
+    // --- elementary completeness ---
+
+    fn log10(self) -> Self {
+        f32::log10(self)
+    }
+    fn exp2(self) -> Self {
+        f32::exp2(self)
+    }
+    fn erfc_inv(self) -> Self {
+        crate::special::f32::normal::erfc_inv(self)
+    }
+
+    // --- the standard normal distribution ---
+
+    fn ndtr(self) -> Self {
+        crate::special::f32::normal::ndtr(self)
+    }
+    fn log_ndtr(self) -> Self {
+        crate::special::f32::normal::log_ndtr(self)
+    }
+    fn ndtri(self) -> Self {
+        crate::special::f32::normal::ndtri(self)
+    }
 }

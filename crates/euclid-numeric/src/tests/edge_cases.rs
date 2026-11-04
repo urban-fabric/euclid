@@ -90,45 +90,46 @@ fn infinities_map_to_their_limits() {
     assert_eq!(Real::ln_1p_exp(&ninf), 0.0);
 }
 
-/// **KNOWN DEVIATION — not the mathematically correct behavior.**
+/// Infinite arguments map to their mathematical limits, not to `NaN`.
 ///
-/// These functions return `NaN` at an infinite argument even though the limit is well defined.
-/// C99 and CPython's `math` both return the limit: `erf(+∞) = 1`, `erf(−∞) = −1`,
-/// `erfc(−∞) = 2`, `lnΓ(+∞) = +∞`, `P(a, +∞) = 1`.
+/// These functions used to return `NaN` at an infinite argument, which mattered because an
+/// infinite argument arrives in practice — an overflowed log-weight, a normalization that
+/// divided by zero — and `NaN` poisons every downstream value where the correct limit lets the
+/// formula carry on. The defect also propagated: `ndtr` is built on `erfc`, so `ndtr(+inf)`
+/// came out `NaN` too.
 ///
-/// It matters because an infinite argument arrives in practice — an overflowed log-weight, a
-/// normalization that divided by zero — and `NaN` poisons every downstream value, whereas the
-/// correct limit would let the formula carry on. The inconsistency is the clearest sign this
-/// is an oversight rather than a policy: `erfc(+∞)`, `erfcx(+∞)` and `bessel_i0e(+∞)` all do
-/// return their limits.
-///
-/// This test pins what the code *currently does*, so the suite is honest and the gap is
-/// recorded. When the guards are added, this test will fail and should be replaced by
-/// assertions on the correct limits above.
+/// Guards now sit in the `erf` and `gamma` kernels, so every function built on them inherits
+/// the right behavior. C99 and CPython agree with these values.
 #[test]
-fn infinite_inputs_are_handled_inconsistently() {
+fn infinite_inputs_map_to_their_limits() {
     let inf = f64::INFINITY;
     let ninf = f64::NEG_INFINITY;
 
-    // Correct today:
-    assert_eq!(Real::erfc(inf), 0.0, "erfc(+inf) = 0, correct");
+    assert_eq!(Real::erf(inf), 1.0, "erf(+inf) = 1");
+    assert_eq!(Real::erf(ninf), -1.0, "erf(-inf) = -1");
+    assert_eq!(Real::erfc(inf), 0.0, "erfc(+inf) = 0");
+    assert_eq!(Real::erfc(ninf), 2.0, "erfc(-inf) = 2");
+    assert_eq!(Real::erfcx(inf), 0.0, "erfcx(+inf) = 0");
+    assert_eq!(Real::ln_gamma(inf), inf, "ln_gamma(+inf) = +inf");
+    assert_eq!(Real::gamma_lr(inf, 2.0), 1.0, "P(a, +inf) = 1");
+    assert_eq!(Real::gamma_ur(inf, 2.0), 0.0, "Q(a, +inf) = 0");
 
-    // Should be 1.0:
-    assert!(Real::erf(inf).is_nan(), "erf(+inf) should be 1.0");
-    // Should be -1.0:
-    assert!(Real::erf(ninf).is_nan(), "erf(-inf) should be -1.0");
-    // Should be 2.0:
-    assert!(Real::erfc(ninf).is_nan(), "erfc(-inf) should be 2.0");
-    // Should be +inf:
-    assert!(
-        Real::ln_gamma(inf).is_nan(),
-        "ln_gamma(+inf) should be +inf"
-    );
-    // Should be 1.0:
-    assert!(
-        Real::gamma_lr(inf, 2.0).is_nan(),
-        "gamma_lr(+inf, a) should be 1.0"
-    );
+    // The whole normal family inherits it.
+    assert_eq!(Real::ndtr(inf), 1.0, "Phi(+inf) = 1");
+    assert_eq!(Real::ndtr(ninf), 0.0, "Phi(-inf) = 0");
+    assert_eq!(Real::log_ndtr(inf), 0.0, "ln Phi(+inf) = 0");
+    assert_eq!(Real::log_ndtr(ninf), ninf, "ln Phi(-inf) = -inf");
+
+    // NaN still propagates, which is the separate and correct behavior.
+    assert!(Real::erf(f64::NAN).is_nan());
+    assert!(Real::erfc(f64::NAN).is_nan());
+    assert!(Real::ln_gamma(f64::NAN).is_nan());
+    assert!(Real::ndtr(f64::NAN).is_nan());
+
+    // And on f32.
+    assert_eq!(Real::erf(f32::INFINITY), 1.0);
+    assert_eq!(Real::erfc(f32::NEG_INFINITY), 2.0);
+    assert_eq!(Real::ndtr(f32::INFINITY), 1.0);
 }
 
 /// **KNOWN DEVIATION.** `erf_inv` has no real value outside `[-1, 1]`, but returns `±∞`

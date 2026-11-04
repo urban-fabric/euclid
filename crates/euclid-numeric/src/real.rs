@@ -477,4 +477,51 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// gamma functions does — binomial and beta-binomial weights, Dirichlet updates, the
     /// Pólya urn.
     fn ln_rising_factorial(self, n: Self) -> Self;
+
+    // --- elementary completeness ---
+
+    /// Base-10 logarithm. Named alongside [`log2`](Self::log2) rather than left to
+    /// `ln(x) * log10_e`, so a carrier can use a dedicated kernel and so decade arithmetic
+    /// (decibels, pH, Richter, order-of-magnitude work) does not go through two roundings.
+    fn log10(self) -> Self;
+
+    /// `2^x`. The exponential peer of [`log2`](Self::log2); exact at integral `x` where
+    /// `exp(x * ln 2)` is not.
+    fn exp2(self) -> Self;
+
+    /// The inverse complementary error function: the `x` with `erfc(x) = y`, for `y` in
+    /// `[0, 2]`.
+    ///
+    /// Not `erf_inv(1 - y)`: that subtraction cancels for small `y`, which is exactly the
+    /// regime an upper-tail threshold lives in. This stays accurate as far as
+    /// [`ndtri`](Self::ndtri) does.
+    fn erfc_inv(self) -> Self;
+
+    // --- the standard normal distribution ---
+    //
+    // The CDF, its log, and its inverse. Every probabilistic consumer needs these, and
+    // composing them correctly from the error function is easy to get wrong, so they are named
+    // here rather than left to the caller.
+
+    /// The standard normal CDF `Φ(x) = P(Z ≤ x)`, computed as `erfc(−x/√2)/2` so the left
+    /// tail does not cancel.
+    fn ndtr(self) -> Self;
+
+    /// `ln Φ(x)`, finite as far into the left tail as the exponent range allows.
+    ///
+    /// The reason this exists: `Φ(x)` underflows to zero around `x = −38`, so `ndtr(x).ln()`
+    /// returns `−∞` while the true value is a representable `−724`. Routing through
+    /// [`erfcx`](Self::erfcx) moves the vanishing factor inside the logarithm. A log-likelihood
+    /// over a censored or truncated normal needs this; built the naive way it silently becomes
+    /// `−∞` for any observation far enough into the tail.
+    fn log_ndtr(self) -> Self;
+
+    /// The standard normal quantile (probit) `Φ⁻¹(p)`, for `p` in `[0, 1]`.
+    ///
+    /// # Accuracy
+    /// Full precision for `p ∈ [1e-300, 0.5]`, and the same by symmetry above `0.5` *as far as
+    /// `1 − p` is representable*. For an extreme upper quantile, ask for `-q.ndtri()` with the
+    /// small `q` directly rather than `(1 - q).ndtri()` — the subtraction is what loses the
+    /// digits.
+    fn ndtri(self) -> Self;
 }

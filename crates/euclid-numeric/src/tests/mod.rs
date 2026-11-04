@@ -10,6 +10,7 @@ mod edge_cases;
 mod f32_surface;
 mod identities;
 mod masks;
+mod normal_family;
 mod real_surface;
 mod relationships;
 mod stability;

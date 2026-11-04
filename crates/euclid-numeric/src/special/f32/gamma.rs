@@ -21,6 +21,12 @@ const LANCZOS: [f32; 9] = [
 /// Natural log of the gamma function, `ln Γ(x)`, for `x > 0` (and, via reflection,
 /// `x < 0` away from the non-positive integers).
 pub(crate) fn ln_gamma(x: f32) -> f32 {
+    if x.is_nan() {
+        return f32::NAN;
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { f32::INFINITY } else { f32::NAN };
+    }
     if x < 0.5 {
         (PI / (PI * x).sin()).ln() - ln_gamma(1.0 - x)
     } else {
@@ -57,6 +63,13 @@ const EPS: f32 = 1e-6;
 
 /// Regularized **lower** incomplete gamma `P(a, x) = γ(a, x) / Γ(a)`, `a > 0`, `x ≥ 0`.
 pub(crate) fn gamma_lr(a: f32, x: f32) -> f32 {
+    if a.is_nan() || x.is_nan() {
+        return f32::NAN;
+    }
+    // P(a, x) -> 1 as x -> inf; see the f64 peer.
+    if x.is_infinite() && x > 0.0 {
+        return 1.0;
+    }
     if a <= 0.0 || x < 0.0 {
         return f32::NAN;
     }
@@ -83,11 +96,15 @@ pub(crate) fn gamma_lr(a: f32, x: f32) -> f32 {
 
 /// Regularized **upper** incomplete gamma `Q(a, x) = Γ(a, x) / Γ(a) = 1 - P(a, x)`.
 pub(crate) fn gamma_ur(a: f32, x: f32) -> f32 {
-    if a <= 0.0 || x < 0.0 {
+    if a <= 0.0 || x < 0.0 || a.is_nan() || x.is_nan() {
         return f32::NAN;
     }
     if x == 0.0 {
         return 1.0;
+    }
+    // Q(a, x) -> 0 as x -> inf, the complement of `gamma_lr`'s limit.
+    if x.is_infinite() {
+        return 0.0;
     }
     if x < a + 1.0 {
         return 1.0 - gamma_lr(a, x);

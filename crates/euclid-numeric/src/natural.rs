@@ -59,4 +59,32 @@ pub trait Natural: Semiring {
     /// `C(n, k)` in the associated real surface, valid on the combinatorial support
     /// `k <= n`.
     fn binomial(&self, k: &Self) -> Self::Real;
+
+    // --- exact integer arithmetic ---
+    //
+    // Operations that are *exactly* representable in the natural tier and would lose that
+    // guarantee if routed through the real surface. A count has no business taking a detour
+    // through floating point.
+
+    /// The greatest common divisor. `gcd(0, 0)` is `0`, and `gcd(n, 0) == n`.
+    ///
+    /// Exact and total — no overflow case exists, since the result never exceeds either
+    /// operand. The basis of exact rational arithmetic, stride and lattice reasoning, and
+    /// reducing a ratio of counts to lowest terms.
+    fn gcd(self, other: Self) -> Self;
+
+    /// The least common multiple, `0` when either operand is `0`.
+    ///
+    /// # Panics
+    /// The result can exceed the carrier's range even when both operands are small
+    /// (`lcm(2^63, 3)` does not fit in a `u64`). Implementations compute
+    /// `(self / gcd) * other`, which avoids overflowing on the way to a representable answer,
+    /// but a genuinely unrepresentable result overflows as any multiplication would.
+    fn lcm(self, other: Self) -> Self;
+
+    /// The integer square root: the largest `r` with `r * r <= self`.
+    ///
+    /// Exact, unlike `to_real().sqrt()` rounded back — which is off by one near perfect
+    /// squares above `2^52`, where the `f64` round trip cannot distinguish `n` from `n+1`.
+    fn isqrt(self) -> Self;
 }
