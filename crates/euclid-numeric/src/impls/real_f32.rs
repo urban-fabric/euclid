@@ -267,6 +267,12 @@ impl Real for f32 {
     fn erfcx(self) -> Self {
         crate::special::f32::erf::erfcx(self)
     }
+    fn bessel_i0(self) -> Self {
+        crate::special::f32::bessel::i0(self)
+    }
+    fn bessel_i1(self) -> Self {
+        crate::special::f32::bessel::i1(self)
+    }
     fn bessel_i0e(self) -> Self {
         crate::special::f32::bessel::i0e(self)
     }

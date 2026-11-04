@@ -254,16 +254,13 @@ fn beta_reg_matches_the_integer_parameter_closed_form() {
 
 // --- modified Bessel ----------------------------------------------------
 
-/// **The weakest functions on the real surface.** `bessel_i0e`/`bessel_i1e` rest on the
-/// Abramowitz & Stegun polynomial approximations, which top out near 1e-7 *by construction* —
-/// roughly `f32` accuracy from an `f64` function, and about eight orders of magnitude weaker
-/// than the gamma/beta family beside them.
+/// The Bessel family now reaches machine precision, like the rest of the real surface.
 ///
-/// Measured relative error grows with `x` and then plateaus: 8.4e-8 over `x ∈ (0, 25]`,
-/// 3.0e-7 by `x = 50`, and 4.73e-7 from `x ≈ 100` onward (flat out to `x = 1000`). The
-/// tolerance sits just above that plateau, so *improving* the implementation fails this test
-/// and prompts tightening it.
-const BESSEL_TOL: f64 = 1e-6;
+/// It used to rest on the Abramowitz & Stegun polynomials, which top out near 1e-7 *by
+/// construction*, and this constant was 1e-6 with a note explaining the plateau. Replacing them
+/// with a peak-factored power series (see `special::bessel`) brought the measured worst case
+/// over `x ∈ (0, 25]` from 8.4e-8 to **1.7e-14**.
+const BESSEL_TOL: f64 = 1e-12;
 
 /// `I₀` by its defining power series `Σ (x²/4)^k / (k!)²`, which converges quickly and is
 /// accurate to full double precision for the moderate `x` used here.
@@ -297,7 +294,7 @@ fn i1_series(x: f64) -> f64 {
 }
 
 #[test]
-fn bessel_scaled_forms_hold_to_their_documented_accuracy() {
+fn bessel_scaled_forms_hold_to_machine_precision() {
     for i in 0..250 {
         let x = f64::from(i) * 0.1;
         let scale = (-x.abs()).exp();
@@ -319,11 +316,10 @@ fn bessel_scaled_forms_hold_to_their_documented_accuracy() {
 }
 
 #[test]
-fn bessel_accuracy_is_no_better_than_single_precision() {
-    // Pins the *known limitation* so it cannot be forgotten: somewhere in the supported range
-    // the error genuinely exceeds what `f64` could deliver. If an implementation change makes
-    // this fail, the A&S polynomials were replaced and `BESSEL_TOL` should be tightened and
-    // the public docs updated.
+fn bessel_accuracy_is_now_machine_precision() {
+    // This test used to assert the *opposite* — that the error exceeded 1e-9 — as a ratchet to
+    // catch the implementation being improved. It fired when the series replaced the A&S
+    // polynomials, reporting 1.73e-14, and has been inverted accordingly.
     let worst = (0..250)
         .map(|i| {
             let x = f64::from(i) * 0.1;
@@ -331,16 +327,15 @@ fn bessel_accuracy_is_no_better_than_single_precision() {
         })
         .fold(0.0f64, f64::max);
     assert!(
-        worst > 1e-9,
-        "bessel_i0e is now accurate to {worst:.2e}; tighten BESSEL_TOL and update the \
-         precision note on Real::bessel_i0e"
+        worst < 1e-13,
+        "bessel_i0e worst relative error is {worst:.2e}, expected machine precision"
     );
 }
 
 #[test]
 fn bessel_is_accurate_across_the_branch_switch() {
-    // The implementation changes formula at |x| = 3.75; a mismatched join there would show up
-    // as a jump rather than as drift.
+    // There is no longer a formula switch at |x| = 3.75 — the series covers every argument —
+    // so this now checks that the values there are simply right.
     for (x, i0e, i1e) in [
         (
             3.74f64,
@@ -376,4 +371,55 @@ fn bessel_large_argument_stays_finite_and_decaying() {
         assert!(v.is_finite() && v > 0.0 && v < prev);
         prev = v;
     }
+}
+
+#[test]
+fn the_unscaled_bessel_forms_agree_with_the_scaled_ones() {
+    // `bessel_i0`/`bessel_i1` are the direct forms, newly public alongside the scaled ones.
+    // They are only usable while `e^{|x|}` is representable, which is the documented limit.
+    for i in 0..60 {
+        let x = f64::from(i) * 0.1;
+        assert_close(
+            Real::bessel_i0(x),
+            Real::bessel_i0e(x) * x.exp(),
+            1e-13,
+            &format!("bessel_i0({x})"),
+        );
+        assert_close(
+            Real::bessel_i1(x),
+            Real::bessel_i1e(x) * x.exp(),
+            1e-13,
+            &format!("bessel_i1({x})"),
+        );
+    }
+    // Known values: I0(0) = 1, I1(0) = 0, and the series at x = 1.
+    assert_close(Real::bessel_i0(0.0f64), 1.0, 1e-15, "I0(0)");
+    assert_close(Real::bessel_i1(0.0f64), 0.0, 1e-15, "I1(0)");
+    assert_close(
+        Real::bessel_i0(1.0f64),
+        1.266_065_877_752_008_3,
+        1e-13,
+        "I0(1)",
+    );
+    assert_close(
+        Real::bessel_i1(1.0f64),
+        5.651_591_039_924_851e-1,
+        1e-13,
+        "I1(1)",
+    );
+    // Parity.
+    assert_close(
+        Real::bessel_i0(-2.5f64),
+        Real::bessel_i0(2.5f64),
+        1e-15,
+        "I0 is even",
+    );
+    assert_close(
+        Real::bessel_i1(-2.5f64),
+        -Real::bessel_i1(2.5f64),
+        1e-15,
+        "I1 is odd",
+    );
+    // And they overflow where the true values do, rather than returning something wrong.
+    assert!(Real::bessel_i0(800.0f64).is_infinite());
 }

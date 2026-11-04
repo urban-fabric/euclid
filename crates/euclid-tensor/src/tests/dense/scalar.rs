@@ -274,6 +274,8 @@ impl Real for Dense {
         digamma,
         trigamma,
         erfcx,
+        bessel_i0,
+        bessel_i1,
         bessel_i0e,
         bessel_i1e,
         gamma,

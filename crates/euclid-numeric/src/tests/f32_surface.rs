@@ -128,9 +128,10 @@ fn f32_incomplete_gamma_and_beta_track_f64() {
 
 #[test]
 fn f32_bessel_tracks_f64_within_the_shared_polynomial_error() {
-    // Both carriers use the same A&S polynomials, so they agree far better than either
-    // matches the true function. Measured worst 1.2e-7 (~1 ulp) — the agreement is tight
-    // precisely *because* they share the same ~1e-7 inaccuracy.
+    // Both carriers now use the peak-factored series, each evaluated in its own precision, so
+    // the f32 path is limited by f32 rather than by a shared approximation error. They
+    // previously agreed to ~1 ulp for the wrong reason: both inherited the same 1e-7
+    // polynomial inaccuracy.
     for i in 0..200 {
         let x32 = (i as f32) * 0.25;
         let x64 = f64::from(x32);

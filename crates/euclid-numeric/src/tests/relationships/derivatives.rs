@@ -2,7 +2,7 @@
 
 use super::support::{beta_pdf, gamma_pdf};
 use crate::Real;
-use euclid_utils::{assert_close, derivative, derivative_with_step};
+use euclid_utils::{assert_close, derivative};
 
 // --- derivative edges ----------------------------------------------------
 
@@ -108,19 +108,19 @@ fn ln_bessel_i0_differentiates_to_the_bessel_ratio() {
     // d/dx ln I0(x) = I1(x)/I0(x) — the von Mises mean resultant length. Ties `ln_bessel_i0`
     // to `bessel_i1_over_i0`, which are computed by different routes.
     //
-    // The tolerance is loose because both sides inherit the ~1e-7 A&S polynomial error; see
-    // the precision note on `Real::bessel_i0e`.
-    // Numerical differentiation *amplifies* the ~1e-7 absolute error in `ln I0` by `1/h`, so
-    // the default step (1e-4 relative) would turn it into ~1e-3 of derivative noise. A much
-    // wider step cuts the amplification; `I1/I0` is smooth and slowly varying, so the extra
-    // truncation error is negligible by comparison.
+    // Both sides now reach machine precision, so this edge is checked ~1000x tighter than it
+    // was when they shared the A&S polynomials' 1e-7 error.
+    // The wide step this test used to need existed only to suppress the old 1e-7 function
+    // error, which differentiation amplifies by 1/h. With `ln I0` now accurate to machine
+    // precision the standard step is strictly better: its O(h^4) truncation is negligible,
+    // where h = 0.1 left ~1e-6 of truncation behind.
     for i in 2..40 {
         let x = f64::from(i) * 0.5;
-        let d = derivative_with_step(Real::ln_bessel_i0, x, 0.1);
+        let d = derivative(Real::ln_bessel_i0, x);
         assert_close(
             d,
             Real::bessel_i1_over_i0(x),
-            1e-3,
+            1e-9,
             &format!("ln_bessel_i0'({x}) = I1/I0"),
         );
     }

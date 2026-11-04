@@ -270,6 +270,12 @@ impl Real for f64 {
     fn erfcx(self) -> Self {
         crate::special::erf::erfcx(self)
     }
+    fn bessel_i0(self) -> Self {
+        crate::special::bessel::i0(self)
+    }
+    fn bessel_i1(self) -> Self {
+        crate::special::bessel::i1(self)
+    }
     fn bessel_i0e(self) -> Self {
         crate::special::bessel::i0e(self)
     }

@@ -328,21 +328,31 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)` — the stable
     /// kernel of a Gaussian / Wald log-CDF tail.
     fn erfcx(self) -> Self;
+    /// The modified Bessel function of the first kind `I₀(x)`, even in `x`.
+    ///
+    /// Grows like `e^{|x|}`, so it overflows for `|x| ≳ 710` exactly as the true value does.
+    /// Prefer [`bessel_i0e`](Self::bessel_i0e) or [`ln_bessel_i0`](Self::ln_bessel_i0) when the
+    /// argument may be large.
+    fn bessel_i0(self) -> Self;
+
+    /// The modified Bessel function of the first kind `I₁(x)`, odd in `x`.
+    ///
+    /// Overflows for large `|x|` like [`bessel_i0`](Self::bessel_i0); prefer
+    /// [`bessel_i1e`](Self::bessel_i1e) there.
+    fn bessel_i1(self) -> Self;
+
     /// The exponentially-scaled modified Bessel `I₀ᵉ(x) = e^{−|x|} I₀(x)`, the overflow-free
     /// route to `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`.
     ///
     /// # Precision
-    /// The `f64`/`f32` reference implementations rest on the Abramowitz & Stegun polynomial
-    /// approximations, which are accurate to only about **1e-7 relative** — roughly `f32`
-    /// resolution even when evaluated in `f64`, and far weaker than the gamma/beta family on
-    /// this trait. Measured worst case grows with `x` and plateaus near 4.7e-7 from `x ≈ 100`.
-    /// Do not rely on this for anything needing more than ~7 significant digits.
+    /// Machine precision (measured worst case 1.7e-14), from a peak-factored power series.
+    /// Every term of that series is positive, so there is no cancellation at any argument, and
+    /// the scale is carried in the log domain so nothing overflows.
     fn bessel_i0e(self) -> Self;
     /// The exponentially-scaled modified Bessel `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
     ///
     /// # Precision
-    /// About **1e-7 relative**, for the reason given on
-    /// [`bessel_i0e`](Self::bessel_i0e); measured worst case 1.1e-7.
+    /// Machine precision, as for [`bessel_i0e`](Self::bessel_i0e).
     fn bessel_i1e(self) -> Self;
 
     /// `x · ln y` with the convention `0 · ln 0 = 0` (and `0 · ln y = 0` for any `y`) — the
@@ -408,17 +418,19 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// (the von Mises / directional normalizer).
     ///
     /// # Precision
-    /// Inherits the ~1e-7 relative error of [`bessel_i0e`](Self::bessel_i0e), which in the log
-    /// domain shows up as an *absolute* error of that order. The implementation may also take
-    /// a different internal path than `|x| + ln(i0e(x))`, so the two agree only to that level.
+    /// Machine precision. It is taken straight from the series' log-domain form rather than by
+    /// scaling `i0e` back up, so it needs no `e^{|x|}` round trip and stays accurate for every
+    /// argument.
     fn ln_bessel_i0(self) -> Self;
 
     /// `I₁(x) / I₀(x) = I₁ᵉ(x) / I₀ᵉ(x)` — the von Mises mean resultant length;
     /// overflow-free, since the shared `e^{|x|}` growth factor cancels.
     ///
     /// # Precision
-    /// The ratio compounds both Bessel errors: measured worst case **2e-7 relative**. See
-    /// [`bessel_i0e`](Self::bessel_i0e).
+    /// Machine precision, and specifically *not* formed as a difference of two large
+    /// logarithms. Both series peak at the same index, where their peak terms differ by
+    /// exactly `ln(x/2) − ln(k+1)`, so the large factors cancel symbolically and the whole
+    /// computation stays `O(1)`.
     fn bessel_i1_over_i0(self) -> Self;
 
     // --- compensated arithmetic ---
