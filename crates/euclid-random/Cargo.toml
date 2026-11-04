@@ -1,0 +1,16 @@
+[package]
+name = "euclid-random"
+description = "Explicit-key random sampler contracts: reproducible draws as a pure function of key, parameters, and shape."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[dependencies]
+euclid-numeric.workspace = true
+
+[lints]
+workspace = true

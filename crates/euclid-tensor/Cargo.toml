@@ -1,0 +1,16 @@
+[package]
+name = "euclid-tensor"
+description = "Rank-graded array contracts: the Tensor trait, its opt-in capability extensions, and backend-neutral dtype/spec metadata."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[dependencies]
+euclid-numeric.workspace = true
+
+[lints]
+workspace = true

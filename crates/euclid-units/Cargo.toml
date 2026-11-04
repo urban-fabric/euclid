@@ -1,0 +1,16 @@
+[package]
+name = "euclid-units"
+description = "Physical-dimension contracts over any euclid-numeric Real carrier: the seven SI base dimensions and the standard derived set, wired by their cross-dimensional algebra."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[dependencies]
+euclid-numeric.workspace = true
+
+[lints]
+workspace = true

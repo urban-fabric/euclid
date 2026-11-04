@@ -1,21 +1,38 @@
-[package]
-name = "euclid"
-version = "0.2.0"
+[workspace]
+resolver = "3"
+members = [
+    "crates/euclid-numeric",
+    "crates/euclid-random",
+    "crates/euclid-tensor",
+    "crates/euclid-units",
+]
+
+# The euclid crates are dependency-free contracts crates: trait surfaces, f64/f32
+# reference scalar implementations, integer/natural/bool carriers, and physical
+# quantities. Nothing here pulls a third-party dependency; the only edges in the
+# graph are the three leaf crates onto euclid-numeric.
+#
+#     euclid-numeric  (no dependencies)
+#       ├── euclid-units
+#       ├── euclid-tensor
+#       └── euclid-random
+
+[workspace.package]
+version = "0.3.0"
 edition = "2024"
-license = "Proprietary"
+license = "Apache-2.0"
 authors = ["Raymond Mead"]
 rust-version = "1.95"
-description = "Dependency-free numeric contracts: scalar algebra and analysis, interpolation, rank-graded array traits, random-source traits, and physical quantities."
 repository = "https://github.com/urban-fabric/euclid"
 
-# euclid is a dependency-free contracts crate: trait surfaces, f64/f32 reference
-# scalar implementations, integer/natural/bool carriers, and physical quantities.
+[workspace.dependencies]
+euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
 
-[lints.rust]
+[workspace.lints.rust]
 unsafe_code = "deny"
 unreachable_pub = "deny"
 
-[lints.clippy]
+[workspace.lints.clippy]
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"

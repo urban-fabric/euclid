@@ -1,191 +1,155 @@
 # euclid
 
-euclid is a dependency-free set of numeric contracts for writing carrier-generic
-math in Rust.
+The base numeric and units package for Urban Fabric.
 
-Use it when a formula should work with ordinary `f64`/`f32` values and also with
-your own expression, graph, tensor, or unit-aware carriers. euclid defines the
-operations a formula may use; it does not define storage layout, execution
-runtime, array allocation, or a random-number engine.
+**Write a formula once; run it on anything that holds a number.**
 
-The crate includes:
+A **carrier** is whatever actually holds the value — an ordinary `f64`, an
+expression handle, a graph node, a tensor, a dataframe column, a unit-aware
+wrapper. euclid is the vocabulary all of them share, so a formula written
+against it compiles against every one without being rewritten.
 
-- scalar traits for algebra, real analysis, masks, integer/natural counts, and
-  complex/quaternion-style carriers;
-- `f64`, `f32`, signed-integer, unsigned-integer, and `bool` implementations;
-- a rank-graded tensor trait (a vector is a rank-1 tensor, a matrix a rank-2
-  tensor);
-- interpolation, random-source, and physical-unit traits.
+```rust
+use euclid_numeric::Real;
+
+// Written once, against the trait — no mention of any concrete number type.
+fn logpdf<T: Real>(x: T) -> T {
+    -(T::half() * x.square()) - T::half_ln_tau()
+}
+
+let wide = logpdf(0.5_f64);    // eager host scalar
+let narrow = logpdf(0.5_f32);  // a different carrier, same formula
+```
+
+Nothing in `logpdf` names `f64` or `f32`, so a carrier *you* define — an
+expression handle to be compiled later, a graph node, a tensor element, a
+length in metres — is accepted on the same bound with no edit to the formula.
+That is the whole idea, applied to four kinds of value: scalars, physical
+quantities, arrays, and randomness.
+
+## Why This Exists
+
+euclid is the numerics, units, and mathematical base for Urban Fabric. Its job
+is to make a formula **usable across multiple interfaces** instead of being
+rewritten for each one.
+
+The same mathematics tends to be needed in several places at once — evaluated
+eagerly on host scalars, staged into an expression or graph backend for
+deferred execution, pushed down into dataframe expressions, or run elementwise
+over an array runtime. Written the ordinary way, that means one implementation
+per surface, and the copies drift: a coefficient gets corrected in one, a unit
+conversion is right in the pipeline and wrong at the edge, a guard against
+`log(0)` exists in two of four.
+
+euclid removes the duplication by making the formula the single artifact and
+the surface a parameter. `logpdf` above is written once; each interface
+supplies a carrier, and the formula is then *the same code* everywhere it runs
+— not a convention, not four implementations kept in sync by review.
+
+The units half does the same thing one level up. Because a quantity is a trait
+over a carrier rather than a concrete struct, every Urban Fabric project can
+agree on what a length *is* — and on `length / time = speed` — without agreeing
+on how a length is stored, or even whether it has been computed yet.
+
+So the shared vocabulary is the deliverable: one definition of a number, one
+definition of a physical quantity, reusable across every interface that needs
+to do arithmetic.
+
+## The Boundary
+
+euclid is a set of contracts, not an engine. It deliberately ships no
+`Meters` struct, no tensor type, and no PRNG.
+
+| euclid defines | you implement |
+|----------------|---------------|
+| the operations a formula may use | storage layout and allocation |
+| the trait tiers, plus `f64`/`f32`/integer/natural/`bool` impls | the execution runtime |
+| physical dimensions and their cross-dimensional algebra | your own unit carriers |
+| the array and sampler contracts | concrete tensors and a PRNG |
+
+The practical consequence is three rules that look arbitrary until you know
+they exist to keep *deferred* carriers possible — you cannot branch on a graph
+node, `Copy` a symbolic handle, or write a float literal into an expression
+tree:
+
+- comparisons return masks, never a host `bool`
+- values are `Clone`, never `Copy`
+- literals are lifted with `Real::scalar`, never written as `2.0`
+
+## Crates
+
+`euclid-numeric` is the foundation and has no dependencies at all. The other
+three depend on it and never on each other, so a consumer takes on only the
+surface it uses. There is no umbrella crate — depend on the specific crates you
+need.
+
+```
+euclid-numeric        no dependencies
+├── euclid-units      → euclid-numeric
+├── euclid-tensor     → euclid-numeric
+└── euclid-random     → euclid-numeric
+```
+
+| crate | purpose |
+|-------|---------|
+| [`euclid-numeric`](crates/euclid-numeric) | scalar algebra tiers, real analysis, masks, special functions, interpolation, graph control flow |
+| [`euclid-units`](crates/euclid-units) | physical-dimension contracts over any `Real` carrier — SI base and derived quantities |
+| [`euclid-tensor`](crates/euclid-tensor) | the rank-graded `Tensor` contract, its capability extensions, and dtype/spec metadata |
+| [`euclid-random`](crates/euclid-random) | explicit-key random sampler contracts |
+
+Nothing here pulls a third-party dependency; the only edges in the graph are the
+three leaf crates onto `euclid-numeric`.
+
+## Using It
 
 ```toml
 [dependencies]
-euclid = "0.2"
+euclid-numeric = "0.3"   # the scalar foundation
+euclid-units = "0.3"     # add only what you use
+euclid-tensor = "0.3"
+euclid-random = "0.3"
 ```
 
-## How To Use It
-
-- Choose the narrowest trait bound that contains the operations your formula
-  needs. For example, use `Ring` for `+ - *`, `Real` for transcendental
-  functions, and `Compare` only when you need masks or `select`.
-- Treat generic values as `Clone`, not `Copy`. A carrier may be a host scalar,
-  an expression handle, or a tensor value.
-- Lift numeric literals through methods such as `Real::scalar`,
-  `Real::half`, and `Real::scalar_like`; do not assume associated constants can
-  represent every carrier.
-- Comparisons return masks, not necessarily host `bool`. Use
-  `Compare::select`, `Compare::if_then_else`, or the `Real::min`/`max`/`clamp`
-  helpers instead of branching on a generic comparison.
-- The array surface is a single `Tensor` trait — a vector is a rank-1 tensor and
-  a matrix a rank-2 tensor; there are no separate `Vector`/`Matrix` contracts.
-
-## Example
+Crate names are hyphenated; in Rust they are imported with underscores:
 
 ```rust
-use euclid::Real;
-
-/// Standard-normal log-density over any real carrier.
-fn standard_normal_logpdf<T: Real>(x: T) -> T {
-    let x2 = x.square();
-    -(T::half() * x2) - T::half_ln_tau()
-}
-
-let lp = standard_normal_logpdf(0.0_f64);
-assert!((lp - (-0.5 * (2.0 * std::f64::consts::PI).ln())).abs() < 1e-12);
+use euclid_numeric::Real;
+use euclid_units::Length;
 ```
 
-## Public API
+Each crate's README covers its own trait surface. Beyond the three rules above,
+one habit matters: **choose the narrowest trait bound that contains the
+operations your formula needs** — `Ring` for `+ - *`, `Real` for
+transcendentals, `Compare` only when you need masks or `select`. The bound is
+the contract you are asking a carrier to satisfy, so a loose one rules out
+carriers that could otherwise have run your code.
 
-| module | purpose |
-|--------|---------|
-| [`numeric`](src/numeric/mod.rs) | scalar algebra, analysis, masks, and special functions |
-| [`interpolate`](src/interpolate.rs) | scalar-parameterized interpolation (`lerp`/`midpoint`) |
-| [`tensor`](src/tensor/mod.rs) | the rank-graded `Tensor` contract |
-| [`random`](src/random/mod.rs) | explicit-key random sampler contracts |
-| [`units`](src/units/mod.rs) | physical-dimension contracts over any `Real` carrier |
-
-## Numeric Traits
-
-The numeric traits are layered by algebraic structure. Pick the first layer that
-has the operation you need.
-
-- `Element`: carrier-defined `zero` and `one`. This is shared by numeric,
-  integer, natural, and boolean carriers.
-- `Semiring`: `Element` plus `+` and `*`.
-- `Natural`: unsigned count/index operations on top of `Semiring`, including
-  `div_rem`, conversion to integer/real carriers, and count combinatorics.
-- `Ring`: `Semiring` plus subtraction and negation.
-- `Integer`: signed count/index operations on top of `Ring`, including
-  Euclidean `div_rem` and conversion to real carriers.
-- `Arithmetic`: `Ring` plus division.
-- `Real`: real analysis over `Arithmetic`: lifted constants, powers,
-  transcendentals, rounding/sign operations, masks, selectors, special
-  functions, and stable log-domain helpers.
-- `NormedDivisionAlgebra`: the real/complex/quaternionic surface used by tensor
-  algebra: conjugation, magnitude, real part, and real-axis lifting.
-- `Complex` and `Quaternion`: construction and component access for the
-  complex and quaternionic refinements.
-- `Boolean` and `Compare`: mask algebra, comparisons, and `select`.
-
-`Real` also includes probability/statistics primitives such as `erf`, `erfc`,
-`erf_inv`, `erfcx`, `ln_gamma`, `digamma`, `trigamma`, `gamma_lr`, `gamma_ur`,
-`beta_reg`, `bessel_i0e`, `bessel_i1e`, `xlogy`, and `xlog1py`.
-
-## Array Traits
-
-The array surface is a single rank-graded trait, `Tensor`. A vector is a rank-1
-tensor and a matrix a rank-2 tensor; there are no separate `Vector`/`Matrix`
-contracts.
-
-`Tensor` starts at `Clone`, so structural operations (shape, reshape,
-indexing/gather, control flow) work for real, complex, integer, natural, and
-boolean tensors alike. Arithmetic methods add the bounds they need: `sum` and
-`matmul` require `Ring`, `prod` requires `Semiring`, `min`/`max` require `Real`,
-`mean` requires `NormedDivisionAlgebra`, and `any`/`all` require `Boolean`.
-
-Beyond the core, opt-in **capability extension** traits grow the surface a
-carrier can offer without widening the base contract:
-
-- `TensorReduce`: statistical and scan reductions — `var`, `std`,
-  `logsumexp`, `softmax`, `log_softmax`, `cumsum`.
-- `TensorSort`: order statistics — `sort`, `argsort`, `argmax`, `argmin`,
-  `top_k` (index results use `Tensor::Index`).
-- `TensorContract`: general contraction — `dot_general` and the `einsum1` /
-  `einsum2` Einstein-summation forms.
-- `TensorIndexing`: range and categorical encoding — `iota`, `one_hot`,
-  `bincount`.
-- `TensorTransform`: structural conveniences — `roll`, `tile`, `clip`.
-
-euclid declares the array trait but does not include a concrete tensor type.
-Consumers provide implementations for the carrier types they want to use.
-
-## Interpolation
-
-`Interpolate`, its own top-level module, defines scalar-parameterized
-interpolation with explicit `lerp` and `midpoint` methods. `midpoint` is
-explicit because some carriers need a different implementation than
-`lerp(a, b, 0.5)`.
-
-## Random Traits
-
-The random module defines a small explicit-key sampler surface:
-
-- `RandomKey`: immutable key construction, splitting, and folding.
-- `RandomSampler`: basic `uniform`, `normal`, `bernoulli`, and `randint`
-  draws over a host-known `shape`.
-
-Scalar backends such as an `f64` sampler use `&[]` as the shape. Array,
-dataframe, and graph backends can interpret non-empty shapes in their native
-way, which keeps generic sampler code small enough to target JAX-like arrays,
-Polars-style expressions, or eager scalar values without separate random APIs.
-The module does not prescribe a concrete PRNG, storage type, tensor runtime, or
-state representation.
-
-## Units
-
-`units` ships dimension *contracts*, not concrete unit types. A quantity is any
-`Real`-backed carrier that implements `Quantity`; `ScalarQuantity` and
-`LinearQuantity` add the comparison-free scalar and vector-space operations. The
-dimension traits — `Length`, `Time`, `Speed`, `Area`, and `Angle` — refine
-those with the cross-dimensional algebra (`length × length = area`,
-`length / time = speed`, …) expressed through associated quantity types. A
-consumer defines its own `Meters`/`Seconds` carriers and implements these
-traits; euclid does not ship them.
-
-The trait surface covers the seven SI base dimensions, all 22 SI named derived
-units, and a broad set of further derived quantities, grouped by domain:
-`geometry`, `kinematics`, `mechanics` (including mass flow rate, kinematic
-viscosity, specific energy, energy density, action), `electromagnetism`
-(including current density, field strength, permittivity, permeability,
-resistivity, conductivity), `thermal` (including specific heat capacity, thermal
-resistance, heat flux), `photometry` (including luminance), `chemistry`
-(including molar energy, molar volume, molality), and `radiology` (the
-becquerel, gray, and sievert). Commensurable-but-distinct names (energy vs.
-torque, absorbed dose vs. dose equivalent vs. specific energy) are tracked
-separately by name while sharing a base-dimension signature.
-
-## Implemented Here
-
-- `f64` and `f32` implement `Element`, `Arithmetic`, `Real`,
-  `NormedDivisionAlgebra`, and `Interpolate`.
-- `i32`, `i64`, and `i128` implement `Element` and `Integer`.
-- `u32`, `u64`, and `u128` implement `Element` and `Natural`.
-- `bool` implements `Element` and `Boolean`.
-
-euclid does not ship concrete tensor, unit, random backend, complex, or
-quaternion implementations. Those traits are contracts for consumer-provided
-carrier types.
+For the mask rule, the tools are `Compare::select`, `Compare::if_then_else`,
+and the comparison-free `Real::min`/`max`/`clamp`. For the lifting rule, they
+are `Real::scalar` and `Real::scalar_like`.
 
 ## Validation
 
-Run the standard checks before publishing changes:
+Run the standard checks across the workspace before publishing changes:
 
 ```sh
-cargo fmt --check
-cargo test --all-targets
-cargo clippy --all-targets -- -D warnings
-cargo test --doc
+cargo fmt --all --check
+cargo test --all-targets --workspace
+cargo clippy --all-targets --workspace -- -D warnings
+cargo test --doc --workspace
 ```
+
+Lints (`unsafe_code`, `unreachable_pub`, `unwrap_used`, `expect_used`, `panic`,
+`self_named_module_files`) are declared once in `[workspace.lints]` at the root
+and inherited by each crate. Shared package metadata comes from
+`[workspace.package]`, so all four crates version together.
 
 ## License
 
-Proprietary. © Raymond Mead.
+Licensed under the [Apache License, Version 2.0](LICENSE).
+Copyright 2026 Raymond Mead.
+
+Apache-2.0 governs what a recipient may do with the code; it does not oblige
+anyone to publish it. Keeping this repository private is a separate, purely
+practical matter. Note the corollary: anyone who *does* receive it under
+Apache-2.0 holds an irrevocable right to redistribute it, publicly included.
