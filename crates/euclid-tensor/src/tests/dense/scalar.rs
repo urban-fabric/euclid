@@ -282,8 +282,22 @@ impl Real for Dense {
     );
 
     real_binary_own!(
-        atan2, hypot, copysign, rem_euclid, min, max, gamma_lr, gamma_ur, xlogy, xlog1py, xlog1my,
-        ln_add_exp, ln_sub_exp, ln_beta, beta,
+        gamma_lr_inv,
+        atan2,
+        hypot,
+        copysign,
+        rem_euclid,
+        min,
+        max,
+        gamma_lr,
+        gamma_ur,
+        xlogy,
+        xlog1py,
+        xlog1my,
+        ln_add_exp,
+        ln_sub_exp,
+        ln_beta,
+        beta,
     );
 
     fn powf(&self, p: Self) -> Self {
@@ -346,5 +360,9 @@ impl Real for Dense {
 
     fn ln_rising_factorial(self, n: Self) -> Self {
         self.zip(&n, <f64 as Real>::ln_rising_factorial)
+    }
+
+    fn beta_reg_inv(self, a: Self, b: Self) -> Self {
+        self.zip3(&a, &b, <f64 as Real>::beta_reg_inv)
     }
 }

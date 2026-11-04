@@ -56,7 +56,15 @@ pub(crate) fn gamma(x: f64) -> f64 {
     }
 }
 
-const MAX_ITER: usize = 200;
+/// Iteration cap for the incomplete-gamma series and continued fraction.
+///
+/// Both need roughly `O(sqrt(a))` terms near `x ~ a`, so a small cap silently truncates at
+/// large shape: at 200 the series stopped short from about `a = 1e3`, leaving `P(1e5, median)`
+/// at `0.237` instead of `0.5` and putting a visible discontinuity at the `x = a + 1` branch
+/// switch. All the series terms are positive, so this is pure truncation with no cancellation —
+/// raising the cap fixes it outright, and costs nothing at small shape because both loops
+/// break as soon as the relative term falls below `EPS`.
+const MAX_ITER: usize = 100_000;
 const EPS: f64 = 1e-15;
 
 /// Regularized **lower** incomplete gamma `P(a, x) = γ(a, x) / Γ(a)`, `a > 0`, `x ≥ 0`.

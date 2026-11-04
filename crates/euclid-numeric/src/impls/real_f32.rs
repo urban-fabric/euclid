@@ -445,4 +445,11 @@ impl Real for f32 {
     fn ndtri(self) -> Self {
         crate::special::f32::normal::ndtri(self)
     }
+
+    fn gamma_lr_inv(self, shape: Self) -> Self {
+        crate::special::f32::quantile::gamma_lr_inv(self, shape)
+    }
+    fn beta_reg_inv(self, a: Self, b: Self) -> Self {
+        crate::special::f32::quantile::beta_reg_inv(self, a, b)
+    }
 }

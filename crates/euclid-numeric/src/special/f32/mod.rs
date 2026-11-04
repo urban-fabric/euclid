@@ -14,3 +14,4 @@ pub(crate) mod beta;
 pub(crate) mod erf;
 pub(crate) mod gamma;
 pub(crate) mod normal;
+pub(crate) mod quantile;

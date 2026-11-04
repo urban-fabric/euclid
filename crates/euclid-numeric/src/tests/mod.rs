@@ -11,6 +11,7 @@ mod f32_surface;
 mod identities;
 mod masks;
 mod normal_family;
+mod quantiles;
 mod real_surface;
 mod relationships;
 mod stability;

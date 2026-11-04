@@ -10,6 +10,7 @@ pub(crate) mod erf;
 pub(crate) mod gamma;
 pub(crate) mod host;
 pub(crate) mod normal;
+pub(crate) mod quantile;
 
 /// Native single-precision peers of the elementwise functions — same names, `f32` throughout.
 pub(crate) mod f32;

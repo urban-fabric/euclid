@@ -516,6 +516,20 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// `−∞` for any observation far enough into the tail.
     fn log_ndtr(self) -> Self;
 
+    /// The gamma quantile: the `x` with [`gamma_lr`](Self::gamma_lr)`(x, shape) == self`,
+    /// where `self` is the probability.
+    ///
+    /// Solved rather than fitted — a bracketed Newton/bisection root-find on the forward CDF.
+    /// That makes it unconditionally convergent for every shape, and ties its accuracy to
+    /// `gamma_lr`, so the quantile cannot drift away from the CDF it inverts.
+    fn gamma_lr_inv(self, shape: Self) -> Self;
+
+    /// The beta quantile: the `x` in `[0, 1]` with
+    /// [`beta_reg`](Self::beta_reg)`(x, a, b) == self`, where `self` is the probability.
+    ///
+    /// Solved on a known bracket (`[0, 1]`), so convergence is guaranteed for any `a`, `b`.
+    fn beta_reg_inv(self, a: Self, b: Self) -> Self;
+
     /// The standard normal quantile (probit) `Φ⁻¹(p)`, for `p` in `[0, 1]`.
     ///
     /// # Accuracy

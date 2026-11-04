@@ -449,4 +449,11 @@ impl Real for f64 {
     fn ndtri(self) -> Self {
         crate::special::normal::ndtri(self)
     }
+
+    fn gamma_lr_inv(self, shape: Self) -> Self {
+        crate::special::quantile::gamma_lr_inv(self, shape)
+    }
+    fn beta_reg_inv(self, a: Self, b: Self) -> Self {
+        crate::special::quantile::beta_reg_inv(self, a, b)
+    }
 }
