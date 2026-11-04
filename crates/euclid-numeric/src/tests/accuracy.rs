@@ -20,24 +20,7 @@
 #![allow(clippy::excessive_precision)]
 
 use crate::Real;
-
-/// Relative error, falling back to absolute error when the reference is exactly zero.
-fn rel(got: f64, want: f64) -> f64 {
-    if want == 0.0 {
-        got.abs()
-    } else {
-        ((got - want) / want).abs()
-    }
-}
-
-#[track_caller]
-fn assert_rel(got: f64, want: f64, tol: f64, what: &str) {
-    let e = rel(got, want);
-    assert!(
-        e <= tol,
-        "{what}: got {got:.17e}, want {want:.17e}, rel err {e:.3e} > tol {tol:.1e}"
-    );
-}
+use euclid_utils::{EULER_GAMMA as EULER, assert_close, rel};
 
 // --- erf / erfc ---------------------------------------------------------
 
@@ -61,7 +44,7 @@ fn erf_matches_reference_values() {
         (5.0, 9.99999999998462563e-01),
     ];
     for (x, want) in table {
-        assert_rel(Real::erf(x), want, ERF_TOL, &format!("erf({x})"));
+        assert_close(Real::erf(x), want, ERF_TOL, &format!("erf({x})"));
     }
 }
 
@@ -82,7 +65,7 @@ fn erfc_matches_reference_values_into_the_far_tail() {
         (8.0, 1.12242971729829264e-29),
     ];
     for (x, want) in table {
-        assert_rel(Real::erfc(x), want, ERFC_TOL, &format!("erfc({x})"));
+        assert_close(Real::erfc(x), want, ERFC_TOL, &format!("erfc({x})"));
     }
 }
 
@@ -105,7 +88,7 @@ fn ln_gamma_matches_exact_log_factorials() {
         for k in 1..n {
             want += f64::from(k).ln();
         }
-        assert_rel(
+        assert_close(
             Real::ln_gamma(f64::from(n)),
             want,
             LN_GAMMA_TOL,
@@ -117,13 +100,12 @@ fn ln_gamma_matches_exact_log_factorials() {
 #[test]
 fn digamma_matches_the_exact_harmonic_form() {
     // ψ(n) = −γ + Σ_{k<n} 1/k
-    const EULER: f64 = 0.577_215_664_901_532_86;
     for n in 1..=200u32 {
         let mut h = 0.0f64;
         for k in 1..n {
             h += 1.0 / f64::from(k);
         }
-        assert_rel(
+        assert_close(
             Real::digamma(f64::from(n)),
             -EULER + h,
             DIGAMMA_TOL,
@@ -141,7 +123,7 @@ fn trigamma_matches_the_exact_zeta_form() {
             s += 1.0 / (f64::from(k) * f64::from(k));
         }
         let want = core::f64::consts::PI * core::f64::consts::PI / 6.0 - s;
-        assert_rel(
+        assert_close(
             Real::trigamma(f64::from(n)),
             want,
             TRIGAMMA_TOL,
@@ -152,23 +134,22 @@ fn trigamma_matches_the_exact_zeta_form() {
 
 #[test]
 fn digamma_and_trigamma_hit_their_closed_forms_at_half_integers() {
-    const EULER: f64 = 0.577_215_664_901_532_86;
     let pi2 = core::f64::consts::PI * core::f64::consts::PI;
     // ψ(1/2) = −γ − 2 ln 2 ; ψ'(1/2) = π²/2
-    assert_rel(
+    assert_close(
         Real::digamma(0.5),
         -EULER - 2.0 * core::f64::consts::LN_2,
         DIGAMMA_TOL,
         "digamma(1/2)",
     );
-    assert_rel(
+    assert_close(
         Real::trigamma(0.5),
         pi2 / 2.0,
         TRIGAMMA_TOL,
         "trigamma(1/2)",
     );
     // ψ'(1) = π²/6
-    assert_rel(Real::trigamma(1.0), pi2 / 6.0, TRIGAMMA_TOL, "trigamma(1)");
+    assert_close(Real::trigamma(1.0), pi2 / 6.0, TRIGAMMA_TOL, "trigamma(1)");
 }
 
 // --- incomplete gamma ---------------------------------------------------
@@ -206,7 +187,7 @@ fn gamma_lr_matches_the_exact_tail_reference() {
     for a in [1u32, 2, 3, 5, 10, 20] {
         for i in 1..400 {
             let x = f64::from(i) * 0.1;
-            assert_rel(
+            assert_close(
                 Real::gamma_lr(x, f64::from(a)),
                 gamma_lr_tail(a, x),
                 GAMMA_LR_TOL,
@@ -228,7 +209,7 @@ fn gamma_lr_deep_tail_is_accurate() {
         (5.0, 30.0, 2.81751761557792253e-14),
     ];
     for (x, a, want) in table {
-        assert_rel(
+        assert_close(
             Real::gamma_lr(x, a),
             want,
             GAMMA_LR_TOL,
@@ -261,7 +242,7 @@ fn beta_reg_matches_the_integer_parameter_closed_form() {
     for (a, b) in [(1u32, 1u32), (2, 3), (5, 2), (4, 7), (10, 10)] {
         for i in 1..100 {
             let x = f64::from(i) * 0.01;
-            assert_rel(
+            assert_close(
                 Real::beta_reg(x, f64::from(a), f64::from(b)),
                 beta_reg_closed_form(x, a, b),
                 BETA_REG_TOL,
@@ -320,14 +301,14 @@ fn bessel_scaled_forms_hold_to_their_documented_accuracy() {
     for i in 0..250 {
         let x = f64::from(i) * 0.1;
         let scale = (-x.abs()).exp();
-        assert_rel(
+        assert_close(
             Real::bessel_i0e(x),
             scale * i0_series(x),
             BESSEL_TOL,
             &format!("bessel_i0e({x})"),
         );
         if i > 0 {
-            assert_rel(
+            assert_close(
                 Real::bessel_i1e(x),
                 scale * i1_series(x),
                 BESSEL_TOL,
@@ -368,8 +349,8 @@ fn bessel_is_accurate_across_the_branch_switch() {
         ),
         (3.76, 2.14142872424759739e-01, 1.82795563491229912e-01),
     ] {
-        assert_rel(Real::bessel_i0e(x), i0e, BESSEL_TOL, "i0e at branch");
-        assert_rel(Real::bessel_i1e(x), i1e, BESSEL_TOL, "i1e at branch");
+        assert_close(Real::bessel_i0e(x), i0e, BESSEL_TOL, "i0e at branch");
+        assert_close(Real::bessel_i1e(x), i1e, BESSEL_TOL, "i1e at branch");
     }
     // Continuity: the two sides agree to much better than the window between them.
     let jump = (Real::bessel_i0e(3.7499) - Real::bessel_i0e(3.7501)).abs();
@@ -386,7 +367,7 @@ fn bessel_large_argument_stays_finite_and_decaying() {
         (50.0f64, 5.65616266474541912e-02f64),
         (100.0, 3.99443792990966801e-02),
     ] {
-        assert_rel(Real::bessel_i0e(x), i0e, BESSEL_TOL, &format!("i0e({x})"));
+        assert_close(Real::bessel_i0e(x), i0e, BESSEL_TOL, &format!("i0e({x})"));
     }
     // I₀ᵉ decays like 1/√(2πx) — monotonically, with no overflow.
     let mut prev = f64::INFINITY;

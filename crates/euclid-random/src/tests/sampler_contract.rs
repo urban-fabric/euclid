@@ -4,6 +4,7 @@
 
 use super::toy_sampler::ToySampler;
 use crate::{CountSampler, GammaSampler, RandomKey, RandomSampler};
+use euclid_utils::{mean, variance};
 
 type S = ToySampler;
 
@@ -17,15 +18,6 @@ where
 {
     let root = S::key(0xFEED);
     (0..n).map(|i| draw(&S::fold_in(&root, i))).collect()
-}
-
-fn mean(xs: &[f64]) -> f64 {
-    xs.iter().sum::<f64>() / xs.len() as f64
-}
-
-fn variance(xs: &[f64]) -> f64 {
-    let m = mean(xs);
-    xs.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / xs.len() as f64
 }
 
 // --- purity: the actual contract ----------------------------------------

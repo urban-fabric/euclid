@@ -11,29 +11,7 @@
 //! "how many trailing bits does single precision lose here".
 
 use crate::Real;
-
-/// One `f32` ulp, relative.
-const ULP: f64 = 1.192_092_9e-7;
-
-fn rel(got: f64, want: f64) -> f64 {
-    if want == 0.0 {
-        got.abs()
-    } else {
-        ((got - want) / want).abs()
-    }
-}
-
-/// Compare the `f32` result against the `f64` reference with a mixed criterion, so a zero of
-/// the function cannot blow the ratio up.
-#[track_caller]
-fn agrees(got32: f32, want64: f64, ulps: f64, what: &str) {
-    let err = (f64::from(got32) - want64).abs();
-    let bound = ulps * ULP * want64.abs().max(1.0);
-    assert!(
-        err <= bound,
-        "{what}: f32 {got32:e} vs f64 {want64:e} (err {err:.3e} > {bound:.3e}, {ulps} ulp)"
-    );
-}
+use euclid_utils::{assert_close_f32, rel};
 
 // --- special functions --------------------------------------------------
 
@@ -44,14 +22,14 @@ fn f32_erf_family_tracks_f64() {
     for i in 1..80 {
         let x32 = (i as f32) * 0.1;
         let x64 = f64::from(x32);
-        agrees(Real::erf(x32), Real::erf(x64), 16.0, &format!("erf({x32})"));
-        agrees(
+        assert_close_f32(Real::erf(x32), Real::erf(x64), 16.0, &format!("erf({x32})"));
+        assert_close_f32(
             Real::erfc(x32),
             Real::erfc(x64),
             128.0,
             &format!("erfc({x32})"),
         );
-        agrees(
+        assert_close_f32(
             Real::erfcx(x32),
             Real::erfcx(x64),
             128.0,
@@ -65,7 +43,7 @@ fn f32_erf_inv_tracks_f64() {
     // Measured worst 1.1e-6 (~10 ulp).
     for i in 1..20 {
         let p32 = (i as f32) * 0.05;
-        agrees(
+        assert_close_f32(
             Real::erf_inv(p32),
             Real::erf_inv(f64::from(p32)),
             32.0,
@@ -81,19 +59,19 @@ fn f32_gamma_family_tracks_f64() {
     for i in 1..60 {
         let x32 = (i as f32) * 0.25;
         let x64 = f64::from(x32);
-        agrees(
+        assert_close_f32(
             Real::gamma(x32),
             Real::gamma(x64),
             64.0,
             &format!("gamma({x32})"),
         );
-        agrees(
+        assert_close_f32(
             Real::digamma(x32),
             Real::digamma(x64),
             64.0,
             &format!("digamma({x32})"),
         );
-        agrees(
+        assert_close_f32(
             Real::trigamma(x32),
             Real::trigamma(x64),
             32.0,
@@ -109,7 +87,7 @@ fn f32_ln_gamma_tracks_f64_including_across_its_zeros() {
     // reports a 5e8 "error" at x = 1, comparing two different roundings of zero.)
     for i in 1..200 {
         let x32 = (i as f32) * 0.25;
-        agrees(
+        assert_close_f32(
             Real::ln_gamma(x32),
             Real::ln_gamma(f64::from(x32)),
             64.0,
@@ -127,7 +105,7 @@ fn f32_incomplete_gamma_and_beta_track_f64() {
     for &a in &[0.5f32, 1.0, 2.5, 10.0] {
         for i in 1..100 {
             let x32 = (i as f32) * 0.2;
-            agrees(
+            assert_close_f32(
                 Real::gamma_lr(x32, a),
                 Real::gamma_lr(f64::from(x32), f64::from(a)),
                 64.0,
@@ -138,7 +116,7 @@ fn f32_incomplete_gamma_and_beta_track_f64() {
     for &(a, b) in &[(1.0f32, 1.0f32), (2.0, 3.0), (5.0, 2.0)] {
         for i in 1..100 {
             let x32 = (i as f32) * 0.01;
-            agrees(
+            assert_close_f32(
                 Real::beta_reg(x32, a, b),
                 Real::beta_reg(f64::from(x32), f64::from(a), f64::from(b)),
                 64.0,
@@ -156,14 +134,14 @@ fn f32_bessel_tracks_f64_within_the_shared_polynomial_error() {
     for i in 0..200 {
         let x32 = (i as f32) * 0.25;
         let x64 = f64::from(x32);
-        agrees(
+        assert_close_f32(
             Real::bessel_i0e(x32),
             Real::bessel_i0e(x64),
             16.0,
             &format!("bessel_i0e({x32})"),
         );
         if i > 0 {
-            agrees(
+            assert_close_f32(
                 Real::bessel_i1e(x32),
                 Real::bessel_i1e(x64),
                 16.0,
@@ -179,13 +157,13 @@ fn f32_log_domain_helpers_track_f64() {
     for i in -60..60 {
         let x32 = (i as f32) * 0.5;
         let x64 = f64::from(x32);
-        agrees(
+        assert_close_f32(
             Real::ln_1p_exp(&x32),
             Real::ln_1p_exp(&x64),
             8.0,
             &format!("ln_1p_exp({x32})"),
         );
-        agrees(
+        assert_close_f32(
             Real::sigmoid(&x32),
             Real::sigmoid(&x64),
             8.0,
@@ -194,7 +172,7 @@ fn f32_log_domain_helpers_track_f64() {
     }
     for i in 1..60 {
         let x32 = -((i as f32) * 0.2);
-        agrees(
+        assert_close_f32(
             Real::ln_1m_exp(&x32),
             Real::ln_1m_exp(&f64::from(x32)),
             8.0,

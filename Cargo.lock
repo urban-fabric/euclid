@@ -5,12 +5,16 @@ version = 4
 [[package]]
 name = "euclid-numeric"
 version = "0.3.0"
+dependencies = [
+ "euclid-utils",
+]
 
 [[package]]
 name = "euclid-random"
 version = "0.3.0"
 dependencies = [
  "euclid-numeric",
+ "euclid-utils",
 ]
 
 [[package]]
@@ -18,6 +22,7 @@ name = "euclid-tensor"
 version = "0.3.0"
 dependencies = [
  "euclid-numeric",
+ "euclid-utils",
 ]
 
 [[package]]
@@ -25,4 +30,9 @@ name = "euclid-units"
 version = "0.3.0"
 dependencies = [
  "euclid-numeric",
+ "euclid-utils",
 ]
+
+[[package]]
+name = "euclid-utils"
+version = "0.3.0"

@@ -5,6 +5,7 @@ members = [
     "crates/euclid-random",
     "crates/euclid-tensor",
     "crates/euclid-units",
+    "crates/euclid-utils",
 ]
 
 # The euclid crates are dependency-free contracts crates: trait surfaces, f64/f32
@@ -16,6 +17,9 @@ members = [
 #       ├── euclid-units
 #       ├── euclid-tensor
 #       └── euclid-random
+#
+# euclid-utils is a dev-only member: every crate uses it under [dev-dependencies] for
+# shared test helpers, and it is publish = false, so it never reaches a consumer.
 
 [workspace.package]
 version = "0.3.0"
@@ -27,6 +31,8 @@ repository = "https://github.com/urban-fabric/euclid"
 
 [workspace.dependencies]
 euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
+# Dev-only shared helpers; never a runtime dependency of a published crate.
+euclid-utils = { version = "0.3.0", path = "crates/euclid-utils" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

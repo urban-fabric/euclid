@@ -12,5 +12,8 @@ readme = "README.md"
 [dependencies]
 euclid-numeric.workspace = true
 
+[dev-dependencies]
+euclid-utils.workspace = true
+
 [lints]
 workspace = true

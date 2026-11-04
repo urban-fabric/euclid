@@ -1,0 +1,13 @@
+[package]
+name = "euclid-utils"
+description = "Shared numerical helpers for the euclid workspace: comparison, calculus, sweeps, and shape assertions."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
