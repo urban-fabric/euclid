@@ -172,6 +172,49 @@ impl Real for f64 {
     fn sin_cos(self) -> (Self, Self) {
         f64::sin_cos(self)
     }
+    fn sin_cos_degrees(self) -> (Self, Self) {
+        // GeographicLib's `sincosd`. Reducing in degrees keeps the residual
+        // exactly zero at every multiple of 90, which is what makes the quadrant
+        // values exact; `to_radians` first cannot, since `pi/2` is not an f64.
+        let r = if f64::is_finite(self) {
+            self % 360.0
+        } else {
+            f64::NAN
+        };
+        let q = if f64::is_nan(r) {
+            0
+        } else {
+            ((r / 90.0).round()) as i64
+        };
+        let r = (r - 90.0 * q as f64).to_radians();
+        let (s, c) = f64::sin_cos(r);
+        // The quadrant rotation. `rem_euclid(4)` is in 0..=3, so the last arm is
+        // the `3` case rather than an unreachable one.
+        let (mut sinx, cosx) = match q.rem_euclid(4) {
+            0 => (s, c),
+            1 => (c, -s),
+            2 => (-s, -c),
+            _ => (-c, s),
+        };
+        // IEEE 754 F.10.1.12/13: a vanished cosine is `+0`, and a vanished sine
+        // carries the argument's sign.
+        let cosx = cosx + 0.0;
+        if sinx == 0.0 {
+            sinx = f64::copysign(sinx, self);
+        }
+        (sinx, cosx)
+    }
+    fn polyval(self, coefficients: &[Self]) -> Self {
+        // Horner, highest power first. Deliberately not `mul_add`: see the trait.
+        let Some((highest, rest)) = coefficients.split_first() else {
+            return 0.0;
+        };
+        let mut acc = *highest;
+        for c in rest {
+            acc = acc * self + *c;
+        }
+        acc
+    }
     fn hypot(self, other: Self) -> Self {
         f64::hypot(self, other)
     }

@@ -74,3 +74,43 @@ fn rounding_is_idempotent_and_preserves_integers() {
         assert_eq!(Real::fract(n), 0.0);
     }
 }
+
+// --- polynomial evaluation: coefficient order, and the unfused multiply-add ---
+//
+// `polyval` deliberately does *not* fuse, which is unusual enough to pin: a
+// fused multiply-add is more accurate, and that is the problem. The series
+// expansions calling it are fitted against a reference implementation that does
+// not fuse, so matching it bit-for-bit is what lets those fits be checked
+// against published values.
+
+#[test]
+fn polyval_is_horner_with_the_highest_power_first() {
+    // 2x² − 3x + 1
+    assert_eq!(4.0_f64.polyval(&[2.0, -3.0, 1.0]), 21.0);
+    assert_eq!(0.0_f64.polyval(&[2.0, -3.0, 1.0]), 1.0);
+    // A single coefficient is a constant, and no coefficients is zero.
+    assert_eq!(9.0_f64.polyval(&[7.0]), 7.0);
+    assert_eq!(9.0_f64.polyval(&[]), 0.0);
+    // Order matters, and getting it backwards is the likely mistake.
+    assert_ne!(4.0_f64.polyval(&[1.0, -3.0, 2.0]), 21.0);
+}
+
+#[test]
+fn polyval_does_not_fuse_its_multiply_add() {
+    // The fused and unfused forms differ in the last ULP for a well-chosen
+    // argument, and the callers depend on the unfused one. Construct a case
+    // where `mul_add` and `a * x + b` disagree, then require the unfused answer.
+    // (1 + 2⁻²⁷)² is 1 + 2⁻²⁶ + 2⁻⁵⁴: the last term falls below the ULP of 1, so
+    // the rounded product is 1 + 2⁻²⁶ and the unfused sum with −(1 + 2⁻²⁶) is
+    // exactly zero, while the fused form keeps the 2⁻⁵⁴.
+    let x = 1.0 + 2.0_f64.powi(-27);
+    let a = x;
+    let b = -(1.0 + 2.0_f64.powi(-26));
+    let unfused = a * x + b;
+    let fused = a.mul_add(x, b);
+    assert_ne!(
+        unfused, fused,
+        "the fixture must actually distinguish the two"
+    );
+    assert_eq!(x.polyval(&[a, b]), unfused);
+}

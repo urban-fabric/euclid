@@ -341,6 +341,28 @@ impl Real for Dense {
         (Real::sin(self.clone()), Real::cos(self))
     }
 
+    fn sin_cos_degrees(self) -> (Self, Self) {
+        // Elementwise, in the same shape as `sin_cos` above: each component is
+        // computed separately rather than threading a tuple through `map`.
+        (
+            self.map(|x| <f64 as Real>::sin_cos_degrees(x).0),
+            self.map(|x| <f64 as Real>::sin_cos_degrees(x).1),
+        )
+    }
+
+    fn polyval(self, coefficients: &[Self]) -> Self {
+        // Horner over carrier-valued coefficients: every lane evaluates its own
+        // polynomial, which is what a column of per-row fits needs.
+        let Some((highest, rest)) = coefficients.split_first() else {
+            return self.map(|_| 0.0);
+        };
+        let mut acc = highest.clone();
+        for c in rest {
+            acc = acc.zip(&self, |a, x| a * x).zip(c, |a, c| a + c);
+        }
+        acc
+    }
+
     fn powi(self, n: i64) -> Self {
         self.map(|x| <f64 as Real>::powi(x, n))
     }

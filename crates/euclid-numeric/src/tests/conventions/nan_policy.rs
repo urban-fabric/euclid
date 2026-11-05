@@ -45,3 +45,13 @@ fn clamp_composes_min_and_max() {
         assert_eq!(Real::clamp(x, lo, hi), Real::min(Real::max(x, lo), hi));
     }
 }
+
+// --- non-finite propagation through degree-argument trigonometry --------
+
+#[test]
+fn sin_cos_degrees_propagates_non_finite_input() {
+    for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let (s, c) = x.sin_cos_degrees();
+        assert!(s.is_nan() && c.is_nan(), "{x} gave ({s}, {c})");
+    }
+}

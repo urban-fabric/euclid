@@ -6,7 +6,7 @@
 //! combinatorics but have no reason to be in a standard library.
 //!
 //! Nothing here duplicates `core`. Where a constant is available there, use `core`; the
-//! [`Real`] trait's accessors already route to it.
+//! [`Real`](crate::Real) trait's accessors already route to it.
 //!
 //! That rule is maintained rather than assumed: `core` grows. Rust 1.99 added
 //! `EULER_GAMMA` and `GOLDEN_RATIO`, both of which this module had been carrying as its own
@@ -18,7 +18,7 @@
 //!
 //! # The split between this module and the trait
 //!
-//! [`Real`] carries a constant as a **method** when a carrier-generic formula
+//! [`Real`](crate::Real) carries a constant as a **method** when a carrier-generic formula
 //! needs to lift it — an expression or graph carrier has to be able to intern its own
 //! representation of `π`, so `T::pi()` is the only portable way to write it. That set is
 //! deliberately small.

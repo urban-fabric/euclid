@@ -273,6 +273,54 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// `(sin, cos)` in one call.
     fn sin_cos(self) -> (Self, Self);
 
+    /// `(sin, cos)` of an angle in **degrees**, exact on the quadrant boundaries.
+    ///
+    /// `x.to_radians().sin_cos()` is not exact there: `90f64.to_radians()` is the
+    /// nearest `f64` to `π/2` rather than `π/2`, so its cosine is `6.1e-17` and
+    /// not zero. Reducing in degrees *first* — where multiples of 90 are
+    /// represented exactly — makes the residual exactly zero at every quadrant, so
+    /// the result is exactly `(0, 1)`, `(1, 0)`, `(0, −1)` or `(−1, 0)`.
+    ///
+    /// Anything accumulating these, like a rotation applied to a lot of points,
+    /// wants that: a `6.1e-17` leak in a cosine that should be zero is the kind of
+    /// term that survives into an answer which should have been axis-aligned.
+    ///
+    /// Follows GeographicLib's `sincosd`, including its two IEEE-754 conventions
+    /// (F.10.1.12/13): a `−0` cosine is returned as `+0`, and a zero sine takes
+    /// the sign of the argument. A non-finite argument gives `(NaN, NaN)`.
+    ///
+    /// ```
+    /// use euclid_numeric::Real;
+    ///
+    /// assert_eq!(90.0_f64.sin_cos_degrees(), (1.0, 0.0));
+    /// assert_eq!(180.0_f64.sin_cos_degrees(), (0.0, -1.0));
+    /// assert_eq!(720.0_f64.sin_cos_degrees(), (0.0, 1.0));
+    /// // What the naive route gives instead:
+    /// assert_ne!(90.0_f64.to_radians().cos(), 0.0);
+    /// ```
+    fn sin_cos_degrees(self) -> (Self, Self);
+
+    /// The polynomial with `coefficients` evaluated at `self`, by Horner's rule.
+    ///
+    /// **Highest power first**, so `[a, b, c]` is `a·x² + b·x + c`. Zero for an
+    /// empty slice.
+    ///
+    /// Deliberately plain `acc * x + c` rather than
+    /// [`mul_add`](Self::mul_add): a fused multiply-add is *more* accurate, which
+    /// is the problem — the series expansions that use this are fitted against a
+    /// reference implementation that does not fuse, and matching it bit-for-bit is
+    /// what lets those fits be checked against published values. A caller wanting
+    /// the fused form should fold `mul_add` directly.
+    ///
+    /// ```
+    /// use euclid_numeric::Real;
+    ///
+    /// // 2x² − 3x + 1 at x = 4  ->  32 − 12 + 1
+    /// assert_eq!(4.0_f64.polyval(&[2.0, -3.0, 1.0]), 21.0);
+    /// assert_eq!(4.0_f64.polyval(&[]), 0.0);
+    /// ```
+    fn polyval(self, coefficients: &[Self]) -> Self;
+
     // --- powers / roots ---
     /// `√(self² + other²)` without intermediate overflow.
     fn hypot(self, other: Self) -> Self;

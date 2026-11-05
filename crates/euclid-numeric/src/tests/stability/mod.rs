@@ -12,6 +12,7 @@
 //!
 //! Split by failure mode.
 
+mod argument_reduction;
 mod cancellation;
 mod classical;
 mod extremes;
