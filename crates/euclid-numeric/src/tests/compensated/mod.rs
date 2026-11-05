@@ -10,4 +10,5 @@
 
 mod derived;
 mod primitives;
+mod reductions;
 mod trigonometric;

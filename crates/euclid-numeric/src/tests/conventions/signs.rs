@@ -31,3 +31,23 @@ fn copysign_transfers_only_the_sign_bit() {
         assert_eq!(Real::copysign(Real::abs(&x), x), x, "copysign(|x|, x) = x");
     }
 }
+
+// --- zero signs from degree-argument trigonometry -----------------------
+
+#[test]
+fn sin_cos_degrees_follows_the_ieee_sign_conventions() {
+    // F.10.1.12/13: a vanished cosine is `+0`, and a vanished sine carries the
+    // argument's sign. Checked on the bits, since `-0.0 == 0.0`.
+    let (_, cos) = 90.0_f64.sin_cos_degrees();
+    assert!(
+        cos.is_sign_positive(),
+        "a zero cosine must be +0, got {cos}"
+    );
+    let (sin_neg, _) = (-360.0_f64).sin_cos_degrees();
+    assert!(
+        sin_neg.is_sign_negative(),
+        "a zero sine takes the argument's sign, got {sin_neg}"
+    );
+    let (sin_pos, _) = 360.0_f64.sin_cos_degrees();
+    assert!(sin_pos.is_sign_positive());
+}

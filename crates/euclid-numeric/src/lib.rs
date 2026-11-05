@@ -175,10 +175,22 @@ pub trait NormedDivisionAlgebra: Arithmetic {
     fn magnitude(&self) -> Self::RealPart;
 }
 
-/// The constant catalogue — the one public module, because it is the one thing here that is a
-/// genuine *namespace* rather than a single item. `constants::f64::CATALAN` reads correctly;
-/// flattening thirty-odd constants into the crate root would not.
+// Three public modules, and each is here for the same reason: it is a genuine *namespace*
+// rather than a single item, so flattening it into the crate root would read worse.
+// `constants::f64::CATALAN`, `compensated::sum` and `interval::contains` all say what they
+// are; a bare `sum` or `contains` at the root would not.
+
+// Plain comments, not `///`: a doc comment here would be concatenated with the module
+// file's own `//!` header and the whole block resolved in *this* module's scope, which
+// silently breaks every link that referred to an item inside the submodule. Each module
+// documents itself in its own file.
+//
+//   compensated  accurate reductions: compensated summation and dot products
+//   constants    the constant catalogue, `constants::f64::CATALAN` and friends
+//   interval     one-dimensional closed-interval predicates over any `Real`
+pub mod compensated;
 pub mod constants;
+pub mod interval;
 
 // Every trait lives in a private module and is re-exported at the root below, so each has
 // exactly one public path. `control_flow` and `interpolate` were `pub mod` for a while, which
