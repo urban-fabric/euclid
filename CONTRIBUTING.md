@@ -36,16 +36,48 @@ jj undo                     # undo the last jj operation
 jj op log                   # every operation, so nothing is truly lost
 ```
 
-Bookmarks (jj's branches) **do not advance on their own**. After committing, the
-`main` bookmark still points where it did, so moving it is a deliberate step:
+## Publishing: A Branch and a Squash Merge, Never a Direct Push
+
+**Do not push to `main`.** Push the work to a new branch, open a pull request, and
+squash-merge that into `main`.
+
+The reason is the section below: there is no CI here, so the pull request is the
+only review gate the project has. A direct push to `main` does not skip a
+formality — it skips the only point at which a change is read by someone other
+than its author. And because the merge is a *squash*, the PR title and body are
+not commentary on the commit, they **become** it: whatever you write there is what
+lands on `main` and is all anyone reading `git log` later will have.
+
+Bookmarks (jj's branches) **do not advance on their own**, which works in your
+favour here — after `jj commit`, nothing has moved and nothing has left your
+machine. Publishing is a separate, deliberate step:
 
 ```sh
-jj bookmark set main -r @-  # point main at the change you just committed
-jj git push                 # push it
+jj git push --named my-feature=@-   # create the bookmark and push it in one go
 ```
 
-Both of those reach outside your machine, so treat them as publish actions rather
-than part of the commit loop.
+`--named` creates the remote branch and starts tracking it. Push follow-up commits
+on the same branch with `jj bookmark set my-feature -r @-` and then
+`jj git push --bookmark my-feature`. If you do not care what the branch is called,
+`jj git push -c @-` will name one after the change id.
+
+Then open the PR and squash-merge it on GitHub.
+
+**After the squash merge, reconcile deliberately.** A squash merge puts a *new,
+different* commit on `main` — it does not fast-forward to yours, so your local
+commits are now redundant copies of work that has already landed under another
+hash. Do not merge or rebase them forward:
+
+```sh
+jj git fetch                 # pick up the squashed commit on main
+jj new main@origin           # start the next change on top of it
+jj abandon <your-local-commits>   # drop the now-redundant originals
+```
+
+Skipping that is how the same change ends up in the history twice.
+
+Pushing and merging both reach outside your machine, so treat them as publish
+actions rather than part of the commit loop — and run the checks below first.
 
 ## Checks Run Locally, Not in CI
 
@@ -107,13 +139,15 @@ changelog is worse than none.
 
 Instead:
 
-- Put the explanation in the **commit message** (`jj describe`) and the **pull
-  request body**. That is where a breaking rename or a changed numeric convention
-  gets described.
+- Put the explanation in the **pull request body**, which the squash merge turns
+  into the commit message on `main`. That is where a breaking rename or a changed
+  numeric convention gets described. Write it as the permanent record it becomes,
+  not as a note to the reviewer.
 - Bump the workspace version in the root `Cargo.toml` when the public surface
   moves. All four crates share `[workspace.package]`, so they version together.
 - Say so in the PR title when imports or semantics change, since downstream
-  projects read titles to decide whether they need to react.
+  projects read titles to decide whether they need to react — and since under a
+  squash merge the title is the one line that survives into `jj log`.
 
 This should be revisited if euclid ever reaches 1.0 and outside consumers depend
 on it, but that is not the situation today.
