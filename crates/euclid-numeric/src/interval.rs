@@ -101,10 +101,24 @@ pub fn from_point_pair<T: Real>(a: T, b: T) -> (T, T) {
 }
 
 /// `point` clamped into closed interval `[lo, hi]`.
+///
+/// A NaN `point` passes through as NaN, following [`Real::clamp`] and `f64::clamp`
+/// rather than the [`min`](Real::min)/[`max`](Real::max) this is composed from. Those
+/// return the *non-NaN* operand, so without the explicit branch below a NaN would clamp
+/// to `hi` — silently turning a missing or failed measurement into a finite-looking
+/// value at the edge of the interval, which is the one result a caller cannot detect.
+///
+/// The bounds themselves are not checked: an empty interval (`lo > hi`) clamps to `lo`.
+/// This is why the kernel cannot simply delegate to [`Real::clamp`], which **panics** on
+/// `lo > hi` or a NaN bound — the empty interval is a normal state here, not an error.
 #[inline]
 #[must_use]
 pub fn clamp_point<T: Real>(lo: T, hi: T, point: T) -> T {
-    lo.max(hi.min(point))
+    // `select` evaluates both arms rather than branching, so this stays usable by a
+    // carrier that cannot be branched on at all.
+    let point_is_nan = point.is_nan();
+    let clamped = lo.max(hi.min(point.clone()));
+    T::select(&point_is_nan, point, clamped)
 }
 
 /// Non-negative gap between two closed intervals, zero where they intersect.
@@ -182,5 +196,8 @@ mod tests {
         assert!(contains(0.0_f32, 2.0, 1.0));
         assert_eq!(gap(0.0_f32, 2.0, 5.0, 8.0), 3.0);
         assert_eq!(union(1.0_f32, 0.0, 1.0, 3.0), (1.0, 3.0));
+        assert_eq!(clamp_point(0.0_f32, 2.0, 5.0), 2.0);
+        // The NaN branch is carrier-generic, so it must hold at f32 too.
+        assert!(clamp_point(0.0_f32, 2.0, f32::NAN).is_nan());
     }
 }

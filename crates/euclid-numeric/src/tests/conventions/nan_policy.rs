@@ -1,4 +1,12 @@
 //! The min/max NaN policy, and how it differs from mask-based selection.
+//!
+//! One kernel deliberately opts out of this policy: [`interval::clamp_point`] carries an
+//! explicit `is_nan` branch so a NaN value is preserved rather than ignored, matching
+//! [`Real::clamp`] instead of the `min`/`max` it is composed from. That branch is not
+//! redundant and must not be simplified away; `edge_cases::clamp_point_preserves_nan_like_real_clamp`
+//! pins it.
+//!
+//! [`interval::clamp_point`]: crate::interval::clamp_point
 
 use crate::{Compare, Real};
 
