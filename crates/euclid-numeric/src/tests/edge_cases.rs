@@ -6,7 +6,7 @@
 //! that arrived as `NaN`. The contract is only useful if the behavior there is *defined*, so
 //! these tests pin it.
 
-use crate::{Compare, Real};
+use crate::{Compare, Real, interval};
 
 // --- NaN propagation ----------------------------------------------------
 
@@ -267,6 +267,24 @@ fn clamp_requires_ordered_non_nan_bounds() {
     assert_eq!(Real::clamp(0.5, 0.0, 1.0), 0.5);
     // A NaN value (not bound) passes through as NaN.
     assert!(Real::clamp(f64::NAN, 0.0, 1.0).is_nan());
+}
+
+#[test]
+fn clamp_point_preserves_nan_like_real_clamp() {
+    // The two clamps in this crate must agree on NaN. `interval::clamp_point` is composed
+    // from `min`/`max`, which return the non-NaN operand, so it carries an explicit NaN
+    // branch to avoid clamping a missing measurement to `hi` and making it look finite.
+    assert!(interval::clamp_point(0.0, 1.0, f64::NAN).is_nan());
+    assert!(Real::clamp(f64::NAN, 0.0, 1.0).is_nan());
+
+    // Well-formed clamping is unaffected by that branch.
+    assert_eq!(interval::clamp_point(0.0, 1.0, 5.0), 1.0);
+    assert_eq!(interval::clamp_point(0.0, 1.0, -5.0), 0.0);
+    assert_eq!(interval::clamp_point(0.0, 1.0, 0.5), 0.5);
+
+    // Where the two deliberately differ: an empty interval is a normal state for the
+    // kernel (it clamps to `lo`), while `Real::clamp` panics on `lo > hi`.
+    assert_eq!(interval::clamp_point(1.0, 0.0, 0.5), 1.0);
 }
 
 #[test]
