@@ -6,32 +6,42 @@ members = [
     "crates/euclid-tensor",
     "crates/euclid-units",
     "crates/euclid-utils",
+    "crates/napier",
     "crates/oresme",
 ]
 
 # The euclid *contract* crates are dependency-free: trait surfaces, f64/f32
 # reference scalar implementations, integer/natural/bool carriers, and physical
 # quantities. None of them pulls a third-party dependency; the only edges in the
-# graph are the three leaf crates onto euclid-numeric.
+# graph are the leaf crates onto euclid-numeric.
 #
 #     euclid-numeric  (no dependencies)
 #       ├── euclid-units
 #       │     └── oresme
 #       ├── euclid-tensor
-#       └── euclid-random
+#       ├── euclid-random
+#       └── napier
 #
-# `oresme` is the one member that is not a contract crate and not dependency-free:
-# it is the concrete f64 *carrier* tier that implements euclid's unit contracts,
-# and it carries `bytemuck` (Pod/Zeroable storage wrappers) and `serde`. The
-# dependency-free property is per-crate, not per-workspace — a consumer taking
-# `euclid-numeric` or `euclid-units` still gets no third-party edges. Only a
-# consumer that asks for `oresme` pays for them.
+# Two members are *carrier* tiers rather than contract crates — concrete types
+# that implement the contracts above, rather than more contracts:
 #
-# oresme lived in its own repository until it was folded back here. The split was
-# historical rather than architectural: oresme exists to implement euclid's unit
-# contracts, its only dependencies were already euclid crates, and keeping it in a
-# separate repository meant two git dependency edges and a second release to
-# coordinate for every change that crossed the contract/carrier line.
+#   `oresme` is the concrete f64 unit carrier. It is the one member that is not
+#   dependency-free: it carries `bytemuck` (Pod/Zeroable storage wrappers) and
+#   `serde`. That property is per-crate, not per-workspace — a consumer taking
+#   `euclid-numeric` or `euclid-units` still gets no third-party edges. Only a
+#   consumer that asks for `oresme` pays for them.
+#
+#   `napier` is the concrete Copy scalar carrier: the `Real` and `Complex`
+#   numbers where the algebra tower and the numeric analysis surface fuse. It
+#   depends on euclid-numeric alone and adds nothing third-party.
+#
+# Both lived in their own repositories until they were folded back here, and in
+# both cases the split was historical rather than architectural: each exists to
+# implement euclid's contracts, each depended on nothing but euclid crates, and
+# each cost two git dependency edges and a second merge to coordinate for every
+# change that crossed the contract/carrier line. napier had additionally gone
+# stale — it still named the `euclid` facade crate that 0.3 removed, so it did
+# not resolve against euclid's own main branch at all.
 #
 # euclid-utils is a dev-only member: every crate uses it under [dev-dependencies] for
 # shared test helpers, and it is publish = false, so it never reaches a consumer.
@@ -51,6 +61,8 @@ euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
 euclid-units = { version = "0.3.0", path = "crates/euclid-units" }
 # The concrete f64 carrier tier for the unit contracts above.
 oresme = { version = "0.3.0", path = "crates/oresme" }
+# The concrete Copy scalar carrier — Real and Complex.
+napier = { version = "0.3.0", path = "crates/napier" }
 # Dev-only shared helpers; never a runtime dependency of a published crate.
 euclid-utils = { version = "0.3.0", path = "crates/euclid-utils" }
 

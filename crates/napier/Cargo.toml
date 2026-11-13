@@ -1,0 +1,30 @@
+[package]
+name = "napier"
+# napier predates the fold into euclid and carries its own licence rather than
+# inheriting the workspace's Apache-2.0. A move should not relicense code.
+license = "Proprietary"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "The concrete Copy numeric tier - the Real and Complex numbers where euclid's algebra and lazy-numeric foundations unify. The eager backend's scalar surface."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The analysis surface napier fuses with its own algebra tower: euclid-numeric
+# spells these `Real`/`Complex`, and napier imports them under its former
+# `LazyReal`/`LazyComplex` names to avoid colliding with its own concrete types.
+euclid-numeric.workspace = true
+
+[lints.rust]
+unsafe_code = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+self_named_module_files = "warn"
