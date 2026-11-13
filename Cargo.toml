@@ -6,17 +6,32 @@ members = [
     "crates/euclid-tensor",
     "crates/euclid-units",
     "crates/euclid-utils",
+    "crates/oresme",
 ]
 
-# The euclid crates are dependency-free contracts crates: trait surfaces, f64/f32
+# The euclid *contract* crates are dependency-free: trait surfaces, f64/f32
 # reference scalar implementations, integer/natural/bool carriers, and physical
-# quantities. Nothing here pulls a third-party dependency; the only edges in the
+# quantities. None of them pulls a third-party dependency; the only edges in the
 # graph are the three leaf crates onto euclid-numeric.
 #
 #     euclid-numeric  (no dependencies)
 #       ├── euclid-units
+#       │     └── oresme
 #       ├── euclid-tensor
 #       └── euclid-random
+#
+# `oresme` is the one member that is not a contract crate and not dependency-free:
+# it is the concrete f64 *carrier* tier that implements euclid's unit contracts,
+# and it carries `bytemuck` (Pod/Zeroable storage wrappers) and `serde`. The
+# dependency-free property is per-crate, not per-workspace — a consumer taking
+# `euclid-numeric` or `euclid-units` still gets no third-party edges. Only a
+# consumer that asks for `oresme` pays for them.
+#
+# oresme lived in its own repository until it was folded back here. The split was
+# historical rather than architectural: oresme exists to implement euclid's unit
+# contracts, its only dependencies were already euclid crates, and keeping it in a
+# separate repository meant two git dependency edges and a second release to
+# coordinate for every change that crossed the contract/carrier line.
 #
 # euclid-utils is a dev-only member: every crate uses it under [dev-dependencies] for
 # shared test helpers, and it is publish = false, so it never reaches a consumer.
@@ -31,6 +46,11 @@ repository = "https://github.com/urban-fabric/euclid"
 
 [workspace.dependencies]
 euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
+# The dimension contracts `oresme` implements. Declared here now that a member
+# crate depends on it rather than only consumers outside the workspace.
+euclid-units = { version = "0.3.0", path = "crates/euclid-units" }
+# The concrete f64 carrier tier for the unit contracts above.
+oresme = { version = "0.3.0", path = "crates/oresme" }
 # Dev-only shared helpers; never a runtime dependency of a published crate.
 euclid-utils = { version = "0.3.0", path = "crates/euclid-utils" }
 
