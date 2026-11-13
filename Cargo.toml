@@ -6,6 +6,7 @@ members = [
     "crates/euclid-tensor",
     "crates/euclid-units",
     "crates/euclid-utils",
+    "crates/frobenius",
     "crates/napier",
     "crates/oresme",
 ]
@@ -19,11 +20,12 @@ members = [
 #       ├── euclid-units
 #       │     └── oresme
 #       ├── euclid-tensor
+#       │     └── frobenius
 #       ├── euclid-random
 #       └── napier
 #
-# Two members are *carrier* tiers rather than contract crates — concrete types
-# that implement the contracts above, rather than more contracts:
+# Three members are not plain contract crates. Two are *carrier* tiers —
+# concrete types implementing the contracts above — and one is *content*:
 #
 #   `oresme` is the concrete f64 unit carrier. It is the one member that is not
 #   dependency-free: it carries `bytemuck` (Pod/Zeroable storage wrappers) and
@@ -35,13 +37,21 @@ members = [
 #   numbers where the algebra tower and the numeric analysis surface fuse. It
 #   depends on euclid-numeric alone and adds nothing third-party.
 #
-# Both lived in their own repositories until they were folded back here, and in
-# both cases the split was historical rather than architectural: each exists to
-# implement euclid's contracts, each depended on nothing but euclid crates, and
-# each cost two git dependency edges and a second merge to coordinate for every
-# change that crossed the contract/carrier line. napier had additionally gone
-# stale — it still named the `euclid` facade crate that 0.3 removed, so it did
-# not resolve against euclid's own main branch at all.
+#   `frobenius` is the matrix extensions beyond the rank contract — the SPD,
+#   triangular-solve, QR, eigen and SVD traits plus the algorithms written once
+#   over them. It names no backend: a backend supplies the concrete tensor type
+#   these monomorphize on. euclid 0.2 deliberately shed linear-algebra content
+#   from the tensor contract, and that decision is preserved here — frobenius is
+#   a separate crate, not something merged back into euclid-tensor. What changed
+#   is only the repository boundary, not the crate boundary.
+#
+# All three lived in their own repositories until they were folded back here,
+# and in every case the split was historical rather than architectural: each
+# exists to implement or extend euclid's contracts, each depended on nothing but
+# euclid crates, and each cost git dependency edges plus a second merge to
+# coordinate any change that crossed the boundary. napier and frobenius had
+# additionally gone stale — both still named the `euclid` facade crate that 0.3
+# removed, so neither resolved against euclid's own main branch at all.
 #
 # euclid-utils is a dev-only member: every crate uses it under [dev-dependencies] for
 # shared test helpers, and it is publish = false, so it never reaches a consumer.
@@ -59,10 +69,15 @@ euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
 # The dimension contracts `oresme` implements. Declared here now that a member
 # crate depends on it rather than only consumers outside the workspace.
 euclid-units = { version = "0.3.0", path = "crates/euclid-units" }
+# The rank-n Tensor contract that `frobenius` extends.
+euclid-tensor = { version = "0.3.0", path = "crates/euclid-tensor" }
 # The concrete f64 carrier tier for the unit contracts above.
 oresme = { version = "0.3.0", path = "crates/oresme" }
 # The concrete Copy scalar carrier — Real and Complex.
 napier = { version = "0.3.0", path = "crates/napier" }
+# The matrix extensions beyond the rank contract: SPD/QR/eigen/SVD traits and
+# the algorithms over them. Contracts + content, no backend.
+frobenius = { version = "0.3.0", path = "crates/frobenius" }
 # Dev-only shared helpers; never a runtime dependency of a published crate.
 euclid-utils = { version = "0.3.0", path = "crates/euclid-utils" }
 

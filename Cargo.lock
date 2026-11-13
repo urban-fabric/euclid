@@ -58,6 +58,14 @@ name = "euclid-utils"
 version = "0.3.0"
 
 [[package]]
+name = "frobenius"
+version = "0.3.0"
+dependencies = [
+ "euclid-numeric",
+ "euclid-tensor",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
