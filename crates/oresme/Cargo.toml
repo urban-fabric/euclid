@@ -1,0 +1,29 @@
+[package]
+name = "oresme"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Standard metric/unit primitives - speeds, lengths, times, angles, mass, temperature, area, acceleration, percentages, epoch timestamps, plus byte-size and count newtypes, with uncertainty intervals and affine positions. Domain-agnostic; the concrete f64 carriers for euclid's unit contracts."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The two euclid tiers oresme implements against: `euclid-units` for the dimension
+# contracts plus the `Dimension`/`dim` vocabulary this crate's concrete units
+# implement, and `euclid-numeric` for the carrier-generic interval kernels
+# `ops::Interval` delegates its arithmetic to. The container (`euclid-tensor`) and
+# sampler (`euclid-random`) tiers stay out of the graph.
+euclid-numeric.workspace = true
+euclid-units.workspace = true
+bytemuck = { version = "1.25", features = ["derive", "min_const_generics"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true
