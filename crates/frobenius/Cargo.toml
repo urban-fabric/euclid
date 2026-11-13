@@ -1,0 +1,32 @@
+[package]
+name = "frobenius"
+# frobenius predates the fold into euclid and carries its own licence rather
+# than inheriting the workspace's Apache-2.0. A move should not relicense code.
+license = "Proprietary"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "Backend-generic linear algebra traits and algorithms over euclid's rank-n Tensor contract, for eager and XLA backends."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# frobenius is *content*: it names the matrix extensions beyond the rank
+# contract (`PreparedSpd`, `SpdFactor`, `TriangularSolve`, the decomposition
+# traits) and the algorithms written once over them, and never touches a
+# backend. A backend supplies the concrete tensor type these monomorphize on.
+euclid-numeric.workspace = true
+euclid-tensor.workspace = true
+
+[lints.rust]
+unsafe_code = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+self_named_module_files = "warn"
