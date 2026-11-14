@@ -19,12 +19,9 @@ path = "src/lib.rs"
 # `LazyReal`/`LazyComplex` names to avoid colliding with its own concrete types.
 euclid-numeric.workspace = true
 
-[lints.rust]
-unsafe_code = "warn"
-unreachable_pub = "warn"
-
-[lints.clippy]
-unwrap_used = "warn"
-expect_used = "warn"
-panic = "warn"
-self_named_module_files = "warn"
+# Inherited, like every other member. The warn-level copy of this table that
+# came over with the fold named the same lints one severity down, and napier
+# violates none of them, so inheriting costs nothing and stops the crate from
+# silently drifting out of the workspace's standard.
+[lints]
+workspace = true
