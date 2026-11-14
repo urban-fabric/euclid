@@ -174,9 +174,14 @@ cargo test --doc --workspace
 ```
 
 Lints (`unsafe_code`, `unreachable_pub`, `unwrap_used`, `expect_used`, `panic`,
-`self_named_module_files`) are declared once in `[workspace.lints]` at the root
-and inherited by each crate. Shared package metadata comes from
-`[workspace.package]`, so all four crates version together.
+`mod_module_files`) are declared once in `[workspace.lints]` at the root and
+inherited by each crate — including `napier` and `frobenius`, which arrived from
+their own repositories with a warn-level copy of the same table. Shared package
+metadata comes from `[workspace.package]`, so all eight crates version together.
+
+`mod_module_files` means a module with children is `foo.rs` beside `foo/`, never
+`foo/mod.rs`. Note the near-miss: `self_named_module_files` is the *opposite*
+lint and demands `mod.rs`.
 
 ## License
 

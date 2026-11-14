@@ -88,4 +88,8 @@ unreachable_pub = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
-self_named_module_files = "deny"
+# `mod_module_files`, not `self_named_module_files` -- the two are opposites and
+# only the name distinguishes them. This one denies `mod.rs`; the other one
+# demanded it, which is how the workspace ended up requiring the layout the
+# fleet had standardised away from.
+mod_module_files = "deny"
