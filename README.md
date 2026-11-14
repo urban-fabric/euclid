@@ -57,15 +57,28 @@ to do arithmetic.
 
 ## The Boundary
 
-euclid is a set of contracts, not an engine. It deliberately ships no
-`Meters` struct, no tensor type, and no PRNG.
+euclid's **contract** crates are contracts, not an engine. `euclid-units`
+defines what a length *is* without shipping a `Meters` struct; `euclid-tensor`
+defines the rank contract without shipping a tensor; `euclid-random` defines the
+sampler contract without shipping a PRNG.
 
-| euclid defines | you implement |
+| the contract crates define | you implement |
 |----------------|---------------|
 | the operations a formula may use | storage layout and allocation |
 | the trait tiers, plus `f64`/`f32`/integer/natural/`bool` impls | the execution runtime |
 | physical dimensions and their cross-dimensional algebra | your own unit carriers |
 | the array and sampler contracts | concrete tensors and a PRNG |
+
+**Three crates in this repository are the other side of that table.** `oresme`
+*is* the `Meters` struct. `napier` *is* the concrete `Copy` number line.
+`frobenius` is linear-algebra content over the tensor contract. They live here
+because each depends on nothing but euclid and nothing released them
+independently — but they are kept as separate crates precisely so the boundary
+above still holds: a consumer that takes `euclid-units` gets contracts only and
+never sees `oresme`.
+
+That distinction is the whole reason the crate list below is grouped rather
+than flat.
 
 The practical consequence is three rules that look arbitrary until you know
 they exist to keep *deferred* carriers possible — you cannot branch on a graph
@@ -78,17 +91,21 @@ tree:
 
 ## Crates
 
-`euclid-numeric` is the foundation and has no dependencies at all. The other
-three depend on it and never on each other, so a consumer takes on only the
-surface it uses. There is no umbrella crate — depend on the specific crates you
-need.
+`euclid-numeric` is the foundation and has no dependencies at all. Everything
+else depends on it and never on a peer, so a consumer takes on only the surface
+it uses. **There is no umbrella crate** — depend on the specific crates you need.
 
 ```
-euclid-numeric        no dependencies
-├── euclid-units      → euclid-numeric
-├── euclid-tensor     → euclid-numeric
-└── euclid-random     → euclid-numeric
+euclid-numeric            no dependencies
+├── euclid-units          → euclid-numeric
+│   └── oresme            → euclid-units, euclid-numeric
+├── euclid-tensor         → euclid-numeric
+│   └── frobenius         → euclid-tensor, euclid-numeric
+├── euclid-random         → euclid-numeric
+└── napier                → euclid-numeric
 ```
+
+**Contracts** — write a formula against these and it runs on any carrier.
 
 | crate | purpose |
 |-------|---------|
@@ -97,8 +114,21 @@ euclid-numeric        no dependencies
 | [`euclid-tensor`](crates/euclid-tensor) | the rank-graded `Tensor` contract, its capability extensions, and dtype/spec metadata |
 | [`euclid-random`](crates/euclid-random) | explicit-key random sampler contracts |
 
-Nothing here pulls a third-party dependency; the only edges in the graph are the
-three leaf crates onto `euclid-numeric`.
+**Carriers and content** — the concrete side, folded in from their own
+repositories because each depended on nothing but euclid.
+
+| crate | purpose |
+|-------|---------|
+| [`oresme`](crates/oresme) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
+| [`napier`](crates/napier) | the concrete `Copy` number line (`Real`, `Complex`) plus the algebra tower and exact carriers (`Rational`, `Zn`, `GaussianRational`) |
+| [`frobenius`](crates/frobenius) | matrix extensions beyond the rank contract — SPD, triangular solve, QR, eigen, SVD traits and the algorithms over them |
+
+Only `oresme` pulls a third-party dependency (`bytemuck` and `serde`), and that
+cost is per-crate: a consumer of the contract crates still gets none.
+
+`euclid-utils` is a dev-only member — every crate takes it under
+`[dev-dependencies]` for shared test helpers, and it is `publish = false`, so it
+never reaches a consumer.
 
 ## Using It
 
@@ -108,6 +138,10 @@ euclid-numeric = "0.3"   # the scalar foundation
 euclid-units = "0.3"     # add only what you use
 euclid-tensor = "0.3"
 euclid-random = "0.3"
+
+oresme = "0.3"           # concrete f64 quantities, if you need them
+napier = "0.3"           # the concrete Copy number line
+frobenius = "0.3"        # matrix extensions over the tensor contract
 ```
 
 Crate names are hyphenated; in Rust they are imported with underscores:
