@@ -71,13 +71,12 @@ euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
 euclid-units = { version = "0.3.0", path = "crates/euclid-units" }
 # The rank-n Tensor contract that `frobenius` extends.
 euclid-tensor = { version = "0.3.0", path = "crates/euclid-tensor" }
-# The concrete f64 carrier tier for the unit contracts above.
-oresme = { version = "0.3.0", path = "crates/oresme" }
-# The concrete Copy scalar carrier — Real and Complex.
-napier = { version = "0.3.0", path = "crates/napier" }
-# The matrix extensions beyond the rank contract: SPD/QR/eigen/SVD traits and
-# the algorithms over them. Contracts + content, no backend.
-frobenius = { version = "0.3.0", path = "crates/frobenius" }
+# `oresme`, `napier` and `frobenius` are deliberately absent: an entry here is
+# for a dependency some *member* takes, and all three are leaves of the graph
+# above — they implement or extend the contract crates and nothing in the
+# workspace depends on them back. The folds left entries behind, which cargo
+# reports as `unused_workspace_dependencies`. Re-add one only when a member
+# actually names it; a consumer outside the workspace does not need it here.
 # Dev-only shared helpers; never a runtime dependency of a published crate.
 euclid-utils = { version = "0.3.0", path = "crates/euclid-utils" }
 
