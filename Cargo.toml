@@ -142,7 +142,10 @@ euclid-utils = { version = "0.5.0", path = "crates/euclid-utils" }
 # euclid-scalar to check the two same-named tiers it fuses agree, and euclid-utils because the
 # measuring instrument is worth measuring. Only euclid-matrix does not, and cannot: its traits
 # are backend primitives with no carrier here to run a law against, generated or fixed.
-# Like euclid-utils it is publish = false and never reaches a published artifact.
+# Unlike euclid-utils it is not purely dev-only: the five contract crates take it as an
+# *optional* dependency enabled by their `conformance` feature, because the generated laws they
+# export are written against it. A consumer that only binds the contract never sees it; one that
+# turns on `conformance` is asking for the test surface and gets the engine with it.
 euclid-stability = { version = "0.5.0", path = "crates/euclid-stability" }
 
 [workspace.lints.rust]

@@ -509,3 +509,141 @@ where
         assert_eq!(W::add(a, a), a, "{what}: a ⊕ a = a (idempotent)");
     }
 }
+
+/// The tier laws over **generated** carriers, for a carrier author who wants the search.
+///
+/// # Why this one needs a trait and the others did not
+///
+/// `euclid-tensor` can generate a carrier through `Tensor::from_host` and `euclid-units`
+/// through `Measure::from_raw`, because both contracts already contain a
+/// constructor. The algebra tower contains none and should not: a [`Semiring`] is a set with two
+/// operations, and "build me one from a number" is not part of being one — `Zp<7>` and a
+/// polynomial ring have nothing in common to build *from*.
+///
+/// So the carrier supplies its own generator, through [`generated::GeneratedSample`]. That is
+/// the same
+/// division of labour [`ConformanceSample`] already uses, with a generator in place of a list.
+///
+/// # What generation reaches that a fixed sample does not
+///
+/// `conformance`'s own docs argue for fixed samples and the argument is right — *about the law*.
+/// An algebraic law over a small carrier either holds structurally or fails on the first awkward
+/// triple, so six well-chosen values find what a thousand random ones would.
+///
+/// What it does not cover is the carrier's **representation**. A reduced fraction has to *stay*
+/// reduced after arithmetic rather than only after construction; a Fermat inverse has to agree
+/// with division at every residue, not just the four a sample lists; a Gaussian rational carries
+/// two rationals that each have to stay reduced through a multiply that mixes them. Those are
+/// properties of a large state space, and a fixed list of six cannot cover the interaction
+/// between a reduction step and an overflow boundary.
+///
+/// The division of labour, then: the fixed suite proves the tiers are satisfiable and that your
+/// carrier satisfies them; this one hunts the representation invariants underneath, and re-runs
+/// the tier laws for free while it is there.
+#[cfg(any(feature = "conformance", test))]
+pub mod generated {
+    use euclid_stability::{Config, Gen, check, classify};
+
+    use super::{commutative_semiring_laws, euclidean_laws, field_laws, ring_laws, semiring_laws};
+    use crate::{CommutativeSemiring, EuclideanDomain, Field, Ring, Semiring};
+
+    /// A carrier's own generator, declared once — the generated peer of
+    /// [`ConformanceSample`](super::ConformanceSample).
+    ///
+    /// Weight it toward the values that break things rather than uniformly: `0` and `±1` are the
+    /// identities and the annihilator, so they are what a law is most likely to get wrong, and a
+    /// uniform draw over a wide range would almost never produce them.
+    ///
+    /// Bound the magnitudes by what your arithmetic can hold. The laws run over *triples* —
+    /// distributivity alone forms `(a ⊕ b) ⊗ c` — so a carrier backed by a fixed-width integer
+    /// should keep a triple's worst case well inside it. A debug-build overflow panics, and that
+    /// panic is indistinguishable from a law failure at the call site.
+    pub trait GeneratedSample: Sized {
+        /// Values to draw from.
+        fn generator() -> Gen<Self>;
+
+        /// How many cases to run. Defaulted at 300: enough that the shrinker has something to
+        /// work with, few enough that every tier law over a triple stays quick.
+        fn cases() -> usize {
+            300
+        }
+    }
+
+    /// Three is the minimum that exercises a three-operand law at all; six matches what a fixed
+    /// sample uses, and the laws are `O(n³)`.
+    fn sample<T: GeneratedSample + 'static>() -> Gen<Vec<T>> {
+        euclid_stability::generate::vec(T::generator(), 3, 6)
+    }
+
+    fn settings<T: GeneratedSample>() -> Config {
+        Config::default().cases(T::cases())
+    }
+
+    /// [`semiring_laws`] over generated elements — the trunk every other tier refines.
+    pub fn semiring_laws_generated<T>(what: &str)
+    where
+        T: Semiring + GeneratedSample + core::fmt::Debug + Copy + 'static,
+    {
+        check(what, &settings::<T>(), &sample::<T>(), |xs| {
+            classify!("contains zero", xs.contains(&T::ZERO));
+            semiring_laws(&xs, what);
+            Ok(())
+        });
+    }
+
+    /// [`commutative_semiring_laws`] over generated elements.
+    ///
+    /// Separate from [`semiring_laws_generated`] rather than folded into it, because commutative
+    /// `⊗` is a strictly narrower claim — matrix multiplication is a semiring and is not
+    /// commutative, so a single entry point would exclude it.
+    pub fn commutative_semiring_laws_generated<T>(what: &str)
+    where
+        T: CommutativeSemiring + GeneratedSample + core::fmt::Debug + Copy + 'static,
+    {
+        check(what, &settings::<T>(), &sample::<T>(), |xs| {
+            classify!("contains zero", xs.contains(&T::ZERO));
+            commutative_semiring_laws(&xs, what);
+            Ok(())
+        });
+    }
+
+    /// [`ring_laws`] over generated elements — the additive-inverse tier.
+    pub fn ring_laws_generated<T>(what: &str)
+    where
+        T: Ring + GeneratedSample + core::fmt::Debug + Copy + 'static,
+    {
+        check(what, &settings::<T>(), &sample::<T>(), |xs| {
+            classify!("contains zero", xs.contains(&T::ZERO));
+            ring_laws(&xs, what);
+            Ok(())
+        });
+    }
+
+    /// [`field_laws`] over generated elements.
+    ///
+    /// The division laws skip `ZERO` internally, so a generator that produces it
+    /// is not a problem — and should, since a field law that silently never divided by anything
+    /// awkward is the one most worth running.
+    pub fn field_laws_generated<T>(what: &str)
+    where
+        T: Field + GeneratedSample + core::fmt::Debug + Copy + 'static,
+    {
+        check(what, &settings::<T>(), &sample::<T>(), |xs| {
+            classify!("contains zero", xs.contains(&T::ZERO));
+            field_laws(&xs, what);
+            Ok(())
+        });
+    }
+
+    /// [`euclidean_laws`] over generated elements — division with remainder.
+    pub fn euclidean_laws_generated<T>(what: &str)
+    where
+        T: EuclideanDomain + GeneratedSample + core::fmt::Debug + Copy + 'static,
+    {
+        check(what, &settings::<T>(), &sample::<T>(), |xs| {
+            classify!("contains zero", xs.contains(&T::ZERO));
+            euclidean_laws(&xs, what);
+            Ok(())
+        });
+    }
+}

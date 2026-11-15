@@ -69,6 +69,21 @@ transpose before returning. Getting this backwards yields a correctly-shaped and
 result for any square input, which is why it is worth a paragraph rather than a formula. `eigh`
 likewise returns `(λ, V)` with eigenvectors as *columns*.
 
+**The generated conformance strategy is now exported, and enabling `conformance` pulls
+`euclid-stability`.** Additive — nothing that compiled stops compiling — but it changes what the
+feature costs, so it is listed.
+
+Each contract crate's `conformance` module gained a `generated` submodule holding the search
+euclid runs against its own carriers: `tensor_laws_generated`, `key_laws_generated`,
+`quantity_laws_generated`, `semiring_laws_generated`, `real_laws_generated` and their siblings.
+`euclid-tensor` and `euclid-units` build your carrier through `Tensor::from_host` and
+`Measure::from_raw`, so they need nothing from you; `euclid-algebra` and `euclid-numeric` need a
+`GeneratedSample` impl, since their contracts contain no constructor.
+
+`euclid-stability` is therefore an **optional runtime dependency** of the five contract crates
+rather than purely dev-only. Default builds are unaffected and the dependency is absent from
+them — verified with `cargo tree --edges normal`.
+
 **`Tensor::transpose_axes` now documents a precondition it always had**: `axes` must be a
 permutation of `0..rank()`. A shorter list is not a partial permutation leaving the remaining axes
 alone; it is out of contract. No signature change, but if you were passing a short list, the

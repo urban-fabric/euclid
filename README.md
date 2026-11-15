@@ -186,8 +186,9 @@ euclid-numeric             no dependencies
                                               ↑
 euclid-algebra             no dependencies ───┘
 
-euclid-utils               dev-only, no dependencies   ┐ publish = false;
-euclid-stability            dev-only, no dependencies   ┘ never in the graph above
+euclid-utils               dev-only, no dependencies     publish = false
+euclid-stability           no dependencies               publish = false; a runtime
+                                                         edge only under `conformance`
 ```
 
 Three crates depend on a **peer** as well as on a root — `euclid-quantity` on
@@ -233,6 +234,52 @@ compiled otherwise, so a broken law would pass every other check.
 traits are backend primitives, so only a concrete tensor can satisfy them, and
 euclid ships none.
 
+### The laws come in two strategies
+
+Each law takes a slice, and there are two ways to get one. Both are public, and
+running both is the recommendation:
+
+```rust,ignore
+// The fixed sample you declare — six values you chose because they stress your carrier.
+euclid_tensor::conformance::tensor_laws_for::<MyTensor>("MyTensor");
+
+// The generated search euclid ships — shapes weighted toward the cases that hide bugs.
+euclid_tensor::conformance::generated::tensor_laws_generated::<MyTensor>("MyTensor");
+```
+
+They answer different questions. A **fixed** sample proves a tier is
+*satisfiable* and that your carrier satisfies it, and a failure is a value in
+your source with no seed to recover. A **generated** one hunts the thing a fixed
+list cannot cover — your carrier's *representation*, which is a large state
+space rather than a structural claim.
+
+The second used to live in euclid's private test tree, which meant euclid shipped
+half its testing strategy and every backend rediscovered the other half. What
+was being withheld is specific and worth naming:
+
+- `euclid-tensor` weights extents toward **repeated** ones, where a permutation
+  applied backwards produces the right shape and the wrong data, and reaches
+  **rank 4**. euclid's own `structural_laws` was malformed at rank ≥ 4 for as
+  long as its reference sample stopped at rank 3 — a backend whose sample stops
+  where euclid's did inherits exactly that blind spot.
+- `euclid-random` **deduplicates its seeds by construction**, because `key_laws`
+  asserts every *pair* draws differently and a repeated seed therefore fails it
+  for reasons that say nothing about the backend.
+- `euclid-units` draws signs and half-integers, because the defaulted `round`,
+  `trunc`, `floor` and `clamp` bodies branch on orderings and signs rather than
+  on structure.
+
+Two crates needed nothing new to export this — `Tensor::from_host` and
+`Measure::from_raw` already let euclid build a carrier. `euclid-algebra` and
+`euclid-numeric` do need one thing from you, a `GeneratedSample` impl, because a
+`Semiring` has no constructor and should not: "build me one from a number" is not
+part of being one.
+
+The engine comes with the feature. `euclid-stability` is an optional dependency
+of the five contract crates, enabled by `conformance` — so a consumer that only
+binds the contract never sees it, and one that asks for the test surface gets
+what the test surface is written against.
+
 | crate | purpose |
 |-------|---------|
 | [`euclid-numeric`](crates/euclid-numeric) | scalar algebra tiers, real analysis, masks, special functions, interpolation, graph control flow |
@@ -249,9 +296,13 @@ euclid ships none.
 | [`euclid-quantity`](crates/euclid-quantity) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
 | [`euclid-scalar`](crates/euclid-scalar) | the concrete `Copy` number line — `Real` and `Complex`, where the algebra tower and the analysis surface fuse |
 
-**Dev-only** — two further members that a consumer never receives. Both are
-`publish = false` and taken under `[dev-dependencies]`, so they appear in no
-published artifact and in no part of the graph above.
+**Dev-only** — two further members, both `publish = false`, neither of which a
+consumer receives unless it asks. `euclid-utils` is taken only under
+`[dev-dependencies]` and so appears nowhere in the graph above.
+`euclid-stability` is **also an optional runtime dependency of the five contract
+crates, enabled by their `conformance` feature** — see
+[the generated laws](#the-laws-come-in-two-strategies) for why the engine has to
+travel with them.
 
 | crate | purpose |
 |-------|---------|
@@ -378,9 +429,11 @@ euclid shipping a tensor is worse than two tested ones.
 Only `euclid-quantity` pulls a third-party dependency (`bytemuck` and `serde`),
 and that cost is per-crate: a consumer of the contract crates still gets none.
 
-`euclid-utils` and `euclid-stability` are the two dev-only members — the crates
-take them under `[dev-dependencies]` for shared test helpers and for the
-property engine, and both are `publish = false`, so neither reaches a consumer.
+`euclid-utils` and `euclid-stability` are the two dev-only members, both
+`publish = false`. `euclid-utils` is purely a `[dev-dependencies]` entry and
+reaches no consumer at all. `euclid-stability` reaches one that enables a
+`conformance` feature, and only then — the generated laws are written against
+it, so the engine travels with the test surface a consumer opted into.
 
 ## Using It
 

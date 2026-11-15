@@ -354,8 +354,10 @@ README's [data-structure section][ds].
     `conformance`'s own docs argue for it. An algebraic law over a small carrier
     either holds structurally or fails on the first awkward triple.
   - The **generated** sample is a companion suite beside it, written with
-    `euclid-stability` (the dev-only engine; take it under `[dev-dependencies]`,
-    as eight of the ten members now do). It takes the *same* law functions and
+    `euclid-stability`. For a suite inside this repository, take it under
+    `[dev-dependencies]`; the five contract crates additionally carry it as an
+    optional dependency so their *exported* generated laws can be written
+    against it. It takes the *same* law functions and
     changes only where the slice comes from. Nothing is restated, so a law cannot
     drift between the two. What it adds is the thing a fixed list cannot cover:
     the carrier's **representation**, which is a large state space rather than a

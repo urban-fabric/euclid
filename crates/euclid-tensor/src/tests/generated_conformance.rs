@@ -44,7 +44,6 @@ use euclid_stability::{Config, Gen, check, classify, generate, property};
 
 use super::dense::Dense;
 use crate::Tensor;
-use crate::conformance::{self as laws};
 
 /// Few enough that each case running every law over a rank-4 tensor stays quick, and enough
 /// that the weighted extents actually produce a repeated-extent rank-3 case.
@@ -144,47 +143,26 @@ fn extents(shape: &[usize]) -> &'static str {
     }
 }
 
-property! {
-    #![config(
-        settings("tensor-laws")
-            .require("a repeated-extent tensor", 10.0)
-            .require("a rank-0 tensor", 1.0)
-            .require("a rank-4 tensor", 1.0)
-    )]
+// ===== The exported generated laws, run against Dense ============================
+//
+// These call `conformance::generated` rather than re-deriving the shape strategy. The strategy
+// is public API now — a backend gets the repeated-extent and rank-4 search rather than having to
+// rediscover it — so euclid has to be its first caller, and a local copy would compile and drift.
+//
+// `Dense` reaches them through `Tensor::from_host`, the same route a backend takes, so this also
+// checks that the exported laws need nothing a real carrier does not already provide.
 
-    /// `Dense` against every law the crate states, over generated shapes.
-    ///
-    /// `tensor_laws` is the aggregate a backend author calls, so this is the same entry point
-    /// a consumer would use — over generated shapes rather than five fixed tensors.
-    ///
-    /// The four labels are independent rather than exclusive, and each has a floor: a run that
-    /// never produced a repeated extent, a rank-0 skip or a rank-4 tensor would be reporting
-    /// coverage this suite exists to provide and did not actually reach.
-    fn dense_satisfies_the_tensor_laws(xs in generate::vec(tensor(), 1, 3)) {
-        classify!("a repeated-extent tensor", xs.iter().any(|x| has_repeated_extents(&x.shape())));
-        classify!("a rank-0 tensor", xs.iter().any(|x| x.rank() == 0));
-        classify!("a rank-4 tensor", xs.iter().any(|x| x.rank() == MAX_RANK));
-        classify!("a unit axis", xs.iter().any(|x| x.shape().contains(&1)));
-        laws::tensor_laws(&xs, "Dense");
-    }
+/// `Dense` against every law the crate states, over the generated shapes euclid ships.
+#[test]
+fn dense_satisfies_the_generated_tensor_laws() {
+    crate::conformance::generated::tensor_laws_generated::<Dense>("Dense");
 }
 
-property! {
-    #![config(settings("tensor-structure"))]
-
-    /// The shape and structural halves, separately.
-    ///
-    /// Run alongside the aggregate rather than instead of it: if `tensor_laws` ever stopped
-    /// calling one of its parts, the aggregate would still pass while that part went
-    /// unchecked, and these are what notice.
-    ///
-    /// In its own block with no coverage floors, because it draws from the same generator as
-    /// the aggregate above — the floors are a claim about `tensor()`, so asserting them twice
-    /// would duplicate the claim rather than check anything further.
-    fn dense_satisfies_the_shape_and_structural_laws(xs in generate::vec(tensor(), 1, 3)) {
-        laws::shape_laws(&xs, "Dense");
-        laws::structural_laws(&xs, "Dense");
-    }
+/// The shape and structural halves separately, so that one quietly dropping out of the aggregate
+/// is still noticed.
+#[test]
+fn dense_satisfies_the_generated_shape_and_structural_laws() {
+    crate::conformance::generated::shape_and_structural_laws_generated::<Dense>("Dense");
 }
 
 property! {

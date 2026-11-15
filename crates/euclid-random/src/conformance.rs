@@ -288,3 +288,107 @@ where
         );
     }
 }
+
+/// The same laws over **generated** seeds, for a backend that wants the search rather than the
+/// five-seed sample.
+///
+/// # Why this is exported rather than left for each backend to write
+///
+/// The laws above are unusual in euclid: most of them are *inequality* claims about a mixing
+/// function — distinct seeds draw distinct values, children are pairwise independent, `split` and
+/// `fold_in` are different derivations. An equality law over a small carrier either holds
+/// structurally or fails on the first awkward triple, which is the argument for a fixed sample
+/// and a good one. An inequality law about a hash is a claim about a *large state space*, and
+/// five seeds sample it five times.
+///
+/// A backend writing its own version has to rediscover one precondition that is not obvious and
+/// not optional: [`key_laws`] asserts that every *pair* of seeds draws differently, so **a sample
+/// containing the same seed twice fails it** — and that failure says nothing about the backend,
+/// since law 1 requires the same seed to draw the same value. Distinctness is a precondition on
+/// the sample. A hand-written list satisfies it by inspection; a generator has to be told, and
+/// the obvious spelling (generate a `Vec`, then `filter` for distinctness) is the wrong one,
+/// because the shrinker's job is to make values more alike and it will spend its budget walking
+/// into collisions it then rejects.
+///
+/// So the generator deduplicates by construction. That is the knowledge this module exists to
+/// ship.
+#[cfg(any(feature = "conformance", test))]
+pub mod generated {
+    use euclid_stability::{Config, Gen, check, classify, generate};
+
+    use super::{key_laws, sampler_bound_laws};
+    use crate::RandomSampler;
+
+    /// A seed, weighted toward the magnitudes a mixing function gets wrong.
+    ///
+    /// `0` first, because a multiplicative mixer that forgets to handle it degenerates there and
+    /// every derivation law then passes vacuously. The full-range draw is the other half — a
+    /// mixer that only shifts right loses the high bits — and the small values are what make a
+    /// first failure readable.
+    fn seed() -> Gen<u64> {
+        generate::weighted(vec![
+            (2, generate::just(0i64)),
+            (2, generate::just(1i64)),
+            (2, generate::just(-1i64)),
+            (3, generate::int(0, 64)),
+            (3, generate::int(i64::MIN, i64::MAX)),
+        ])
+        .map(|v| v as u64)
+    }
+
+    /// Distinct seeds, deduplicated by construction rather than by rejection — see the module
+    /// docs for why that distinction matters here.
+    ///
+    /// Four is the widest worth running: the laws are quadratic in the sample and draw several
+    /// times per pair, so breadth comes from the case count instead.
+    fn seeds() -> Gen<Vec<u64>> {
+        generate::distinct(seed(), 1, 4)
+    }
+
+    fn settings() -> Config {
+        Config::default()
+            .cases(300)
+            .require("contains zero", 5.0)
+            .require("a high-bit seed", 10.0)
+    }
+
+    /// [`key_laws`] over generated seeds.
+    ///
+    /// The coverage floors are part of the contract being checked, not decoration: a run that
+    /// never drew `0` would pass every derivation law vacuously on a degenerate mixer, and one
+    /// that never drew a high-bit seed would miss a mixer that only decorrelates the low half.
+    pub fn key_laws_generated<R>(what: &str)
+    where
+        R: RandomSampler,
+        R::Real: PartialEq + core::fmt::Debug,
+    {
+        check(what, &settings(), &seeds(), |xs: Vec<u64>| {
+            classify!("contains zero", xs.contains(&0));
+            classify!(
+                "a high-bit seed",
+                xs.iter().any(|s| *s > u64::from(u32::MAX))
+            );
+            key_laws::<R>(&xs, what);
+            Ok(())
+        });
+    }
+
+    /// [`sampler_bound_laws`] over generated seeds.
+    pub fn sampler_bound_laws_generated<R>(what: &str)
+    where
+        R: RandomSampler,
+        R::Real: PartialEq + PartialOrd + core::fmt::Debug,
+        R::Bool: PartialEq + core::fmt::Debug,
+        R::Int: PartialEq + PartialOrd + core::fmt::Debug,
+    {
+        check(what, &settings(), &seeds(), |xs: Vec<u64>| {
+            classify!("contains zero", xs.contains(&0));
+            classify!(
+                "a high-bit seed",
+                xs.iter().any(|s| *s > u64::from(u32::MAX))
+            );
+            sampler_bound_laws::<R>(&xs, what);
+            Ok(())
+        });
+    }
+}

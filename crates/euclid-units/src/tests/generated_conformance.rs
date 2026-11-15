@@ -32,103 +32,39 @@
 //! withholds `LinearQuantity`, which is the asymmetry the tier split exists to
 //! express, and a new carrier would only re-test what those two already pin.
 
-use euclid_stability::{Config, Gen, classify, generate, property};
+// ===== The exported generated laws, run against the toy carriers =================
+//
+// These call `conformance::generated` rather than re-deriving the sign/half-integer strategy.
+// That strategy is public API now, so euclid has to be its first caller — and `Len`/`Tmp` reach
+// it through `Measure::from_raw`, which is the same route a carrier author takes.
+//
+// `Len` and `Tmp` are reused rather than a third carrier being written: `Tmp` withholds
+// `LinearQuantity`, which is the asymmetry the tier split exists to express, and running the
+// scalar defaults through a carrier that stops short of linearity is how that split is shown to
+// hold.
 
 use crate::Measure;
+use crate::conformance::generated;
 
 use super::toy_units::{Len, Tmp};
 
-fn settings(suite: &str) -> Config {
-    Config::default()
-        .cases(400)
-        .regressions(format!("src/tests/regressions/{suite}.txt"))
+/// A linear carrier satisfies the aggregate every carrier author calls.
+#[test]
+fn a_linear_carrier_satisfies_the_generated_quantity_laws() {
+    generated::quantity_laws_generated::<Len>(&Len::from_raw(1e-9), "Len");
 }
 
-/// A finite carrier value, weighted toward what the default bodies branch on.
-fn raw() -> Gen<f64> {
-    generate::weighted(vec![
-        (2, generate::just(0.0)),
-        (2, generate::just(0.5)),
-        (2, generate::just(-0.5)),
-        (2, generate::just(-1.5)),
-        (2, generate::just(1.0)),
-        (12, generate::float::magnitude(-10, 20)),
-    ])
+/// And the measure/scalar halves separately, so one dropping out of the aggregate is noticed.
+#[test]
+fn a_linear_carrier_satisfies_the_generated_measure_and_scalar_laws() {
+    generated::measure_and_scalar_laws_generated::<Len>(&Len::from_raw(1e-9), "Len");
 }
 
-/// Three is the minimum that exercises a three-operand law like `clamp`; six
-/// matches what the fixed suite uses.
-fn lengths() -> Gen<Vec<Len>> {
-    generate::vec(raw().map(Len::from_raw), 3, 6)
-}
-
-fn temperatures() -> Gen<Vec<Tmp>> {
-    generate::vec(raw().map(Tmp::from_raw), 3, 6)
-}
-
-/// The tolerance the approximate comparisons in the scalar laws use.
-fn tol_len() -> Len {
-    Len::from_raw(1e-9)
-}
-
-fn signs(xs: &[f64]) -> &'static str {
-    let any_neg = xs.iter().any(|v| *v < 0.0);
-    let any_pos = xs.iter().any(|v| *v > 0.0);
-    match (any_neg, any_pos) {
-        (true, true) => "mixed signs",
-        (true, false) => "all non-positive",
-        (false, true) => "all non-negative",
-        (false, false) => "all zero",
-    }
-}
-
-property! {
-    #![config(
-        settings("units-linear")
-            .require("mixed signs", 1.0)
-            .require("all non-negative", 1.0)
-    )]
-
-    /// A linear carrier satisfies every law the crate states for one.
-    ///
-    /// `quantity_laws` is the aggregate a carrier author calls, so this is the
-    /// same entry point a consumer would use — over generated samples rather
-    /// than five fixed values.
-    fn a_linear_carrier_satisfies_the_quantity_laws(xs in lengths()) {
-        classify!(signs(&xs.iter().map(Measure::raw).collect::<Vec<_>>()));
-        crate::conformance::quantity_laws(&xs, &tol_len(), "Len");
-    }
-
-    /// The measure round trip and the scalar helpers, separately.
-    ///
-    /// Run alongside the aggregate rather than instead of it: if
-    /// `quantity_laws` ever stopped calling one of its parts, the aggregate
-    /// would still pass while that part went unchecked, and these are what
-    /// notice.
-    fn a_linear_carrier_satisfies_the_measure_and_scalar_laws(xs in lengths()) {
-        classify!(signs(&xs.iter().map(Measure::raw).collect::<Vec<_>>()));
-        crate::conformance::measure_laws(&xs, "Len");
-        crate::conformance::scalar_laws(&xs, &tol_len(), "Len");
-    }
-}
-
-property! {
-    #![config(
-        settings("units-absolute")
-            .require("mixed signs", 1.0)
-            .require("all non-negative", 1.0)
-    )]
-
-    /// An absolute scalar satisfies everything but the linear laws.
-    ///
-    /// `Tmp` withholds `LinearQuantity` deliberately — adding two temperatures
-    /// is meaningless — so it gets the measure and scalar laws only. That
-    /// asymmetry is what the tier split exists to express, and running the
-    /// scalar defaults through a carrier that stops short of linearity is how
-    /// the split is shown to actually hold.
-    fn an_absolute_carrier_satisfies_the_measure_and_scalar_laws(xs in temperatures()) {
-        classify!(signs(&xs.iter().map(Measure::raw).collect::<Vec<_>>()));
-        crate::conformance::measure_laws(&xs, "Tmp");
-        crate::conformance::scalar_laws(&xs, &Tmp::from_raw(1e-9), "Tmp");
-    }
+/// An absolute scalar satisfies everything but the linear laws.
+///
+/// `Tmp` withholds `LinearQuantity` deliberately — adding two temperatures is meaningless — so it
+/// gets the measure and scalar laws only.
+#[test]
+fn an_absolute_carrier_satisfies_the_generated_measure_and_scalar_laws() {
+    generated::measure_and_scalar_laws_generated::<Tmp>(&Tmp::from_raw(1e-9), "Tmp");
 }

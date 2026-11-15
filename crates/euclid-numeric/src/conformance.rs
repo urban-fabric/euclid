@@ -355,3 +355,103 @@ where
         }
     }
 }
+
+/// The scalar laws over **generated** carriers, for a carrier author who wants the search.
+///
+/// # Why this needs a trait
+///
+/// `euclid-tensor` can build a carrier through `Tensor::from_host` and `euclid-units` through
+/// `Measure::from_raw`, because both contracts already contain a constructor. [`Real`] contains
+/// one too — [`Real::scalar`] lifts an `f64` — but reaching for it here would be a mistake: a
+/// carrier that is deliberately *deferred*, an expression handle or a graph node, can lift a
+/// literal and cannot be compared, so generating values that way would produce a sample the laws
+/// cannot evaluate.
+///
+/// So the carrier supplies its own generator through [`generated::GeneratedSample`], and in doing
+/// so decides
+/// which of its values are legal to generate. That is the same division of labour
+/// [`ConformanceSample`] already uses, with a generator in place of a list.
+///
+/// # What generation reaches that a fixed sample does not
+///
+/// [`real_laws`] is a web of identities — `exp`/`ln` round trips, `sin²+cos²`, the hyperbolic
+/// definitions — and each is checked against a tolerance. A fixed sample picks a handful of
+/// arguments; a generated one hunts the argument where a kernel's error is *worst*, which for a
+/// series implementation is a thin region near a crossover rather than anywhere a human would
+/// think to look.
+///
+/// That is the whole reason this crate ships `euclid-stability`'s `target` and `budget`: pair a
+/// generated run with a reported score and the search climbs toward the worst case instead of
+/// sampling uniformly. See [`mod@euclid_stability::target`] and [`euclid_stability::budget`].
+#[cfg(any(feature = "conformance", test))]
+pub mod generated {
+    use euclid_stability::{Config, Gen, check, classify};
+
+    use super::{boolean_laws, mask_laws, real_laws};
+    use crate::{Boolean, Compare, Real};
+
+    /// A carrier's own generator, declared once — the generated peer of
+    /// [`ConformanceSample`](super::ConformanceSample).
+    ///
+    /// Must honour the same sample requirements the slice-taking laws state: for
+    /// [`super::real_laws`] that means **finite and strictly positive**, since the
+    /// logarithm laws need `x > 0`, and values near `1` where the series crossovers live.
+    pub trait GeneratedSample: Sized {
+        /// Values to draw from.
+        fn generator() -> Gen<Self>;
+
+        /// How many cases to run. Defaulted at 400 — these laws are per-value rather than over
+        /// triples, so a wider search is affordable here than in the algebra tower.
+        fn cases() -> usize {
+            400
+        }
+    }
+
+    fn sample<T: GeneratedSample + 'static>() -> Gen<Vec<T>> {
+        euclid_stability::generate::vec(T::generator(), 1, 6)
+    }
+
+    fn settings<T: GeneratedSample>() -> Config {
+        Config::default().cases(T::cases())
+    }
+
+    /// [`real_laws`] over generated values.
+    ///
+    /// `tolerance` is relative and is the carrier's to choose from its own precision — see
+    /// [`super::real_laws`], which explains why a bound that grows with the condition
+    /// number is honest and a bound loosened until the suite passes is not.
+    pub fn real_laws_generated<T>(tolerance: f64, what: &str)
+    where
+        T: Real + GeneratedSample + PartialEq + core::fmt::Debug + 'static,
+        T::Mask: PartialEq + core::fmt::Debug,
+    {
+        check(what, &settings::<T>(), &sample::<T>(), |xs| {
+            real_laws(&xs, tolerance, what);
+            Ok(())
+        });
+    }
+
+    /// [`mask_laws`] over generated values — the comparison surface.
+    pub fn mask_laws_generated<T>(what: &str)
+    where
+        T: Compare + GeneratedSample + PartialEq + core::fmt::Debug + 'static,
+        T::Mask: PartialEq + core::fmt::Debug,
+    {
+        check(what, &settings::<T>(), &sample::<T>(), |xs| {
+            classify!("more than one value", xs.len() > 1);
+            mask_laws(&xs, what);
+            Ok(())
+        });
+    }
+
+    /// [`boolean_laws`] over generated values — the mask carrier's own algebra.
+    pub fn boolean_laws_generated<B>(what: &str)
+    where
+        B: Boolean + GeneratedSample + PartialEq + core::fmt::Debug + 'static,
+    {
+        check(what, &settings::<B>(), &sample::<B>(), |xs| {
+            boolean_laws(&xs, what);
+            Ok(())
+        });
+    }
+}

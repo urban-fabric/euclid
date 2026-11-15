@@ -326,3 +326,72 @@ property! {
         check!(once.value() < 6, "residue {} is not in [0, 6)", once.value());
     }
 }
+
+// ===== The exported generated laws, run against this crate's own carriers =======
+//
+// `GeneratedSample` is public API now — a carrier author outside this repository declares a
+// generator and gets the tier search — so euclid has to be its first caller. These impls are
+// also the worked examples a reader will copy, which is why the bounds are commented rather
+// than merely chosen.
+
+use crate::conformance::generated::{self, GeneratedSample};
+
+impl GeneratedSample for i64 {
+    fn generator() -> Gen<Self> {
+        small_int()
+    }
+}
+
+impl GeneratedSample for Rational64 {
+    fn generator() -> Gen<Self> {
+        rational64()
+    }
+}
+
+impl GeneratedSample for GaussianRational {
+    fn generator() -> Gen<Self> {
+        gaussian()
+    }
+}
+
+impl GeneratedSample for Zp<7> {
+    fn generator() -> Gen<Self> {
+        residue::<7>().map(Zp::<7>::new)
+    }
+}
+
+impl GeneratedSample for Zn<6> {
+    fn generator() -> Gen<Self> {
+        residue::<6>().map(Zn::<6>::new)
+    }
+}
+
+#[test]
+fn the_integers_satisfy_the_generated_tier_laws() {
+    generated::semiring_laws_generated::<i64>("i64");
+    generated::commutative_semiring_laws_generated::<i64>("i64");
+    generated::ring_laws_generated::<i64>("i64");
+    generated::euclidean_laws_generated::<i64>("i64");
+}
+
+#[test]
+fn rationals_satisfy_the_generated_tier_laws() {
+    generated::semiring_laws_generated::<Rational64>("Rational64");
+    generated::ring_laws_generated::<Rational64>("Rational64");
+    generated::field_laws_generated::<Rational64>("Rational64");
+}
+
+#[test]
+fn gaussian_rationals_satisfy_the_generated_tier_laws() {
+    generated::semiring_laws_generated::<GaussianRational>("GaussianRational");
+    generated::field_laws_generated::<GaussianRational>("GaussianRational");
+}
+
+/// `Zp` is a field for a prime modulus; `Zn` reaches the ring laws and no further, which is the
+/// distinction a composite modulus makes and the reason both are here.
+#[test]
+fn modular_arithmetic_satisfies_the_generated_tier_laws() {
+    generated::semiring_laws_generated::<Zp<7>>("Zp<7>");
+    generated::field_laws_generated::<Zp<7>>("Zp<7>");
+    generated::ring_laws_generated::<Zn<6>>("Zn<6>");
+}

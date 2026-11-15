@@ -13,7 +13,14 @@ readme = "README.md"
 # The scalar contracts, as functions a carrier author can check their impl against.
 # Off by default; always compiled under `cfg(test)` so our own suites exercise the same
 # code a consumer calls.
-conformance = []
+conformance = ["dep:euclid-stability"]
+
+[dependencies]
+# The property/stability engine, now an **optional runtime dependency** rather than dev-only,
+# enabled by the `conformance` feature. That feature's whole shape is "test surface a consumer
+# opts into and otherwise pays nothing for", and the generated laws are that surface — so the
+# engine travels with them. A consumer that only binds the contract never sees it.
+euclid-stability = { workspace = true, optional = true }
 
 [dev-dependencies]
 euclid-stability.workspace = true

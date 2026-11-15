@@ -43,7 +43,6 @@
 use euclid_stability::{Config, Gen, check, classify, generate, property};
 
 use super::toy_sampler::ToySampler;
-use crate::conformance as laws;
 use crate::{RandomKey, RandomSampler};
 
 type S = ToySampler;
@@ -74,20 +73,6 @@ fn seed() -> Gen<u64> {
         (3, generate::int(i64::MIN, i64::MAX)),
     ])
     .map(|v| v as u64)
-}
-
-/// Distinct seeds, so the pairwise inequality laws have a valid sample.
-///
-/// `generate::distinct` exists because of this suite — it was hand-rolled here first, and the
-/// reasoning is worth having in one place: deduplicating by construction keeps every draw and
-/// every shrink candidate valid, where a `filter` would shrink *towards* the collisions it then
-/// rejects.
-///
-/// Four is the widest worth running: `key_laws` is quadratic in the sample and draws several
-/// times per pair, so a wider sample buys repetition rather than coverage — the breadth here
-/// comes from the case count, not the sample size.
-fn seeds() -> Gen<Vec<u64>> {
-    generate::distinct(seed(), 1, 4)
 }
 
 /// A finite value well inside the exponent range, so a difference or a product in a sampler's
@@ -123,33 +108,26 @@ fn draw(key: &<S as RandomKey>::Key) -> f64 {
     S::uniform(key, SCALAR, 0.0, 1.0)
 }
 
-property! {
-    #![config(
-        settings("key-laws")
-            .require("contains zero", 5.0)
-            .require("a high-bit seed", 10.0)
-    )]
+// ===== The exported generated laws, run against the reference backend =====
+//
+// These call `conformance::generated` rather than re-deriving the seed strategy, which is the
+// point: the strategy is now public API a backend uses, so the only way to know it works is to
+// be its first caller. A local copy would compile and drift.
 
-    /// `ToySampler` against every derivation law, over generated seeds.
-    ///
-    /// `key_laws` is the aggregate a backend author calls, so this is the same entry point a
-    /// consumer would use — over generated seeds rather than five fixed ones.
-    fn the_toy_sampler_satisfies_the_key_laws(xs in seeds()) {
-        classify!("contains zero", xs.contains(&0));
-        classify!("a high-bit seed", xs.iter().any(|s| *s > u64::from(u32::MAX)));
-        laws::key_laws::<S>(&xs, "ToySampler");
-    }
+/// `ToySampler` against every derivation law, over the generated seeds euclid ships.
+#[test]
+fn the_toy_sampler_satisfies_the_generated_key_laws() {
+    crate::conformance::generated::key_laws_generated::<S>("ToySampler");
+}
 
-    /// The parameter laws, over generated seeds.
-    ///
-    /// Run alongside the derivation laws rather than instead of them: the two suites are
-    /// independent halves of the contract, and `sampler_bound_laws` is the one a carrier with
-    /// a host order can run while a masked carrier cannot.
-    fn the_toy_sampler_satisfies_the_sampler_bound_laws(xs in seeds()) {
-        classify!("contains zero", xs.contains(&0));
-        classify!("a high-bit seed", xs.iter().any(|s| *s > u64::from(u32::MAX)));
-        laws::sampler_bound_laws::<S>(&xs, "ToySampler");
-    }
+/// The parameter laws, likewise.
+///
+/// Run alongside the derivation laws rather than instead of them: the two are independent halves
+/// of the contract, and `sampler_bound_laws` is the one a carrier with a host order can run while
+/// a masked carrier cannot.
+#[test]
+fn the_toy_sampler_satisfies_the_generated_sampler_bound_laws() {
+    crate::conformance::generated::sampler_bound_laws_generated::<S>("ToySampler");
 }
 
 property! {
