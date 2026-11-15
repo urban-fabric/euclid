@@ -3,9 +3,9 @@
 //! This module used to declare its own `Quantity`, `ScalarQuantity` and `LinearQuantity`
 //! traits, named identically to euclid-units' and shadowing them at the crate root. Every unit
 //! type then implemented *both* families, with a hand-written bridge delegating one to the
-//! other — 329 impl blocks of it. `use oresme::Quantity` and `use euclid_units::Quantity` were
-//! different traits with the same method names, which is the kind of thing that reads as a typo
-//! for years before anyone checks.
+//! other — 329 impl blocks of it. `use euclid_quantity::Quantity` and
+//! `use euclid_units::Quantity` were different traits with the same method names, which is
+//! the kind of thing that reads as a typo for years before anyone checks.
 //!
 //! There is now one family. These are euclid-units' traits, and a unit here implements
 //! [`Measure`] plus whichever of the opt-in contracts it actually satisfies. Because

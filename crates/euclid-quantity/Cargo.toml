@@ -1,5 +1,5 @@
 [package]
-name = "oresme"
+name = "euclid-quantity"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,7 @@ description = "Standard metric/unit primitives - speeds, lengths, times, angles,
 path = "src/lib.rs"
 
 [dependencies]
-# The two euclid tiers oresme implements against: `euclid-units` for the dimension
+# The two euclid tiers euclid-quantity implements against: `euclid-units` for the dimension
 # contracts plus the `Dimension`/`dim` vocabulary this crate's concrete units
 # implement, and `euclid-numeric` for the carrier-generic interval kernels
 # `ops::Interval` delegates its arithmetic to. The container (`euclid-tensor`) and

@@ -2,7 +2,7 @@
 //! Value tests over the dimension-contract web.
 //!
 //! The contract impls in the sibling modules compiling at all is the structural proof that
-//! oresme's primary units form a coherent implementor set for euclid's mutually recursive
+//! euclid-quantity's primary units form a coherent implementor set for euclid's mutually recursive
 //! contracts. These tests pin the *arithmetic*: that each `times_*`/`per_*` lands in the right
 //! unit with the right magnitude, that the bespoke relations (roots, reciprocals, trig) are
 //! correct, and that the new carriers carry their serde/`UnitOfMeasure` contracts.
@@ -153,7 +153,7 @@ fn new_carriers_carry_unit_of_measure_and_serde() {
 
 #[test]
 fn euclid_contracts_are_reachable_from_the_crate_root() {
-    // The dimension traits are re-exported from oresme, so the algebra reads ergonomically
+    // The dimension traits are re-exported from euclid-quantity, so the algebra reads ergonomically
     // without importing euclid directly.
     use crate::{Length, Mass};
 
