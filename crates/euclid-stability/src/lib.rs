@@ -44,6 +44,9 @@
 //!   assertion still holds.
 //! - [`relation`] — the metamorphic shapes, each taking a comparison, including the two that are
 //!   purely about stability: `forward_stable` and `precision_agrees`.
+//! - [`machine`] — sequential properties, for the bugs that live in an *interleaving* rather than
+//!   in a value: a system checked against an obviously-correct model over a generated sequence of
+//!   operations.
 //!
 //! The property-testing machinery — [`source`], [`generate`], [`shrink`], [`runner`],
 //! [`persist`] — is the **foundation those sit on** rather than the point. A search needs cases
@@ -88,6 +91,7 @@
 //! | [`stats`] | case classification, with coverage you can *require* rather than merely read |
 //! | [`mod@target`] | a score for the search to maximise, so it hunts the worst case |
 //! | [`budget`] | that worst score, committed, so losing accuracy fails the suite |
+//! | [`machine`] | a system against a model, over a generated sequence of operations |
 //!
 //! [`generate::float`] is the numerics half: float generation built to find numerical bugs
 //! rather than to be uniform, which is a different and much more useful distribution.
@@ -119,6 +123,7 @@
 
 pub mod budget;
 pub mod generate;
+pub mod machine;
 pub mod numeric;
 pub mod persist;
 pub mod relation;

@@ -67,6 +67,7 @@ on any machine.
 | `target` | a score for the search to maximise, so it hunts the worst case instead of sampling |
 | `budget` | that worst score, committed — so losing accuracy fails even while the assertion holds |
 | `relation` | the metamorphic relations, named, including `forward_stable` and `precision_agrees` |
+| `machine` | sequential properties: a system against a model, over a generated operation sequence |
 
 **The property-testing foundation those sit on** — a search needs cases to search over and a way
 to minimise what it finds:
@@ -98,7 +99,33 @@ survives.
 Macros: `property!` to declare tests; `check!` / `check_eq!` / `check_ne!` / `check_ulps!` /
 `check_relative!` to assert; `assume!` to skip a case; `classify!` to label one.
 
-## Four things beyond the basics
+## Five things beyond the basics
+
+**Sequential properties.** Everything else here tests one value at a time, which cannot express a
+bug that lives in an *interleaving* — a cache returning a stale entry only after an eviction, a
+key tree colliding only after a split and a fold. `machine` takes a **model** (a slow
+reimplementation whose correctness is obvious) and a **system** (the real thing), generates a
+sequence of commands, and requires agreement at every step.
+
+```rust
+check_machine::<MyMachine>("a_name", &Config::default(), 12);
+```
+
+The reason this is cheap here and awkward elsewhere is the tape. Shrinking a command sequence
+means deleting commands, and a deletion usually makes the rest **illegal** — popping a stack that
+was never pushed. A framework holding a stored list has to detect and repair that, which is where
+proptest-state-machine filters and Hypothesis re-checks preconditions. Here the commands after a
+deletion are not replayed, they are *re-derived*: `Machine::command` takes the model, so the draw
+reads the same tape entries against the state that now exists and produces whatever **that** model
+offers. Every candidate is legal by construction. `an_arbitrary_tape_edit_still_produces_a_legal_sequence`
+pins it by deleting and zeroing every entry of a tape in turn and executing the result.
+
+The restriction that buys it: a command may depend on the model, never on what the system
+returned. That keeps the sequence a pure function of the tape, and therefore shrinkable,
+persistable and replayable — a sequential property inherits the whole engine rather than needing a
+second runner.
+
+## Four more things beyond the basics
 
 **An accuracy budget.** A property asserts a contract — `check_ulps!(got, want, 8)` — and a
 contract is written with headroom, so it admits today's error *and* a worse one. A refactor that

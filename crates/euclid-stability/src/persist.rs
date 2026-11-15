@@ -242,6 +242,21 @@ pub fn refresh(path: &str, name: &str, renderings: &[(Vec<u64>, Option<String>)]
          # mismatch means the generator changed and the tape no longer pins what it used to.\n",
     );
 
+    // Create the directory for symmetry with `save`. In the runner this cannot matter — refresh
+    // only runs when `load` found stale entries, so the file and its directory exist — but an
+    // asymmetry between two functions writing the same file is a trap for the next caller, and
+    // a sequential property over the pair is exactly what would walk into it.
+    if let Some(parent) = Path::new(path).parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(error) = fs::create_dir_all(parent)
+    {
+        eprintln!(
+            "euclid-stability: could not create {}: {error}",
+            parent.display()
+        );
+        return;
+    }
+
     // Other properties' lines first, verbatim, then this property's with fresh renderings.
     for entry in load(path) {
         if entry.belongs_to(name) {
