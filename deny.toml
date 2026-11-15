@@ -1,0 +1,112 @@
+# cargo-deny: the supply-chain gate.
+#
+# euclid is the workspace the rest of the fleet is meant to follow, so this file
+# is written to be copied. The four checks answer four different questions:
+#
+#   advisories — is anything in the graph known-vulnerable or unmaintained?
+#   licenses   — is everything we ship compatible with Apache-2.0?
+#   bans       — is the graph the shape we think it is?
+#   sources    — did every crate come from somewhere we trust?
+#
+# Run as `cargo deny check`. It needs a lockfile and no network beyond the
+# advisory database.
+
+[graph]
+# Only the targets the fleet actually builds for. Without this, cargo-deny walks
+# every platform's optional dependencies and reports crates that are never
+# compiled here.
+targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]
+# Dev-dependencies are in scope. `euclid-property` and `euclid-utils` are
+# dev-only and a vulnerability in a test engine still runs on a developer's
+# machine; excluding them would be checking the artifact rather than the work.
+all-features = true
+
+# ---------------------------------------------------------------------------
+
+[advisories]
+version = 2
+# `deny` for both, rather than the default `warn`: an advisory that only warns
+# is an advisory nobody acts on. An exception belongs in `ignore` below with a
+# reason, so that accepting a risk is a recorded decision rather than a habit.
+yanked = "deny"
+# RUSTSEC ids to accept, each with the reason and the condition for removing it.
+# Empty, and worth keeping empty.
+ignore = []
+
+# ---------------------------------------------------------------------------
+
+[licenses]
+version = 2
+# Everything the fleet publishes is Apache-2.0, so the allow-list is what can be
+# *combined* with that — permissive licences only. Notably absent: anything
+# copyleft. A GPL or even LGPL dependency would change the terms of the
+# published artifact, so it should fail the build rather than be noticed at
+# release time.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+# A crate whose licence cargo-deny cannot determine from metadata needs a human
+# to look, so the confidence bar is high rather than permissive.
+confidence-threshold = 0.93
+
+# ---------------------------------------------------------------------------
+
+[bans]
+# Two copies of one crate at different majors is usually a transitive conflict
+# someone should resolve, not a thing to live with — it doubles compile time and
+# can split a trait implementation across two incompatible types.
+multiple-versions = "deny"
+# A wildcard version is an unpinned dependency; `cargo publish` rejects them
+# anyway, so catching them here is catching them earlier.
+wildcards = "deny"
+# Build scripts, allow-listed by crate rather than blanket-permitted.
+#
+# A build script runs arbitrary code at compile time, so the useful posture is an
+# allow-list: these are the serde/bytemuck chain that `euclid-quantity`
+# takes for its POD layouts and JSON codec, and each is a well-known crate whose
+# script does feature detection. Anything new appearing here should be looked at
+# before being added.
+allow-build-scripts = [
+    "serde",
+    "serde_core",
+    "serde_json",
+    "proc-macro2",
+    "quote",
+    "zmij",
+]
+
+# Crates that must never enter the graph, with the reason. A dependency the
+# fleet has deliberately reimplemented belongs here, so that adding it back is a
+# conversation rather than an accident.
+deny = [
+    # euclid exists partly so the fleet does not depend on an external
+    # linear-algebra stack; `hausdorff`'s README makes the same commitment about
+    # geo crates. Listing them makes the commitment enforceable.
+    { crate = "nalgebra", reason = "euclid is the fleet's linear-algebra surface" },
+    { crate = "ndarray", reason = "euclid-tensor is the fleet's tensor contract" },
+    { crate = "num-traits", reason = "euclid-numeric is the fleet's scalar contract" },
+    { crate = "num-complex", reason = "euclid-scalar is the fleet's complex contract" },
+    { crate = "uom", reason = "euclid-units is the fleet's dimension contract" },
+    { crate = "proptest", reason = "euclid-property is the fleet's property engine" },
+    { crate = "quickcheck", reason = "euclid-property is the fleet's property engine" },
+    { crate = "rand", reason = "euclid-random is the contract; euclid-property carries the engine" },
+]
+
+# ---------------------------------------------------------------------------
+
+[sources]
+# A crate from anywhere other than crates.io or a listed git host is a crate
+# nobody reviewed the provenance of.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# The fleet's own repositories. These are unpublished and reached by git, which
+# is exactly the case `unknown-git = "deny"` would otherwise reject.
+allow-org = { github = ["urban-fabric"] }

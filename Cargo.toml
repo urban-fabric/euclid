@@ -89,6 +89,14 @@ members = [
 # [dev-dependencies] for shared test helpers, and it is publish = false, so it never
 # reaches a consumer. The carrier and content crates (euclid-quantity,
 # euclid-scalar, euclid-algebra, euclid-matrix) do not take it.
+#
+# euclid-property is the second dev-only member, on the same footing. It is the property-test
+# engine the suites generate from, and it is why a `conformance` module's laws can be run twice
+# — once over the fixed ConformanceSample that proves a tier is satisfiable, once over generated
+# input that hunts the representation invariants underneath. It replaces proptest, which
+# deny.toml bans: the fleet's generators are mostly dependent (a rank bounding the axes that
+# index it), which is proptest's documented weak spot, and generating from a replayable choice
+# tape re-derives such a bound on every shrink candidate instead.
 
 [workspace.package]
 version = "0.4.0"
@@ -117,9 +125,13 @@ euclid-tensor = { version = "0.4.0", path = "crates/euclid-tensor" }
 # actually names it; a consumer outside the workspace does not need it here.
 # Dev-only shared helpers; never a runtime dependency of a published crate.
 euclid-utils = { version = "0.4.0", path = "crates/euclid-utils" }
-# Dev-only property-test engine. Declared here now that a member's own suites use it —
-# euclid-numeric's `tests/` take it to search for worst-case numerical error. Like
-# euclid-utils it is publish = false and never reaches a published artifact.
+# Dev-only property-test engine. Eight of the nine other members take it: euclid-numeric to
+# search for worst-case numerical error, euclid-algebra/-units/-tensor/-random for the generated
+# companion to each fixed conformance suite, euclid-quantity for conversion round trips,
+# euclid-scalar to check the two same-named tiers it fuses agree, and euclid-utils because the
+# measuring instrument is worth measuring. Only euclid-matrix does not, and cannot: its traits
+# are backend primitives with no carrier here to run a law against, generated or fixed.
+# Like euclid-utils it is publish = false and never reaches a published artifact.
 euclid-property = { version = "0.4.0", path = "crates/euclid-property" }
 
 [workspace.lints.rust]

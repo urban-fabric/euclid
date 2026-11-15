@@ -6,6 +6,7 @@ license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+readme = "README.md"
 description = "Standard metric/unit primitives - speeds, lengths, times, angles, mass, temperature, area, acceleration, percentages, epoch timestamps, plus byte-size and count newtypes, with uncertainty intervals and affine positions. Domain-agnostic; the concrete f64 carriers for euclid's unit contracts."
 
 [lib]
@@ -23,6 +24,8 @@ bytemuck = { version = "1.25", features = ["derive", "min_const_generics"] }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
+# The property engine, for the generated conversion round-trips.
+euclid-property.workspace = true
 serde_json = "1"
 # euclid-units' conformance suites, so the real `f64` units are checked against the
 # contracts they implement rather than only against hand-written expectations.

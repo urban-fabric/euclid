@@ -25,6 +25,9 @@ dependencies = [
 [[package]]
 name = "euclid-algebra"
 version = "0.4.0"
+dependencies = [
+ "euclid-property",
+]
 
 [[package]]
 name = "euclid-matrix"
@@ -52,6 +55,7 @@ version = "0.4.0"
 dependencies = [
  "bytemuck",
  "euclid-numeric",
+ "euclid-property",
  "euclid-units",
  "serde",
  "serde_json",
@@ -62,6 +66,7 @@ name = "euclid-random"
 version = "0.4.0"
 dependencies = [
  "euclid-numeric",
+ "euclid-property",
  "euclid-utils",
 ]
 
@@ -71,6 +76,7 @@ version = "0.4.0"
 dependencies = [
  "euclid-algebra",
  "euclid-numeric",
+ "euclid-property",
 ]
 
 [[package]]
@@ -78,6 +84,7 @@ name = "euclid-tensor"
 version = "0.4.0"
 dependencies = [
  "euclid-numeric",
+ "euclid-property",
  "euclid-utils",
 ]
 
@@ -86,11 +93,15 @@ name = "euclid-units"
 version = "0.4.0"
 dependencies = [
  "euclid-numeric",
+ "euclid-property",
 ]
 
 [[package]]
 name = "euclid-utils"
 version = "0.4.0"
+dependencies = [
+ "euclid-property",
+]
 
 [[package]]
 name = "itoa"

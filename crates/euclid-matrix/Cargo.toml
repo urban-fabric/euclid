@@ -1,13 +1,23 @@
 [package]
 name = "euclid-matrix"
-# euclid-matrix predates the fold into euclid and carries its own licence rather
-# than inheriting the workspace's Apache-2.0. A move should not relicense code.
-license = "Proprietary"
+# Apache-2.0, inherited from the workspace like every other member.
+#
+# This crate carried `license = "Proprietary"` and a comment arguing that "a move
+# should not relicense code", on the reasoning that it predated the fold into
+# euclid. That has been overridden deliberately by the copyright holder: the
+# fleet ships under one licence, and a single member under different terms makes
+# the whole workspace unpublishable as a set.
+#
+# `cargo deny check` is what surfaced it — "Proprietary" is not a valid SPDX
+# expression, so the crate read as *unlicensed* rather than as restrictively
+# licensed, which is a worse position than either.
+license.workspace = true
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+readme = "README.md"
 description = "Backend-generic linear algebra traits and algorithms over euclid's rank-n Tensor contract, for eager and XLA backends."
 
 [lib]

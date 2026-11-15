@@ -185,6 +185,9 @@ euclid-numeric             no dependencies
 └── euclid-scalar          → euclid-numeric, euclid-algebra
                                               ↑
 euclid-algebra             no dependencies ───┘
+
+euclid-utils               dev-only, no dependencies   ┐ publish = false;
+euclid-property            dev-only, no dependencies   ┘ never in the graph above
 ```
 
 Three crates depend on a **peer** as well as on a root — `euclid-quantity` on
@@ -245,6 +248,34 @@ euclid ships none.
 |-------|---------|
 | [`euclid-quantity`](crates/euclid-quantity) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
 | [`euclid-scalar`](crates/euclid-scalar) | the concrete `Copy` number line — `Real` and `Complex`, where the algebra tower and the analysis surface fuse |
+
+**Dev-only** — two further members that a consumer never receives. Both are
+`publish = false` and taken under `[dev-dependencies]`, so they appear in no
+published artifact and in no part of the graph above.
+
+| crate | purpose |
+|-------|---------|
+| [`euclid-utils`](crates/euclid-utils) | shared test helpers — comparison criteria, finite-difference calculus, domain sweeps, shape assertions |
+| [`euclid-property`](crates/euclid-property) | randomized property testing with shrinking, over a replayable choice tape |
+
+`euclid-property` is the one member that looks like it fails the [membership
+rule](#the-membership-rule) and does not. A test engine is not something the
+fleet must agree on numerically — but it is also not a *deliverable*: it exists
+so the suites in this repository can search for the input that breaks a contract
+rather than asserting a fixed list of them. It replaces `proptest`, which
+`deny.toml` bans for a stated reason: the fleet's generators are mostly
+*dependent* (a rank that bounds the axes indexing it, a node count that bounds
+the edges after it), and that is proptest's documented weak spot — nested
+`prop_flat_map` shrinking is capped and silently stops improving the
+counterexample. Generating from a tape re-derives a dependent bound on every
+candidate instead, so there are no shrink implementations to write and adding a
+generator cannot introduce a shrinking bug.
+
+Each contract crate's conformance laws are now run twice: once over a fixed
+sample, and once over generated input. The two answer different questions, which
+[CONTRIBUTING](CONTRIBUTING.md#what-a-change-should-come-with) spells out — the
+fixed sample proves a tier is satisfiable, the generated one hunts the
+representation invariants underneath it.
 
 ### Which kernels euclid holds
 
@@ -320,9 +351,9 @@ euclid shipping a tensor is worse than two tested ones.
 Only `euclid-quantity` pulls a third-party dependency (`bytemuck` and `serde`),
 and that cost is per-crate: a consumer of the contract crates still gets none.
 
-`euclid-utils` is a dev-only ninth member — the contract crates take it under
-`[dev-dependencies]` for shared test helpers, and it is `publish = false`, so it
-never reaches a consumer.
+`euclid-utils` and `euclid-property` are the two dev-only members — the crates
+take them under `[dev-dependencies]` for shared test helpers and for the
+property engine, and both are `publish = false`, so neither reaches a consumer.
 
 ## Using It
 
@@ -347,8 +378,7 @@ euclid-matrix = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch =
 ```
 
 Take only the crates you use; there is no umbrella crate to pull the rest in.
-Note that `euclid-algebra`, `euclid-scalar` and `euclid-matrix` are licensed
-differently from the others — see [License](#license).
+Every member is Apache-2.0 — see [License](#license).
 
 Crate names are hyphenated; in Rust they are imported with underscores:
 
@@ -375,17 +405,26 @@ Run the standard checks across the workspace before publishing changes:
 
 ```sh
 cargo fmt --all --check
-cargo test --all-targets --workspace
-cargo clippy --all-targets --workspace -- -D warnings
-cargo test --doc --workspace
+cargo test --all-targets --workspace --all-features
+cargo clippy --all-targets --workspace --all-features -- -D warnings
+cargo test --doc --workspace --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --all-features
+cargo deny check
 ```
+
+All six, and [CONTRIBUTING](CONTRIBUTING.md#the-checks) says why each one is
+there — in particular why `--all-features` is not padding (the `conformance`
+suites are feature-gated, so the default build never compiles them) and what
+`cargo deny check` is enforcing beyond vulnerabilities.
 
 Lints (`unsafe_code`, `unreachable_pub`, `unwrap_used`, `expect_used`, `panic`,
 `mod_module_files`) are declared once in `[workspace.lints]` at the root and
 inherited by each crate — including `euclid-algebra`, `euclid-scalar` and
 `euclid-matrix`, which arrived from their own repositories with a warn-level
-copy of the same table. Shared package
-metadata comes from `[workspace.package]`, so all nine crates version together.
+copy of the same table. Shared package metadata comes from
+`[workspace.package]`, so all ten crates version together and under one licence
+— including those same three, which carried `license = "Proprietary"` until 0.4.
+See [License](#license) for what `cargo deny` made of that.
 
 `mod_module_files` means a module with children is `foo.rs` beside `foo/`, never
 `foo/mod.rs`. Note the near-miss: `self_named_module_files` is the *opposite*
@@ -396,16 +435,26 @@ lint and demands `mod.rs`.
 Licensed under the [Apache License, Version 2.0](LICENSE).
 Copyright 2026 Raymond Mead.
 
-**Three crates are excepted.** `euclid-algebra`, `euclid-scalar` and
-`euclid-matrix` each declare `license = "Proprietary"` rather than inheriting
-the workspace's Apache-2.0. `euclid-algebra` and `euclid-matrix` arrived here
-from their own repositories, and `euclid-scalar` was split out of
-`euclid-algebra` — a move should not relicense code, and neither should a split.
-Everything else — the four contract crates, `euclid-quantity`, and the dev-only
-`euclid-utils` — takes `license.workspace = true` and is Apache-2.0.
+**There are no exceptions.** Every one of the ten members takes
+`license.workspace = true`, so the whole workspace is Apache-2.0 and versions
+together under one licence.
+
+Three of them did not, until 0.4. `euclid-algebra` and `euclid-matrix` arrived
+from their own repositories and `euclid-scalar` was split out of
+`euclid-algebra`, and each carried `license = "Proprietary"` with a comment
+arguing that a move should not relicense code and neither should a split. That
+has been overridden deliberately by the copyright holder: the fleet ships under
+one licence, and a single member under different terms makes the workspace
+unpublishable as a set.
+
+`cargo deny check` is what surfaced it, and the detail is worth keeping.
+`"Proprietary"` is not a valid SPDX expression, so the three crates did not read
+as *restrictively licensed* — they read as **unlicensed**, which is a worse
+position than either, and no amount of care in the comment above the field
+changed what a tool would conclude.
 
 Apache-2.0 governs what a recipient may do with the code; it does not oblige
 anyone to publish it. Keeping this repository private is a separate, purely
-practical matter. Note the corollary: anyone who *does* receive it under
-Apache-2.0 holds an irrevocable right to redistribute it, publicly included —
-which is exactly why the two proprietary crates are tracked separately above.
+practical matter. Note the corollary, which is now uniform across the
+workspace: anyone who *does* receive a copy under Apache-2.0 holds an
+irrevocable right to redistribute it, publicly included.

@@ -86,7 +86,7 @@ a test suite that takes well under a second on a laptop. The consequence is that
 **the checks are your responsibility before you push** — nothing downstream will
 catch a regression for you.
 
-Run all five, from the workspace root:
+Run all six, from the workspace root:
 
 ```sh
 cargo fmt --all --check
@@ -94,9 +94,10 @@ cargo test --all-targets --workspace --all-features
 cargo clippy --all-targets --workspace --all-features -- -D warnings
 cargo test --doc --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --all-features
+cargo deny check
 ```
 
-All five must be clean.
+All six must be clean.
 
 `--all-features` is not optional padding. The `conformance` suites are behind a
 feature so a consumer pays nothing for them, which means the default build never
@@ -109,6 +110,27 @@ path has gone stale, and a broken link is worse than a missing one — it silent
 points somewhere plausible. `--document-private-items` is needed because most of
 `euclid-numeric` is `pub(crate)`, so the default doc build never looks at it.
 
+`cargo deny check` is the sixth and the only one that looks *outside* the
+workspace — advisories, licences, the shape of the dependency graph, and where
+each crate came from. It is configured in `deny.toml`, and three parts of it are
+worth knowing before a dependency change:
+
+- **Licences are allow-listed, permissive only.** A copyleft dependency would
+  change the terms of the published artifact, so it fails here rather than being
+  noticed at release time. It also catches a *missing* licence: `"Proprietary"`
+  is not valid SPDX, so three crates that carried it read as `unlicensed` until
+  they were folded onto the workspace's Apache-2.0.
+- **Build scripts are allow-listed by crate.** A build script runs arbitrary
+  code at compile time, so a new one entering the graph should be looked at
+  rather than inherited silently.
+- **`[bans].deny` makes the architecture enforceable.** `nalgebra`, `ndarray`,
+  `num-traits`, `uom`, `proptest` and `rand` are each listed with the euclid
+  crate that exists instead of them. The point is not that they are bad crates —
+  it is that reaching for one should be a conversation rather than an accident,
+  and a comment in a README cannot stop a transitive pull.
+
+It needs the advisory database, so it is the one check that wants a network.
+
 **A git `pre-push` hook will not help you here.** `jj` does not run git hooks, so
 a `.git/hooks/pre-push` script is silently skipped on `jj git push` — exactly when
 you would want it. Use a `jj` alias instead, in your own
@@ -119,16 +141,24 @@ you would want it. Use a `jj` alias instead, in your own
 check = ["util", "exec", "--", "sh", "-c", """
   set -e
   cargo fmt --all --check
-  cargo test --all-targets --workspace
-  cargo clippy --all-targets --workspace -- -D warnings
-  cargo test --doc --workspace
-  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+  cargo test --all-targets --workspace --all-features
+  cargo clippy --all-targets --workspace --all-features -- -D warnings
+  cargo test --doc --workspace --all-features
+  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --all-features
+  cargo deny check
 """]
 ```
 
 Then `jj check` before `jj git push`. That lives in your user config rather than
 the repo, so it stays a personal habit rather than a project mandate — and it
 costs nothing but your own CPU.
+
+**Note the `--all-features` on all four cargo commands.** The alias carried the
+flagless form for a while, which made it a weaker gate than the check set above
+rather than a convenience wrapper around it: the `conformance` modules are
+feature-gated, so a run without the flag never compiles the laws and reports a
+clean pass over code it did not look at. If you keep your own variant, keep the
+flag.
 
 Lints are declared once in `[workspace.lints]` at the root and inherited by every
 crate, so `clippy -- -D warnings` is the same gate everywhere. `unsafe_code`,
@@ -149,7 +179,7 @@ Instead:
   numeric convention gets described. Write it as the permanent record it becomes,
   not as a note to the reviewer.
 - Bump the workspace version in the root `Cargo.toml` when the public surface
-  moves. All nine crates share `[workspace.package]`, so they version together.
+  moves. All ten crates share `[workspace.package]`, so they version together.
 - Say so in the PR title when imports or semantics change, since downstream
   projects read titles to decide whether they need to react — and since under a
   squash merge the title is the one line that survives into `jj log`.
@@ -208,12 +238,51 @@ README's [data-structure section][ds].
 
   This is the direct defense against the failure mode named below, and it is why
   the laws live in `src/` rather than in `tests/` — a law in a test protects only
-  us. `euclid-algebra` has them; the other contract crates do not yet.
+  us. **All six contract crates have them**, so a new law goes into an existing
+  module rather than starting one.
 
   Write laws as **relations between results**, never against transcribed
   reference values: `a ⊕ 0 = a` cannot be mistyped into passing, where a
-  hard-coded product can. And supply fixed samples rather than generated ones, so
-  a failure is reproducible from the test name with no seed to recover.
+  hard-coded product can.
+
+  **Run every law over both a fixed and a generated sample.** These are two
+  different questions and each crate's suites now ask both:
+
+  - The **fixed** sample is the `ConformanceSample` a carrier declares, and it is
+    what proves the tier is *satisfiable* and that our own carriers satisfy it.
+    It is also the reproducible one — a failure is a value in the source, with no
+    seed to recover — which is why the laws themselves take a slice and why
+    `conformance`'s own docs argue for it. An algebraic law over a small carrier
+    either holds structurally or fails on the first awkward triple.
+  - The **generated** sample is a companion suite beside it, written with
+    `euclid-property` (the dev-only engine; take it under `[dev-dependencies]`,
+    as eight of the ten members now do). It takes the *same* law functions and
+    changes only where the slice comes from. Nothing is restated, so a law cannot
+    drift between the two. What it adds is the thing a fixed list cannot cover:
+    the carrier's **representation**, which is a large state space rather than a
+    structural claim. `Rational` staying reduced
+    through arithmetic, `Zp`'s Fermat inverse agreeing with division at every
+    residue, a tensor permutation at *repeated extents* where the wrong direction
+    still produces the right shape, a key mixing function decorrelating the high
+    bits as well as the low ones.
+
+  The reproducibility objection to generating is answered by the engine rather
+  than by avoiding it: pass `.regressions("…/<suite>.txt")` in the `Config`, and
+  a minimised counterexample is persisted as a line of hex that replays exactly,
+  on any machine, before any random case runs. **Commit that file** — each line
+  is a regression test that cost a search to find.
+
+  Put a coverage floor on the cases that motivated the suite — `.require("a
+  repeated-extent tensor", 10.0)` — so a generator that stops producing them
+  fails loudly instead of reporting a clean pass over input it never reached.
+  Note that a floor applies to every property sharing the `#![config(...)]`
+  block, so a property that does not apply the label belongs in its own block.
+
+  The two suites together are what caught `structural_laws` building a malformed
+  3-cycle at rank ≥ 4 — correct for as long as the only sample reaching that
+  branch was rank 3, and wrong for every backend with a rank-4 tensor. A law is
+  code, and a public law that no carrier here can execute is the easiest code in
+  the repository to get wrong.
 - **Anything the contract leaves open** — pick a convention and *write it down*
   in the trait docs, not only in an implementation. Two backends reading the same
   signature differently is the one failure mode that defeats the point of the
@@ -277,10 +346,14 @@ the reason; an unexplained loosening hides the regression it was meant to catch.
 ## License
 
 By contributing you agree your contributions are licensed under the
-[Apache License, Version 2.0](LICENSE), per section 5 of that license — **except**
-in `euclid-algebra`, `euclid-scalar` and `euclid-matrix`, which each declare
-`license = "Proprietary"` rather than inheriting the workspace's Apache-2.0.
-`euclid-algebra` and `euclid-matrix` arrived from their own repositories and
-`euclid-scalar` was split out of `euclid-algebra`; a move should not relicense
-code, and neither should a split. A contribution to one of those three is made
-under its licence, not Apache-2.0, so check which crate you are touching.
+[Apache License, Version 2.0](LICENSE), per section 5 of that license.
+
+**There is no longer a per-crate exception to check.** `euclid-algebra`,
+`euclid-scalar` and `euclid-matrix` each declared `license = "Proprietary"`
+until 0.4, on the reasoning that a move should not relicense code and neither
+should a split. That has been overridden deliberately by the copyright holder:
+every member now takes `license.workspace = true`, so whichever crate you are
+touching, the terms are Apache-2.0. See the README's
+[License](README.md#license) section for what `cargo deny` made of the old
+value — `"Proprietary"` is not valid SPDX, so those crates read as *unlicensed*
+rather than as restrictively licensed.

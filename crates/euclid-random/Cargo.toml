@@ -19,6 +19,10 @@ conformance = []
 euclid-numeric.workspace = true
 
 [dev-dependencies]
+# The property engine, for the generated companion to the fixed conformance suite. The
+# derivation laws here are inequality claims about a mixing function, which is a large state
+# space rather than a structural one — the case generated input is for.
+euclid-property.workspace = true
 euclid-utils.workspace = true
 
 [lints]

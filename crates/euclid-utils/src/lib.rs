@@ -150,10 +150,25 @@ pub fn integrate(f: impl Fn(f64) -> f64, a: f64, b: f64, panels: usize) -> f64 {
 ///
 /// Spelling sweeps this way keeps a test's domain explicit, instead of leaving the reader to
 /// decode `for i in -60..60 { let x = f64::from(i) * 0.25; }`.
+///
+/// **Inclusive means exactly inclusive.** The first point is bit-equal to `lo` and the last to
+/// `hi`, which is what the convex combination `lo(1−t) + hi·t` buys and the stepping form
+/// `lo + step·i` does not: with `step = (hi − lo)/(n − 1)` both the division and the
+/// multiplication round, so the final point lands near `hi` rather than on it.
+/// `sweep(8, -7.985505297780037, 12)` used to end at `-7.985505297780039`, two ulp short.
+///
+/// That matters more here than two ulp usually would. A sweep exists to cover a domain, and a
+/// suite that sweeps *to* a boundary in order to check behaviour at that boundary misses it
+/// entirely when the endpoint falls short — silently, because the assertion still passes on the
+/// point just inside. This is the endpoint law `euclid_numeric::Interpolate` states for
+/// `lerp`, applied where a test's own coverage depends on it.
 pub fn sweep(lo: f64, hi: f64, n: usize) -> impl Iterator<Item = f64> {
     let n = n.max(2);
-    let step = (hi - lo) / (n - 1) as f64;
-    (0..n).map(move |i| lo + step * i as f64)
+    let last = (n - 1) as f64;
+    (0..n).map(move |i| {
+        let t = i as f64 / last;
+        lo * (1.0 - t) + hi * t
+    })
 }
 
 /// `n` points spaced evenly in `log10` across `[lo, hi]`, both of which must be positive.

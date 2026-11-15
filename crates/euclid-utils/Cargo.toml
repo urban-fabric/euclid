@@ -1,5 +1,6 @@
 [package]
 name = "euclid-utils"
+readme = "README.md"
 description = "Shared numerical helpers for the euclid workspace: comparison, calculus, sweeps, and shape assertions."
 version.workspace = true
 edition.workspace = true
@@ -8,6 +9,10 @@ authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
 publish = false
+
+[dev-dependencies]
+# The property engine. Testing the measuring instrument is the point here.
+euclid-property.workspace = true
 
 [lints]
 workspace = true

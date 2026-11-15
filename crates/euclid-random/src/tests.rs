@@ -8,6 +8,7 @@
 //! |--------|---------------------|
 //! | [`key_contract`] | keys derive deterministically, and the public [`conformance`](crate::conformance) laws hold |
 //! | [`sampler_contract`] | every distribution is implementable and respects its parameters |
+//! | [`generated_contract`] | the same laws over generated seeds, plus the avalanche property and generated distribution parameters |
 //!
 //! The key tests come in two kinds, and the distinction is worth knowing. Several assert on
 //! keys directly — `assert_eq!` on a key, keys in a `HashSet` — which works only because
@@ -15,6 +16,7 @@
 //! does **not** require. Those check this key type. The conformance laws beside them observe
 //! keys only through what they *draw*, which is what a different backend can run.
 
+mod generated_contract;
 mod key_contract;
 mod sampler_contract;
 mod toy_sampler;

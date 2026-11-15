@@ -74,6 +74,10 @@ euclid shipping a tensor, and two tested implementations beat one untested one.
 
 ## License
 
-euclid-matrix keeps its own `Proprietary` licence rather than inheriting the
-workspace's Apache-2.0. It arrived here from its own repository, and a move
-should not relicense code.
+Apache-2.0, inherited from the workspace like every other member.
+
+This crate arrived from its own repository and carried its own `Proprietary`
+licence until 0.4, on the reasoning that a move should not relicense code. That
+has been overridden deliberately by the copyright holder: the fleet ships under
+one licence. `cargo deny` is what surfaced it — `"Proprietary"` is not valid
+SPDX, so the crate read as *unlicensed* rather than as restrictively licensed.

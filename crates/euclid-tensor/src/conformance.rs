@@ -230,7 +230,14 @@ where
             // A swap is its own inverse, so the laws above cannot tell a permutation from its
             // inverse — both read the same. A 3-cycle can: `[1, 2, 0]` sends axis 1 to
             // position 0, where its inverse `[2, 0, 1]` sends axis 2 there.
-            let cycle: Vec<usize> = (0..rank).map(|i| (i + 1) % 3).chain(3..rank).collect();
+            //
+            // Cycle the first three axes and fix the rest, so this is a permutation of `0..rank`
+            // at every rank ≥ 3 — which `transpose_axes` requires. Note the range is `0..3` and
+            // not `0..rank`: the latter emits `rank` entries before the chain appends the tail,
+            // giving a longer-than-rank list with a repeated axis at rank ≥ 4. It read as
+            // correct for as long as the only sample reaching this branch was rank 3, where the
+            // two ranges coincide and the chain is empty.
+            let cycle: Vec<usize> = (0..3).map(|i| (i + 1) % 3).chain(3..rank).collect();
             let want: Vec<usize> = cycle.iter().map(|&a| shape[a]).collect();
             assert_eq!(
                 x.transpose_axes(&cycle).shape(),

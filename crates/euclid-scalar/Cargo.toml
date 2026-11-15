@@ -1,14 +1,23 @@
 [package]
 name = "euclid-scalar"
-# Split out of euclid-algebra, which predates the fold into euclid and carries its own
-# licence rather than inheriting the workspace's Apache-2.0. This crate is that crate's
-# code, so it keeps the same licence — a split should not relicense any more than a move.
-license = "Proprietary"
+# Apache-2.0, inherited from the workspace like every other member.
+#
+# This crate carried `license = "Proprietary"` and a comment arguing that "a move
+# should not relicense code", on the reasoning that it predated the fold into
+# euclid. That has been overridden deliberately by the copyright holder: the
+# fleet ships under one licence, and a single member under different terms makes
+# the whole workspace unpublishable as a set.
+#
+# `cargo deny check` is what surfaced it — "Proprietary" is not a valid SPDX
+# expression, so the crate read as *unlicensed* rather than as restrictively
+# licensed, which is a worse position than either.
+license.workspace = true
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+readme = "README.md"
 description = "The concrete Copy number line - the Real and Complex numbers where euclid's algebra tower and numeric analysis surface fuse. The eager backend's scalar surface."
 
 [lib]
@@ -22,6 +31,12 @@ path = "src/lib.rs"
 # must satisfy (`OrderedField`, `AlgebraicallyClosedField`).
 euclid-algebra.workspace = true
 euclid-numeric.workspace = true
+
+[dev-dependencies]
+# The property engine. There is no algorithm in this crate to search for a worst case in — what
+# it checks is that the two same-named tiers this crate fuses agree about the value, which is an
+# agreement property over generated input rather than a law over a fixed sample.
+euclid-property.workspace = true
 
 [lints]
 workspace = true

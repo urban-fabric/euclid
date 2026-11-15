@@ -1,13 +1,23 @@
 [package]
 name = "euclid-algebra"
-# euclid-algebra predates the fold into euclid and carries its own licence rather than
-# inheriting the workspace's Apache-2.0. A move should not relicense code.
-license = "Proprietary"
+# Apache-2.0, inherited from the workspace like every other member.
+#
+# This crate carried `license = "Proprietary"` and a comment arguing that "a move
+# should not relicense code", on the reasoning that it predated the fold into
+# euclid. That has been overridden deliberately by the copyright holder: the
+# fleet ships under one licence, and a single member under different terms makes
+# the whole workspace unpublishable as a set.
+#
+# `cargo deny check` is what surfaced it — "Proprietary" is not a valid SPDX
+# expression, so the crate read as *unlicensed* rather than as restrictively
+# licensed, which is a worse position than either.
+license.workspace = true
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+readme = "README.md"
 description = "The abstract-algebra tower: the semiring/dioid trunk, the ring/field numeric branch, and the exact carriers Rational, Zn/Zp, GaussianRational. Dependency-free."
 
 [lib]
@@ -34,5 +44,9 @@ conformance = []
 # came over with the fold named the same lints one severity down, and euclid-algebra
 # violates none of them, so inheriting costs nothing and stops the crate from
 # silently drifting out of the workspace's standard.
+[dev-dependencies]
+# The property engine, for the generated companion to the fixed conformance suite.
+euclid-property.workspace = true
+
 [lints]
 workspace = true
