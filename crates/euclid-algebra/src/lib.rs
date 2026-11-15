@@ -17,6 +17,11 @@
 //! `f64`/`f32` climb the whole chain `Semiring → Ring → Field`; an idempotent carrier like
 //! min-plus stops at [`Dioid`] (no additive inverse).
 //!
+//! - **Semimodules**: [`LeftSemimodule`]/[`RightSemimodule`] name the action of a scalar
+//!   semiring on a value. Every semiring is one over itself, by blanket impl. This is the tier
+//!   a linear-algebra kernel is written over — a matrix–vector product is the action of a matrix
+//!   semiring on a vector — so the structure belongs here even though the kernels do not.
+//!
 //! ## What is not here
 //!
 //! **Analysis** — `exp`/`ln`/`conj`, the real transcendentals — is a separate concern, and lives
@@ -259,6 +264,7 @@ mod impls;
 mod integer;
 mod modular;
 mod rational;
+mod semimodule;
 #[cfg(test)]
 mod tests;
 
@@ -269,3 +275,4 @@ pub use gaussian::GaussianRational;
 pub use integer::Integer;
 pub use modular::{Zn, Zp};
 pub use rational::{Rational, Rational64, Rational128};
+pub use semimodule::{LeftSemimodule, RightSemimodule};

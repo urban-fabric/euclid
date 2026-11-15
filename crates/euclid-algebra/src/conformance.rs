@@ -55,7 +55,7 @@
 
 use crate::{
     AdditiveMagma, CanonicalOrder, CommutativeSemiring, Dioid, EuclideanDomain, Field,
-    MultiplicativeMagma, Ring, Semiring, StarSemiring,
+    LeftSemimodule, MultiplicativeMagma, OrderedSemiring, Ring, Semiring, StarSemiring,
 };
 
 /// The eight semiring axioms, over the method-based `⊕`/`⊗` trunk.
@@ -262,6 +262,84 @@ where
                 if a.precedes(b) && b.precedes(c) {
                     assert!(a.precedes(c), "{what}: ⪯ is transitive");
                 }
+            }
+        }
+    }
+}
+
+/// The monotonicity axiom: `⊗` preserves the canonical order.
+///
+/// `a ⪯ b` must imply both `a ⊗ c ⪯ b ⊗ c` and `c ⊗ a ⪯ c ⊗ b`. This is what makes a
+/// shortest-path relaxation sound — extending two partial paths by the same edge cannot reorder
+/// them — so a carrier that claims [`OrderedSemiring`] and gets it wrong produces an algorithm
+/// that silently returns non-optimal answers rather than failing.
+///
+/// Both sides are checked because they differ for a non-commutative `⊗`.
+pub fn ordered_semiring_laws<T>(xs: &[T], what: &str)
+where
+    T: OrderedSemiring + core::fmt::Debug + Copy,
+{
+    dioid_laws(xs, what);
+    for &a in xs {
+        for &b in xs {
+            if !a.precedes(b) {
+                continue;
+            }
+            for &c in xs {
+                assert!(
+                    a.mul(c).precedes(b.mul(c)),
+                    "{what}: a ⪯ b must imply a⊗c ⪯ b⊗c (right-monotone)"
+                );
+                assert!(
+                    c.mul(a).precedes(c.mul(b)),
+                    "{what}: a ⪯ b must imply c⊗a ⪯ c⊗b (left-monotone)"
+                );
+            }
+        }
+    }
+}
+
+/// The six semimodule axioms: a scalar semiring acting on a value.
+///
+/// ```text
+///   ONE · m = m                  (s ⊗ t) · m = s · (t · m)
+///   ZERO · m = 0_M               s · 0_M     = 0_M
+///   (s ⊕ t) · m = s·m ⊞ t·m      s · (m ⊞ n) = s·m ⊞ s·n
+/// ```
+///
+/// Pass the same slice twice to check a semiring as a semimodule over itself, which the blanket
+/// impl in this crate provides. Pass different ones to check a value type acted on by a
+/// different scalar algebra.
+pub fn left_semimodule_laws<S, M>(scalars: &[S], modules: &[M], what: &str)
+where
+    S: Semiring + core::fmt::Debug + Copy,
+    M: LeftSemimodule<S> + core::fmt::Debug + Copy,
+{
+    for &m in modules {
+        assert_eq!(m.scale(S::ONE), m, "{what}: 1 · m = m");
+        assert_eq!(m.scale(S::ZERO), M::ZERO, "{what}: 0 · m = 0_M");
+    }
+    for &s in scalars {
+        assert_eq!(M::ZERO.scale(s), M::ZERO, "{what}: s · 0_M = 0_M");
+        for &m in modules {
+            for &n in modules {
+                assert_eq!(
+                    m.add(n).scale(s),
+                    m.scale(s).add(n.scale(s)),
+                    "{what}: s · (m ⊞ n) = s·m ⊞ s·n"
+                );
+            }
+            for &t in scalars {
+                assert_eq!(
+                    m.scale(s.add(t)),
+                    m.scale(s).add(m.scale(t)),
+                    "{what}: (s ⊕ t) · m = s·m ⊞ t·m"
+                );
+                assert_eq!(
+                    m.scale(s.mul(t)),
+                    m.scale(t).scale(s),
+                    "{what}: (s ⊗ t) · m = s · (t · m)"
+                );
             }
         }
     }
