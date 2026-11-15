@@ -5,5 +5,6 @@ mod toy_tensor;
 
 use toy_tensor::ToyTensor;
 mod capabilities;
+mod conformance_suites;
 mod dense;
 mod dense_capabilities;

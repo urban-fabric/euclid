@@ -35,6 +35,9 @@
 //! [`TensorSpec`], and the [`HasTensorSpec`]/[`Cast`] inspection traits. That metadata is pure
 //! description: it names shape and dtype without owning buffers, devices, or execution.
 
+#[cfg(any(feature = "conformance", test))]
+pub mod conformance;
+
 pub mod spec;
 
 mod base;
