@@ -5,17 +5,23 @@
 //! solve ([`SpdSolve`]), triangular solve ([`TriangularSolve`]), and the heavyweight
 //! decompositions ([`QrDecomposition`] / [`HermitianEigendecomposition`] /
 //! [`SingularValueDecomposition`] / [`GeneralSolve`] / [`Determinant`]). A backend
-//! (ramanujan eagerly, `maxwell`/XLA compiled) implements these for its concrete tensor
-//! type; this crate names the vocabulary plus the algorithms written once over it.
+//! (ramanujan eagerly, `maxwell`/XLA compiled) implements these for its concrete tensor type.
 //! Depends on **only `euclid-tensor` and `euclid-numeric`**, and on nothing third-party.
 //!
-//! ```ignore
-//! use euclid_tensor::Tensor;
-//! use euclid_matrix::least_squares;
+//! # Vocabulary only
 //!
-//! // One source — runs on any Tensor backend (e.g. the compiled maxwell::Tensor).
-//! let x = least_squares(a, b);
-//! ```
+//! This crate names the operations and stops. It held algorithms written over them —
+//! `least_squares`, `gram`, `inverse`, `dominant_eigenvector` and the rest — until 0.3 moved
+//! them out, because they are **matrix kernels** and euclid holds only what the fleet must
+//! agree on. A Cholesky or a QR has many valid implementations, and choosing between a blocked,
+//! packed or GPU path is exactly what a backend is for, so there was nothing here to agree on.
+//! What must be agreed is the *signature* a backend implements and a caller binds, which is
+//! what remains.
+//!
+//! The consequence is deliberate: an algorithm over these traits now lives with a backend, so
+//! two backends wanting the same algorithm write it twice. That is the cost of the boundary,
+//! and it is the right trade — a shared algorithm that cannot be tested without euclid shipping
+//! a tensor is worse than two tested ones.
 //!
 //! ## Rank, not separate matrix and vector types
 //!
@@ -32,16 +38,16 @@
 //!   *is* its numeric carrier, so [`NormedDivisionAlgebra`] methods such as `conjugate` are
 //!   elementwise. [`Determinant::determinant`] therefore returns a rank-0 `Self` rather than
 //!   a distinct scalar type.
-//! - euclid deliberately shed linear-algebra *content*, so `identity`, `adjoint`, and the
-//!   HPD solve are no longer euclid's. They are named here — [`identity`], [`adjoint`],
-//!   [`SpdSolve`] — which is the correct home for them: this crate is exactly "the matrix
-//!   extensions beyond the rank contract".
+//! - euclid deliberately shed linear-algebra *content*, and this crate now follows that the
+//!   whole way: the HPD solve is **named** here as [`SpdSolve`] but not implemented, and the
+//!   derived helpers that once accompanied it — `identity`, `adjoint`, `gram` — are gone, since
+//!   a helper over a tensor needs a tensor to run on.
 //!
-//! Every square-matrix argument below is rank-2 and every vector argument rank-1 unless a
-//! function says otherwise; the bound cannot express that, so it is documented per item.
+//! Every square-matrix argument below is rank-2 and every vector argument rank-1 unless an
+//! item says otherwise; the bound cannot express that, so it is documented per item.
 
 use euclid_numeric::{NormedDivisionAlgebra, Real};
-use euclid_tensor::{Tensor, TensorIndexing};
+use euclid_tensor::Tensor;
 
 /// The real field of a tensor's elements — its norms, log-determinant, and Mahalanobis
 /// distance. `Self` for a real carrier, the real part for a complex one.
@@ -202,137 +208,4 @@ impl<M> LazyDecompositions for M where
         + HermitianEigendecomposition
         + SingularValueDecomposition
 {
-}
-
-/// The `n x n` identity matrix.
-///
-/// euclid dropped `LazyMatrix::identity` along with the rest of its linear-algebra content,
-/// so it is derived here from the rank contract rather than asked of the backend:
-/// one-hot-encoding `[0, 1, …, n−1]` to depth `n` sets exactly the diagonal. That keeps
-/// every backend correct by construction instead of trusting `n²` host values.
-pub fn identity<M>(n: usize) -> M
-where
-    M: TensorIndexing + MatrixTensor,
-{
-    M::one_hot(&M::iota(n), n)
-}
-
-/// The conjugate transpose `Aᴴ` of a rank-2 tensor.
-///
-/// Elementwise conjugation composed with an axis swap. For a real carrier `conjugate` is the
-/// identity and this is the plain transpose.
-pub fn adjoint<M>(a: &M) -> M
-where
-    M: MatrixTensor,
-{
-    a.conjugate().transpose_axes(&[1, 0])
-}
-
-/// The Gram matrix `AᴴA` — Hermitian positive-semidefinite.
-///
-/// This is the normal-equation matrix behind least squares and the unscaled covariance of
-/// `A`'s columns. Forming it squares the condition number; prefer a QR-based path when the
-/// backend provides one.
-pub fn gram<M>(a: M) -> M
-where
-    M: MatrixTensor,
-{
-    adjoint(&a).matmul(a)
-}
-
-/// The inverse `Σ⁻¹` of a Hermitian-positive-definite matrix via the Cholesky solve
-/// (`Σ \ I`) — no general factorization.
-///
-/// Prefer [`SpdSolve::solve_spd`] to *apply* the inverse; forming it is both slower and less
-/// stable.
-pub fn spd_inverse<M>(sigma: M) -> M
-where
-    M: SpdSolve + TensorIndexing,
-{
-    let n = leading_dim(&sigma);
-    sigma.solve_spd(identity(n))
-}
-
-/// The inverse `A⁻¹` of a general nonsingular matrix, by solving `AX = I`.
-///
-/// As with [`spd_inverse`], prefer [`GeneralSolve::solve`] to apply the inverse rather than
-/// forming it.
-pub fn inverse<M>(a: M) -> M
-where
-    M: GeneralSolve + TensorIndexing,
-{
-    let n = leading_dim(&a);
-    a.solve(identity(n))
-}
-
-/// The least-squares solution of the (over-determined, full-column-rank) system `A·x ≈ B`
-/// via the normal equations `(AᴴA)·x = Aᴴ·B`, solved through the SPD (Cholesky) path.
-///
-/// Note the normal-equation path forms `AᴴA` and therefore squares the condition number; a
-/// QR-based solve is preferable when the backend provides one.
-pub fn least_squares<M>(a: M, b: M) -> M
-where
-    M: SpdSolve,
-{
-    let ah = adjoint(&a);
-    let ata = ah.clone().matmul(a); // AᴴA  (Hermitian PD for full-rank A)
-    let atb = ah.matmul(b); // AᴴB
-    ata.solve_spd(atb)
-}
-
-/// The quadratic form `xᴴAx`, which is **real** for a Hermitian `A`.
-///
-/// `x` is a rank-2 column (`n x 1`), so the result is a `1 x 1` real tensor. The real part is
-/// taken rather than asserted: for a Hermitian `A` the imaginary component is zero up to
-/// rounding, and discarding it is the documented contract rather than an error case.
-pub fn quadratic_form<M>(a: M, x: M) -> RealPart<M>
-where
-    M: MatrixTensor,
-{
-    adjoint(&x).matmul(a.matmul(x)).real_part()
-}
-
-/// The dominant eigenvector of `A` by **power iteration**, starting from `start` and running
-/// a fixed `iterations` steps.
-///
-/// Each step forms `Ax` and renormalizes to unit 2-norm, so the iterate converges to the
-/// eigenvector of largest `|λ|` at a rate set by the ratio of the two leading eigenvalue
-/// magnitudes. The step count is the caller's, and fixed: there is no convergence test,
-/// because a compiled backend cannot branch on a device value without a host synchronization
-/// this contract has no room for. A caller needing a tolerance should iterate and check
-/// itself.
-///
-/// `start` must be rank-2 `n x 1` and must not be orthogonal to the dominant eigenvector —
-/// with an unlucky start the iteration converges to a subdominant one.
-pub fn dominant_eigenvector<M>(a: M, start: M, iterations: usize) -> M
-where
-    M: MatrixTensor,
-    RealPart<M>: Tensor,
-{
-    let mut x = normalize(start);
-    for _ in 0..iterations {
-        x = normalize(a.clone().matmul(x));
-    }
-    x
-}
-
-/// Scale a rank-2 column to unit 2-norm: `x / sqrt(Σ|xᵢ|²)`.
-fn normalize<M>(x: M) -> M
-where
-    M: MatrixTensor,
-    RealPart<M>: Tensor,
-{
-    let norm = x.norm_sqr().sum(&[0, 1]).sqrt();
-    x / M::from_real(norm)
-}
-
-/// The leading axis length of a tensor — the `n` of an `n x n` matrix.
-///
-/// Returns `0` for a rank-0 tensor, which makes [`identity`] produce an empty matrix rather
-/// than panicking on a shape this contract cannot otherwise reject.
-fn leading_dim<M>(a: &M) -> usize
-where
-    M: Tensor,
-{
-    a.shape().first().copied().unwrap_or(0)
 }
