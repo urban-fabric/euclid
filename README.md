@@ -164,6 +164,20 @@ four rows are the four kinds of value from the top of this page:
 **Contracts** — write a formula against these and it runs on any carrier. All
 five are dependency-free in the sense that matters: nothing third-party.
 
+A contract crate is also where you find out whether your carrier *honors* it. A
+tier is a claim — `impl Semiring for MyThing {}` asserts that `⊗` distributes
+over `⊕`, and the type system checks neither — so the laws ship as public
+functions you call against a sample of your own type:
+
+```rust
+euclid_algebra::conformance::semiring_laws(&my_sample, "MyThing");
+euclid_algebra::conformance::ring_laws(&my_sample, "MyThing");
+```
+
+They sit behind a `conformance` feature, so a consumer that only writes formulas
+pays nothing for them. `euclid-algebra` has them today; the other contract
+crates are expected to follow.
+
 | crate | purpose |
 |-------|---------|
 | [`euclid-numeric`](crates/euclid-numeric) | scalar algebra tiers, real analysis, masks, special functions, interpolation, graph control flow |

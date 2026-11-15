@@ -90,13 +90,18 @@ Run all five, from the workspace root:
 
 ```sh
 cargo fmt --all --check
-cargo test --all-targets --workspace
-cargo clippy --all-targets --workspace -- -D warnings
-cargo test --doc --workspace
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+cargo test --all-targets --workspace --all-features
+cargo clippy --all-targets --workspace --all-features -- -D warnings
+cargo test --doc --workspace --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --all-features
 ```
 
 All five must be clean.
+
+`--all-features` is not optional padding. The `conformance` suites are behind a
+feature so a consumer pays nothing for them, which means the default build never
+compiles that code and never runs its doctests — a broken law or a stale link in
+a conformance module would sail through every other check.
 
 The last one is not redundant with `cargo test --doc`: that runs doctests, while
 this resolves **intra-doc links**. Nothing else catches a `[`foo`](path)` whose
@@ -174,6 +179,25 @@ euclid ships contracts, so the usual question is not "does the code work" but
   right answer and needs a canonical home; matrix and tensor kernels belong with
   a backend, where a concrete tensor already exists. The open question is where
   these go, not how to test them in place.
+- **A law the trait implies** — add it to that crate's `conformance` module, not
+  only to a test. A tier is a *claim*: `impl Semiring for MyThing {}` asserts
+  that `⊗` distributes over `⊕`, and nothing in the type system checks it. The
+  conformance suites are public, feature-gated functions that take a sample of a
+  carrier and assert the laws, so an implementor in another repository can ask
+  whether they honored the contract:
+
+  ```rust
+  euclid_algebra::conformance::semiring_laws(&my_sample, "MyThing");
+  ```
+
+  This is the direct defense against the failure mode named below, and it is why
+  the laws live in `src/` rather than in `tests/` — a law in a test protects only
+  us. `euclid-algebra` has them; the other contract crates do not yet.
+
+  Write laws as **relations between results**, never against transcribed
+  reference values: `a ⊕ 0 = a` cannot be mistyped into passing, where a
+  hard-coded product can. And supply fixed samples rather than generated ones, so
+  a failure is reproducible from the test name with no seed to recover.
 - **Anything the contract leaves open** — pick a convention and *write it down*
   in the trait docs, not only in an implementation. Two backends reading the same
   signature differently is the one failure mode that defeats the point of the

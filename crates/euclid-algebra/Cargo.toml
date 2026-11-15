@@ -13,6 +13,13 @@ description = "The abstract-algebra tower: the semiring/dioid trunk, the ring/fi
 [lib]
 path = "src/lib.rs"
 
+[features]
+# The tier axioms, as functions a carrier author can check their impl against.
+# Off by default: a consumer that only writes formulas pays nothing for it, and one
+# verifying a carrier opts in. Always compiled under `cfg(test)` regardless, so this
+# crate's own suites exercise the same code a consumer would call.
+conformance = []
+
 # No dependencies, not even euclid-numeric. Algebraic structure needs nothing from
 # analysis: this crate says which tier a carrier reaches, euclid-numeric says what
 # operations a formula may use, and the two meet only in euclid-scalar — which is
