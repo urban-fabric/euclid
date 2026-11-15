@@ -5,7 +5,7 @@ use super::{Mask, Quantity};
 /// Uniform scalar helpers for quantities.
 ///
 /// Every method has a default body written over the carrier's own
-/// [`Real`](euclid_numeric::Real) surface, so a carrier opts in with an empty impl block:
+/// [`Real`] surface, so a carrier opts in with an empty impl block:
 ///
 /// ```ignore
 /// impl ScalarQuantity for LengthMeters {}
