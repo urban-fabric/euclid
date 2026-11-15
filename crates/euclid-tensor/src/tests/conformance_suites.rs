@@ -18,18 +18,27 @@
 //! suites made visible — the first thing a conformance suite is for.
 
 use super::dense::Dense;
-use crate::conformance as laws;
+use crate::Tensor;
+use crate::conformance::{self as laws, ConformanceSample};
+
+impl ConformanceSample for Dense {
+    /// Ranks 0 through 3, with every extent of the rank-3 case distinct. The rank-3 entry is
+    /// load-bearing: the 3-cycle transpose law only applies at rank ≥ 3, and it is the only
+    /// law that can tell a permutation from its inverse.
+    fn sample() -> Vec<Self> {
+        vec![
+            Dense::point(2.5),
+            Dense::vector(&[1.0, 2.0, 3.0, 4.0]),
+            Dense::matrix(2, 3, &[1.0, 2.0, 3.0, 10.0, 20.0, 30.0]),
+            Dense::matrix(3, 1, &[1.0, 2.0, 3.0]),
+            Dense::new(&[2, 3, 4], (0..24).map(f64::from).collect()),
+        ]
+    }
+}
 
 #[test]
 fn dense_satisfies_the_tensor_laws() {
-    let xs = [
-        Dense::point(2.5),
-        Dense::vector(&[1.0, 2.0, 3.0, 4.0]),
-        Dense::matrix(2, 3, &[1.0, 2.0, 3.0, 10.0, 20.0, 30.0]),
-        Dense::matrix(3, 1, &[1.0, 2.0, 3.0]),
-        Dense::new(&[2, 2, 2], (1..=8).map(f64::from).collect()),
-    ];
-    laws::tensor_laws(&xs, "Dense");
+    laws::tensor_laws_for::<Dense>("Dense");
 }
 
 #[test]
@@ -41,9 +50,17 @@ fn a_rank_zero_sample_skips_the_axis_laws_rather_than_panicking() {
 }
 
 #[test]
-fn the_laws_cover_every_axis_of_a_higher_rank_tensor() {
-    // The full-slice law iterates axes, so a non-square rank-3 tensor is the case that catches
-    // an implementation indexing the wrong axis — every extent here is distinct.
-    let x = Dense::new(&[2, 3, 4], (0..24).map(f64::from).collect());
-    laws::tensor_laws(&[x], "Dense[2,3,4]");
+fn the_sample_covers_the_ranks_the_laws_need() {
+    // The declared sample has to reach rank 3, or the 3-cycle transpose law never runs and a
+    // backend applying a permutation backwards goes undetected. Asserted rather than assumed.
+    let ranks: Vec<usize> = <Dense as ConformanceSample>::sample()
+        .iter()
+        .map(Tensor::rank)
+        .collect();
+    assert!(ranks.contains(&0), "a rank-0 case exercises the skip path");
+    assert!(ranks.contains(&2), "rank 2 exercises the swap laws");
+    assert!(
+        ranks.iter().any(|&r| r >= 3),
+        "rank 3+ is required for the 3-cycle law: {ranks:?}"
+    );
 }

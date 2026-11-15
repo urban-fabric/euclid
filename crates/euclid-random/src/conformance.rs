@@ -89,6 +89,31 @@ use crate::RandomSampler;
 /// every backend must support.
 const SCALAR: &[usize] = &[];
 
+/// A carrier's own curated sample, declared once.
+///
+/// euclid's answer to proptest's `Arbitrary`, with the generator replaced by a fixed list. A
+/// carrier says which values stress *it*, and every suite in this module then draws from the
+/// same place rather than each call site inventing a sample and getting it slightly wrong.
+///
+/// Fixed rather than generated on purpose: a generator buys input breadth at the cost of
+/// reproducibility, turning a failure into a seed to recover rather than a value in the source.
+/// Keep samples small — the multi-operand laws run over every pair or triple, so `n` values
+/// cost `n²` or `n³` cases per law.
+pub trait ConformanceSample {
+    /// The seeds to derive keys from. Include `0` — a multiplicative mixing function that
+    /// forgets to handle it degenerates there.
+    fn seeds() -> Vec<u64>;
+}
+
+/// [`key_laws`] over a backend's own [`ConformanceSample`].
+pub fn key_laws_for<R>(what: &str)
+where
+    R: RandomSampler + ConformanceSample,
+    R::Real: PartialEq + core::fmt::Debug,
+{
+    key_laws::<R>(&R::seeds(), what);
+}
+
 /// The derivation laws: reproducibility, and that `split`/`fold_in` produce independent children
 /// deterministically.
 ///

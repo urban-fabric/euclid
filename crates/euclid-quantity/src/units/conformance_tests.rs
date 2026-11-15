@@ -9,7 +9,7 @@
 //! across *shapes* — a primary unit, a non-primary one, a dimensionless factor, a derived unit
 //! with a compound symbol, and an absolute scalar that withholds `LinearQuantity`.
 
-use euclid_units::conformance as laws;
+use euclid_units::conformance::{self as laws, ConformanceSample};
 
 use crate::{
     AreaSquareMeters, Factor, LengthFeet, LengthMeters, Measure, Percentage, SpeedMs,
@@ -20,12 +20,25 @@ use crate::{
 /// permissive bound.
 const TOL: f64 = 1e-12;
 
+/// Declare a unit's sample and tolerance once, then run every applicable suite from it.
+///
+/// This is the external-consumer side of `ConformanceSample`: the trait is euclid-units', the
+/// impls are ours, and the suites are called with no sample argument at all. Adding a suite to
+/// euclid-units now covers every unit declared here without touching this file.
 macro_rules! linear_unit_laws {
     ($name:ident, $ty:ty, [$($v:expr),+ $(,)?]) => {
+        impl ConformanceSample for $ty {
+            fn sample() -> Vec<Self> {
+                vec![$(<$ty>::new($v)),+]
+            }
+            fn tolerance() -> Self {
+                <$ty>::new(TOL)
+            }
+        }
+
         #[test]
         fn $name() {
-            let xs = [$(<$ty>::new($v)),+];
-            laws::quantity_laws(&xs, &<$ty>::new(TOL), stringify!($ty));
+            laws::quantity_laws_for::<$ty>(stringify!($ty));
         }
     };
 }
@@ -44,6 +57,29 @@ linear_unit_laws!(time_seconds, TimeSeconds, [0.0, 1.0, -0.5, 60.0, 0.25]);
 linear_unit_laws!(factor, Factor, [0.0, 1.0, -1.0, 2.5, 0.5]);
 // A dimensionless unit carrying a scale, so `in_primary` is not the identity.
 linear_unit_laws!(percentage, Percentage, [0.0, 50.0, -25.0, 100.0]);
+impl ConformanceSample for TemperatureCelsius {
+    fn sample() -> Vec<Self> {
+        vec![
+            Self::new(0.0),
+            Self::new(20.0),
+            Self::new(-40.0),
+            Self::new(100.0),
+        ]
+    }
+    fn tolerance() -> Self {
+        Self::new(TOL)
+    }
+}
+
+impl ConformanceSample for TemperatureKelvin {
+    fn sample() -> Vec<Self> {
+        vec![Self::new(0.0), Self::new(273.15), Self::new(1.0)]
+    }
+    fn tolerance() -> Self {
+        Self::new(TOL)
+    }
+}
+
 #[test]
 fn absolute_scalars_get_the_measure_and_scalar_laws_only() {
     // *Every* temperature withholds `LinearQuantity`, Kelvin included — adding two absolute

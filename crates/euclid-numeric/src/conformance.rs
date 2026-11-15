@@ -50,6 +50,58 @@
 
 use crate::{Boolean, Compare, Element, Real};
 
+/// A carrier's own curated sample, declared once.
+///
+/// euclid's answer to proptest's `Arbitrary`, with the generator replaced by a fixed list. A
+/// carrier says which values stress *it*, and every suite in this module then draws from the
+/// same place rather than each call site inventing a sample and getting it slightly wrong.
+///
+/// Fixed rather than generated on purpose: a generator buys input breadth at the cost of
+/// reproducibility, turning a failure into a seed to recover rather than a value in the source.
+/// Keep samples small — the multi-operand laws run over every pair or triple, so `n` values
+/// cost `n²` or `n³` cases per law.
+pub trait ConformanceSample: Sized {
+    /// The values this carrier should be checked over.
+    fn sample() -> Vec<Self>;
+
+    /// The relative tolerance the inexact laws should use for this carrier.
+    ///
+    /// Defaulted to zero, which is the right answer for an exact carrier and wrong for every
+    /// float — `f64` wants about `1e-14` and `f32` about `1e-6`, and sharing one bound between
+    /// them would either fail at `f32` or stop catching anything at `f64`. Override it.
+    fn tolerance() -> f64 {
+        0.0
+    }
+}
+
+/// [`boolean_laws`] over a carrier's own [`ConformanceSample`].
+pub fn boolean_laws_for<B>(what: &str)
+where
+    B: Boolean + ConformanceSample + PartialEq + core::fmt::Debug,
+{
+    boolean_laws(&B::sample(), what);
+}
+
+/// [`mask_laws`] over a carrier's own [`ConformanceSample`].
+pub fn mask_laws_for<T>(what: &str)
+where
+    T: Compare + ConformanceSample + PartialEq + core::fmt::Debug,
+    T::Mask: PartialEq + core::fmt::Debug,
+{
+    mask_laws(&T::sample(), what);
+}
+
+/// [`real_laws`] over a carrier's own [`ConformanceSample`] and [`tolerance`].
+///
+/// [`tolerance`]: ConformanceSample::tolerance
+pub fn real_laws_for<T>(what: &str)
+where
+    T: Real + ConformanceSample + PartialEq + core::fmt::Debug,
+    T::Mask: PartialEq + core::fmt::Debug,
+{
+    real_laws(&T::sample(), T::tolerance(), what);
+}
+
 /// The boolean algebra laws for a [`Boolean`] carrier.
 ///
 /// Exact, since nothing here rounds. De Morgan is the pair worth having: a carrier that
