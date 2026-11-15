@@ -15,3 +15,9 @@ publish = false
 
 [lints]
 workspace = true
+
+# A plain `fn main` rather than a bench harness: `#[bench]` is unstable and criterion is a
+# third-party dependency the workspace does not take. See the file header for what it measures.
+[[bench]]
+name = "engine"
+harness = false

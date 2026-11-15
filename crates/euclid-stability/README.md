@@ -154,6 +154,53 @@ this be made to fail". Hypothesis's `target()`; for numerics it is the most usef
 
 Targeting never weakens a property: it changes which cases are tried, not which ones pass.
 
+## Performance
+
+`cargo bench -p euclid-stability` prints a table. It is a plain `fn main` with `harness = false`
+— no criterion, because a benchmark dependency is still a dependency and `deny.toml` would need
+an exception for it.
+
+| benchmark | result |
+|---|---|
+| shrink, 20–40 entry tape | **378 distinct probes, 194 answered from the memo (33.9% avoided)** |
+| tape materialisation removed from every case | **7.5–8.2 ns/case**, interleaved A/B |
+| search, scalar generator, empty body | ~35M cases/s, for scale |
+| search, `Vec<f64>` generator | ~4.2M cases/s, dominated by the generator's own allocation |
+
+The per-case floor is what decides how many cases a cheap property can afford, which is where
+searching harder is free. For an expensive property the engine disappears into the body and the
+number that matters is the probe count, because **shrinking a failure is routinely an order of
+magnitude more work than finding it** — each probe re-runs the generator *and* the property.
+
+Three things got it there: the search no longer materialises the tape on every case (it is taken
+only on a failure or a new best score, having previously been allocated, copied and discarded
+every time); the panic-hook guard is a relaxed load rather than a `SeqCst` read-modify-write per
+case; and the shrinker memoises its verdicts. That last one is a third of all probes — a fixpoint
+loop's final round exists to prove nothing more can be done, and it proves it by re-trying
+candidates earlier rounds rejected. A memo hit also **does not spend budget**, so the same
+`MAX_PROBES` cap explores strictly more distinct candidates: shrinking got better as well as
+faster.
+
+**Note which rows are counts and which are timings.** The probe count is exact and identical on
+any machine. The A/B row runs both arms in the same process microseconds apart, and reproduces to
+within 10% across runs. The throughput rows are for scale only: on the development machine they
+varied by 2× between runs of *identical* code, which is more than any micro-optimisation here
+does — the first version of this table quoted a 2× search speedup read off two separate runs, and
+it was machine state rather than a result. If two arms cannot be interleaved, count something
+instead.
+
+**Threads are deliberately not part of this.** libtest already runs every `#[test]` on its own
+thread and every property is a `#[test]`, so a suite is already using every core; parallelising
+within a property would compete for the same cores rather than adding any. It would also cost
+the fixed seed — a parallel search must either partition the seed space, invalidating every
+recorded baseline, or accept a nondeterministic one — and that determinism is what makes a
+budget baseline meaningful at all.
+
+A note on reading the benchmark: it reports the **minimum** of seven passes after a warm-up, with
+the spread alongside. A single timed pass is not a measurement — the first version of the harness
+did exactly one and reported a 4× swing on unchanged code, which is enough noise to read a 34%
+improvement out of nothing.
+
 ## Three outcomes that are not failures
 
 Conflating these is how a suite reports more than it tested, so each is distinct and each is

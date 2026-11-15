@@ -249,22 +249,31 @@ pub fn check<T: 'static + core::fmt::Debug>(
                 reasons.push(rejected.reason);
             }
             Ok(value) => {
-                let tape = source.consumed();
                 target::clear();
                 let outcome = run_quietly(&mut property, value);
                 stats::count_case();
-                climber.observe(&tape, target::reported());
 
-                if let Err(failure) = outcome {
-                    report(
-                        name,
-                        config,
-                        &tape,
-                        &failure,
-                        generator,
-                        &mut property,
-                        false,
-                    );
+                // The tape is materialised only when something is going to keep it: a failure
+                // to report, or a score good enough to climb from. Taking it eagerly cost an
+                // allocation and a copy on **every** case, and the overwhelming majority of
+                // cases pass without setting a new best — so the copy was thrown away. This is
+                // the whole of the engine's per-case allocation on the happy path.
+                let score = target::reported();
+                if outcome.is_err() || climber.would_improve(score) {
+                    let tape = source.consumed();
+                    climber.observe(&tape, score);
+
+                    if let Err(failure) = outcome {
+                        report(
+                            name,
+                            config,
+                            &tape,
+                            &failure,
+                            generator,
+                            &mut property,
+                            false,
+                        );
+                    }
                 }
             }
         }
@@ -473,6 +482,19 @@ impl Climber {
         Some(mutated)
     }
 
+    /// Whether `score` would become the new best, so the caller knows if the tape is worth
+    /// materialising.
+    ///
+    /// Deliberately separate from [`observe`](Self::observe) and cheap: it reads two `Option`s
+    /// and compares a float, which is what lets the search skip copying the tape for every case
+    /// that is not an improvement. `observe` re-checks the same condition rather than trusting
+    /// this one, so the two cannot disagree about which tape is stored.
+    fn would_improve(&self, score: Option<f64>) -> bool {
+        score
+            .filter(|s| s.is_finite())
+            .is_some_and(|score| self.best_score.is_none_or(|best| score > best))
+    }
+
     fn observe(&mut self, tape: &[u64], score: Option<f64>) {
         let Some(score) = score.filter(|s| s.is_finite()) else {
             return;
@@ -604,7 +626,7 @@ fn report<T: 'static + core::fmt::Debug>(
     property: &mut impl FnMut(T) -> Outcome,
     was_persisted: bool,
 ) -> ! {
-    let (minimal, probes) = shrink::minimise(tape.to_vec(), |candidate| {
+    let (minimal, cost) = shrink::minimise(tape.to_vec(), |candidate| {
         match replay(generator, property, candidate.to_vec()) {
             Verdict::Failed(_) => Probe::StillFails,
             _ => Probe::Discard,
@@ -629,10 +651,18 @@ fn report<T: 'static + core::fmt::Debug>(
         (Some(path), true) => format!("\n  replayed:   {path}"),
         (None, _) => String::new(),
     };
-    let truncated = if probes >= shrink::MAX_PROBES {
+    let truncated = if cost.hit_the_cap() {
         "\n  note:       shrinking hit its probe budget, so this may not be minimal"
     } else {
         ""
+    };
+    // Reused probes are reported because they are the difference between the budget bounding
+    // search effort and bounding loop iterations: a shrink that says "900 probes, 400 reused"
+    // explored 900 distinct candidates on a budget that used to stop at 1,300 iterations.
+    let reused = if cost.reused == 0 {
+        String::new()
+    } else {
+        format!(", {} reused", cost.reused)
     };
 
     let case = match &rendering {
@@ -643,12 +673,13 @@ fn report<T: 'static + core::fmt::Debug>(
     panic!(
         "property failed: {name}\n  \
          {}\n  at:         {}{case}\n  \
-         shrank:     {} -> {} tape entries in {probes} probes\n  \
+         shrank:     {} -> {} tape entries in {} probes{reused}\n  \
          tape:       {}{saved}{truncated}",
         final_failure.message,
         final_failure.location,
         tape.len(),
         minimal.len(),
+        cost.probes,
         persist::encode(&minimal),
     );
 }
@@ -663,6 +694,15 @@ fn report<T: 'static + core::fmt::Debug>(
 /// "a probe is running" from "we are reporting", and that is what the flag does.
 fn install_hook_once() {
     static INSTALLED: AtomicBool = AtomicBool::new(false);
+
+    // A relaxed load on the already-installed path, which is every case after the first. The
+    // `swap` below is a sequentially-consistent read-modify-write, and running one per case made
+    // the hook check a measurable share of the engine's per-case floor — for a flag that is
+    // false exactly once in the life of the process. Relaxed is sufficient because the only
+    // thing ordered against it is `set_hook`, which takes its own lock.
+    if INSTALLED.load(Ordering::Relaxed) {
+        return;
+    }
 
     if !INSTALLED.swap(true, Ordering::SeqCst) {
         let previous = panic::take_hook();
