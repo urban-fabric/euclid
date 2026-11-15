@@ -4,6 +4,7 @@ members = [
     "crates/euclid-algebra",
     "crates/euclid-matrix",
     "crates/euclid-numeric",
+    "crates/euclid-property",
     "crates/euclid-quantity",
     "crates/euclid-random",
     "crates/euclid-scalar",
@@ -116,6 +117,10 @@ euclid-tensor = { version = "0.4.0", path = "crates/euclid-tensor" }
 # actually names it; a consumer outside the workspace does not need it here.
 # Dev-only shared helpers; never a runtime dependency of a published crate.
 euclid-utils = { version = "0.4.0", path = "crates/euclid-utils" }
+# Dev-only property-test engine. Declared here now that a member's own suites use it —
+# euclid-numeric's `tests/` take it to search for worst-case numerical error. Like
+# euclid-utils it is publish = false and never reaches a published artifact.
+euclid-property = { version = "0.4.0", path = "crates/euclid-property" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

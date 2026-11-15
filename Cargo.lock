@@ -38,8 +38,13 @@ dependencies = [
 name = "euclid-numeric"
 version = "0.4.0"
 dependencies = [
+ "euclid-property",
  "euclid-utils",
 ]
+
+[[package]]
+name = "euclid-property"
+version = "0.4.0"
 
 [[package]]
 name = "euclid-quantity"
