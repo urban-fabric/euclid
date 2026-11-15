@@ -162,6 +162,19 @@ on it, but that is not the situation today.
 euclid ships contracts, so the usual question is not "does the code work" but
 "is the contract still implementable and still unambiguous".
 
+**Before adding an implementation, ask whether it needs a data structure.**
+euclid implements over universal datatypes — `f64`, `f32`, the integers, `bool`,
+and newtypes over them — because those mean the same thing everywhere and there
+is nothing to design. It ships no data structure, because a tensor or a graph
+cannot be written without first choosing dense or sparse, owned or borrowed,
+host or device, and those choices are what a backend is for.
+
+A new `erf` belongs here. A new `cholesky` does not. If your change requires a
+`Vec`, an index, or a layout decision, it is probably a backend's. See the
+README's [data-structure section][ds].
+
+[ds]: README.md#the-line-is-the-data-structure
+
 - **New or changed trait method** — update the reference implementations that
   must satisfy it. `ToySampler` (`euclid-random`), `ToyTensor` and `Dense`
   (`euclid-tensor`), and the toy unit carriers in `euclid-units` exist so that
@@ -175,10 +188,13 @@ euclid ships contracts, so the usual question is not "does the code work" but
   carrier here, because that would have meant implementing Cholesky, LU and QR
   for a tensor *inside* euclid.
 
-  The laws for those traits are still worth writing — `solve_spd(Σ, Σ·X)` must
-  recover `X` — but they can only be *run* by a backend. If they are added, they
-  belong in a `conformance` module like the others, shipped for a backend to
-  execute, with the understanding that euclid cannot exercise them itself.
+  The laws for those traits *are* written, in `euclid-matrix`'s `conformance`
+  module — `solve_spd(Σ, Σ·X)` must recover `X`, `Q·R` must reconstruct `A`, and
+  so on. They can only be **run** by a backend, so unlike the other five modules
+  this one is gated on `feature` alone rather than `any(feature, test)`: there is
+  no test here for the second arm to serve. `--all-features` type-checks them,
+  which for a generic trait surface is a real check, but no law body executes in
+  this repository and none can.
 - **A law the trait implies** — add it to that crate's `conformance` module, not
   only to a test. A tier is a *claim*: `impl Semiring for MyThing {}` asserts
   that `⊗` distributes over `⊕`, and nothing in the type system checks it. The
