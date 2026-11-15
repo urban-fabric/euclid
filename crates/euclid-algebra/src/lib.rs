@@ -1,6 +1,6 @@
-//! # napier — the abstract-algebra tower + the concrete `Copy` numeric tier.
+//! # euclid-algebra — the abstract-algebra tower + the concrete `Copy` numeric tier.
 //!
-//! napier owns the two abstract foundations that meet on the concrete number line:
+//! euclid-algebra owns the two abstract foundations that meet on the concrete number line:
 //! the **algebra** tower (`Field` → `OrderedField` / `AlgebraicallyClosedField`,
 //! plus the semiring/dioid stack and the exact carriers `Rational`/`Zn`/
 //! `GaussianRational`; see [`algebra`]) and, fused with euclid's **numeric**
@@ -18,7 +18,7 @@
 //!
 //! A `Tensor` / columnar `Expr` backend stays purely on euclid's lazy tier (no
 //! `Copy`, no scalar `bool`); the eager geometry / matrix / physics kernels that
-//! genuinely need the real number line bound on napier's concrete tier.
+//! genuinely need the real number line bound on euclid-algebra's concrete tier.
 
 pub mod algebra;
 mod complex;

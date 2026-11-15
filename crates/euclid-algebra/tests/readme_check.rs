@@ -1,4 +1,4 @@
-use napier::Real;
+use euclid_algebra::Real;
 
 fn circle_area<T: Real>(r: T) -> T {
     T::PI * r * r

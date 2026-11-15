@@ -1,0 +1,27 @@
+[package]
+name = "euclid-algebra"
+# euclid-algebra predates the fold into euclid and carries its own licence rather than
+# inheriting the workspace's Apache-2.0. A move should not relicense code.
+license = "Proprietary"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "The concrete Copy numeric tier - the Real and Complex numbers where euclid's algebra and lazy-numeric foundations unify. The eager backend's scalar surface."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The analysis surface euclid-algebra fuses with its own algebra tower: euclid-numeric
+# spells these `Real`/`Complex`, and euclid-algebra imports them under its former
+# `LazyReal`/`LazyComplex` names to avoid colliding with its own concrete types.
+euclid-numeric.workspace = true
+
+# Inherited, like every other member. The warn-level copy of this table that
+# came over with the fold named the same lints one severity down, and euclid-algebra
+# violates none of them, so inheriting costs nothing and stops the crate from
+# silently drifting out of the workspace's standard.
+[lints]
+workspace = true
