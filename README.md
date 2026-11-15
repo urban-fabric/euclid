@@ -222,8 +222,13 @@ euclid_algebra::conformance::ring_laws(&my_sample, "MyThing");
 ```
 
 They sit behind a `conformance` feature, so a consumer that only writes formulas
-pays nothing for them. `euclid-algebra` has them today; the other contract
-crates are expected to follow.
+pays nothing for them. **All six contract crates ship them**, and `--all-features`
+is part of the documented check set for that reason — the gated code is not
+compiled otherwise, so a broken law would pass every other check.
+
+`euclid-matrix` is the one whose suites would have to be *run elsewhere*: its
+traits are backend primitives, so only a concrete tensor can satisfy them, and
+euclid ships none.
 
 | crate | purpose |
 |-------|---------|

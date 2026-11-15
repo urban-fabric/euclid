@@ -9,6 +9,12 @@ rust-version.workspace = true
 repository.workspace = true
 readme = "README.md"
 
+[features]
+# The scalar contracts, as functions a carrier author can check their impl against.
+# Off by default; always compiled under `cfg(test)` so our own suites exercise the same
+# code a consumer calls.
+conformance = []
+
 [dev-dependencies]
 euclid-utils.workspace = true
 

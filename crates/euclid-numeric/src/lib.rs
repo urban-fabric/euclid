@@ -188,6 +188,9 @@ pub trait NormedDivisionAlgebra: Arithmetic {
 //   compensated  accurate reductions: compensated summation and dot products
 //   constants    the constant catalogue, `constants::f64::CATALAN` and friends
 //   interval     one-dimensional closed-interval predicates over any `Real`
+#[cfg(any(feature = "conformance", test))]
+pub mod conformance;
+
 pub mod compensated;
 pub mod constants;
 pub mod interval;
