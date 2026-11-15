@@ -351,3 +351,21 @@ pub use integer::Integer;
 pub use modular::{Zn, Zp};
 pub use rational::{Rational, Rational64, Rational128};
 pub use semimodule::{LeftSemimodule, RightSemimodule};
+
+// The README's examples, compiled.
+//
+// `cfg(doctest)` means this item exists only while rustdoc is collecting doctests: it is absent
+// from every real build, adds nothing to the public surface, and never appears in the rendered
+// docs. What it buys is that `cargo test --doc` compiles the code blocks in README.md itself.
+//
+// A crate whose deliverable is its trait surface has a README whose example *is* part of that
+// surface, and a README example that no longer compiles is worse than none — it documents a
+// signature the crate no longer has. Two crates used to check this by hand-copying the example
+// into `tests/readme_check.rs`, which compiles the copy and lets the original drift. This checks
+// the original.
+//
+// Illustrative fragments in the README are marked ```rust,ignore, which is the honest marking:
+// they reference names that are deliberately undefined.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeExamples;

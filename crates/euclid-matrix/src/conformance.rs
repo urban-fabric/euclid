@@ -38,32 +38,29 @@
 //! | [`PreparedSpd`] / [`SpdFactor`] | a cached factor solves what the direct path solves | [`prepared_spd_laws`] |
 //! | [`QrDecomposition`] | `Q·R = A`, and `Qᴴ·Q = I` | [`qr_laws`] |
 //! | [`Determinant`] | `det(A·B) = det(A)·det(B)` | [`determinant_laws`] |
-//! | [`HermitianEigendecomposition`](crate::HermitianEigendecomposition) | `A·V = V·diag(λ)` | **not expressible — see below** |
-//! | [`SingularValueDecomposition`](crate::SingularValueDecomposition) | `U·diag(σ)·Vᴴ = A` | **not expressible — see below** |
+//! | [`HermitianEigendecomposition`](crate::HermitianEigendecomposition) | `A·V = V·diag(λ)`, `Vᴴ·V = I` | [`eigh_laws`] |
+//! | [`SingularValueDecomposition`](crate::SingularValueDecomposition) | `U·diag(σ)·Vᴴ = A` | [`svd_laws`] |
 //!
 //! Those hold for every correct implementation regardless of pivoting, blocking or sign
 //! convention, which is what makes them laws rather than expectations.
 //!
-//! # The two laws that cannot be written against this contract
+//! # The two laws that needed a contract change first
 //!
-//! This table used to list the eigen and SVD laws without the caveat, and no function
-//! implemented either — so the module advertised two laws a backend author would have gone
-//! looking for. The reason they were never written is structural rather than an oversight, and
-//! worth stating because it is a **gap in the trait surface**, not in the test suite.
+//! The table above listed the eigen and SVD laws before either existed, and the reason neither
+//! was written is worth keeping: it was **a gap in the trait surface, not an oversight**.
 //!
-//! [`HermitianEigendecomposition::eigh`](crate::HermitianEigendecomposition) returns `(Self::RealSpectrum, Self)` and
-//! [`SingularValueDecomposition::svd`](crate::SingularValueDecomposition) returns `(Self, Self::RealSpectrum, Self)`. Both laws
-//! need to form `V·diag(λ)`, which means combining a `RealSpectrum` with a `Self` — and
-//! [`MatrixRealSpectrum`](crate::MatrixRealSpectrum) provides **no conversion between them**. For a real carrier they are
-//! usually the same type and it would work by accident; for a complex carrier they are different
-//! types with nothing bridging them, so a law written generically does not compile.
+//! [`eigh`](crate::HermitianEigendecomposition::eigh) returns `(Self::RealSpectrum, Self)` and
+//! [`svd`](crate::SingularValueDecomposition::svd) returns `(Self, Self::RealSpectrum, Self)`.
+//! Both laws must form `V·diag(λ)`, which means combining a `RealSpectrum` with a `Self` — and
+//! [`MatrixRealSpectrum`](crate::MatrixRealSpectrum) related the two types not at all. For a real
+//! carrier they are usually the same type and it would have worked by accident; for a complex one
+//! nothing bridged them and no generic expression for `V·diag(λ)` existed.
 //!
-//! Closing it needs one additive method on [`MatrixRealSpectrum`](crate::MatrixRealSpectrum) — something of the shape
-//! `fn from_spectrum(s: Self::RealSpectrum) -> Self`, lifting a real spectrum into the carrier.
-//! That is a new required method, so it breaks every implementor, which puts it in the next
-//! breaking release rather than this one. Until then these two traits are the only part of
-//! euclid's contract surface with **no law at all**, and a backend implementing them is on its
-//! own — which is exactly the position the laws exist to avoid.
+//! [`MatrixRealSpectrum::from_spectrum`](crate::MatrixRealSpectrum::from_spectrum) closes it, and
+//! both laws are now written. It is a new required method, so it breaks every implementor — done
+//! before 0.5.0 was tagged rather than deferred, precisely so it does not have to break anyone
+//! later. Neither law materialises a diagonal matrix: scaling columns is a broadcast and an
+//! elementwise multiply, which is portable and avoids an `n × n` of mostly zeros.
 //!
 //! # Nothing here has ever been executed
 //!
@@ -294,6 +291,86 @@ where
         "Qᴴ·Q = I (orthonormal columns)",
         what,
     );
+}
+
+/// [`HermitianEigendecomposition`](crate::HermitianEigendecomposition): `A·V = V·diag(λ)`, and
+/// `V` is unitary.
+///
+/// The defining property, and it needs no reference eigenvalues: whatever `λ` and `V` a backend
+/// produces, applying `A` to the eigenvectors must equal scaling them by their eigenvalues. That
+/// holds for any correct implementation and for any phase convention, which asserting a
+/// particular `V` would not.
+///
+/// Unitarity is checked alongside, because the eigenvector relation alone is satisfied by a
+/// degenerate `V` — for `λ = 0` any `V` with `A·V = 0` passes — and `Vᴴ·V = I` is what makes it
+/// a decomposition rather than a collection of vectors.
+///
+/// Ascending order is **not** checked here. It is part of the contract, but checking it needs an
+/// ordering predicate over the spectrum that the rank-1 tensor surface does not offer portably;
+/// a backend should assert it in its own suite where it has concrete values to compare.
+///
+/// `a` must be rank-2, square and Hermitian.
+pub fn eigh_laws<M>(a: &M, tolerance: f64, what: &str)
+where
+    M: crate::HermitianEigendecomposition + euclid_tensor::TensorIndexing,
+    M::RealPart: Tensor,
+    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
+{
+    let n = a.shape().first().copied().unwrap_or(0);
+    let (lambda, v) = a.clone().eigh();
+
+    // V·diag(λ) as a broadcast multiply rather than a materialised diagonal: mapping the
+    // spectrum's only axis onto output axis 1 makes λ vary along the columns, so element [i, j]
+    // becomes V[i, j]·λ[j].
+    let scaled = v.clone() * M::from_spectrum(lambda).broadcast_in_dim(&[n, n], &[1]);
+    assert_close(
+        &a.clone().matmul(v.clone()),
+        &scaled,
+        tolerance,
+        "A·V = V·diag(λ)",
+        what,
+    );
+
+    let vh = v.clone().conjugate().transpose_axes(&[1, 0]);
+    let identity: M = M::one_hot(&M::iota(n), n);
+    assert_close(
+        &vh.matmul(v),
+        &identity,
+        tolerance,
+        "Vᴴ·V = I (eigenvectors are unitary)",
+        what,
+    );
+}
+
+/// [`SingularValueDecomposition`](crate::SingularValueDecomposition):
+/// `U·diag(σ)·Vᴴ` reconstructs `A`.
+///
+/// Reconstruction is the whole claim, and it is insensitive to the matched phase pair an SVD
+/// leaves free — negate a column of `U` and the corresponding column of `V` and the product is
+/// unchanged, which is why this is a law and an expected `U` would not be.
+///
+/// Note the convention this depends on: [`svd`](crate::SingularValueDecomposition::svd) returns
+/// `V`, not `Vᴴ`. A backend that returns the conjugate transpose instead fails here, which is
+/// the intended outcome — that mismatch otherwise produces a correctly-shaped, silently wrong
+/// answer for every square input.
+///
+/// `a` must be rank-2. For a non-square `a` the reduced form is assumed, per the trait.
+pub fn svd_laws<M>(a: &M, tolerance: f64, what: &str)
+where
+    M: crate::SingularValueDecomposition,
+    M::RealPart: Tensor,
+    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
+{
+    let (u, sigma, v) = a.clone().svd();
+
+    // Scale U's columns by σ, then apply Vᴴ. `k` comes from U's column count rather than from
+    // `a`'s shape, so this is correct for the reduced form on a non-square input.
+    let rows = u.shape().first().copied().unwrap_or(0);
+    let k = u.shape().get(1).copied().unwrap_or(0);
+    let scaled = u * M::from_spectrum(sigma).broadcast_in_dim(&[rows, k], &[1]);
+    let vh = v.conjugate().transpose_axes(&[1, 0]);
+
+    assert_close(&scaled.matmul(vh), a, tolerance, "U·diag(σ)·Vᴴ = A", what);
 }
 
 /// [`Determinant`]: the determinant is multiplicative.

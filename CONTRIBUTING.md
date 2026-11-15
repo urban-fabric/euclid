@@ -306,14 +306,13 @@ README's [data-structure section][ds].
   which for a generic trait surface is a real check, but no law body executes in
   this repository and none can.
 
-  **Two traits have no law**, and the reason is a gap in the contract rather
-  than in the suite: `HermitianEigendecomposition` and
-  `SingularValueDecomposition` both return a `RealSpectrum` alongside a `Self`,
-  and `MatrixRealSpectrum` offers no conversion between the two — so the law
-  everyone wants, `A·V = V·diag(λ)`, cannot be formed generically. Closing it
-  needs an additive method on `MatrixRealSpectrum` to lift a spectrum into the
-  carrier, which is a new required method and therefore a breaking release. It
-  is listed in [RELEASES](RELEASES.md) as pending for that reason.
+  **Every trait here now has a law.** Two did not until 0.5.0, and the reason
+  was a gap in the contract rather than in the suite: `eigh` and `svd` both
+  return a `RealSpectrum` alongside a `Self`, and `MatrixRealSpectrum` related
+  the two types not at all, so `A·V = V·diag(λ)` could not be formed
+  generically. `MatrixRealSpectrum::from_spectrum` closes it. That is a new
+  required method and so breaks every implementor — done *before* the 0.5.0 tag
+  rather than deferred, so it never has to break anyone.
 
   Reviewing an unexecuted law is the only check it will ever get, so read the
   body against the doc comment rather than trusting either. That is not

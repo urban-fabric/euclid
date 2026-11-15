@@ -70,8 +70,18 @@ where
 /// - `rank() == shape().len()`
 /// - `reshape` to a tensor's own shape is the identity
 /// - `reshape` round-trips through a flattened shape
-/// - `full_like`/`zeros_like` preserve shape
+/// - `full_like` preserves shape
 /// - `concatenate` sums the extent along its axis; `stack` adds an axis
+///
+/// **`zeros_like` is deliberately not checked here**, and this list used to claim it was. It
+/// cannot be: `zeros_like` is bounded `where Self: Element`, and these laws take `T: Tensor`
+/// precisely so that shape and reshape carry no arithmetic demand — that is why a boolean tensor
+/// can run them without pretending to be a ring. Adding the bound to check one defaulted
+/// constructor would exclude every carrier the looseness exists for.
+///
+/// It is also nearly free: `zeros_like` defaults through `zeros` to `full`, so for any carrier
+/// using the defaults it preserves shape exactly because `full_like` does. A carrier that
+/// **overrides** it has to check that itself, which is the one case this omission matters in.
 pub fn shape_laws<T>(xs: &[T], what: &str)
 where
     T: Tensor + PartialEq + core::fmt::Debug,

@@ -107,7 +107,7 @@ key tree colliding only after a split and a fold. `machine` takes a **model** (a
 reimplementation whose correctness is obvious) and a **system** (the real thing), generates a
 sequence of commands, and requires agreement at every step.
 
-```rust
+```rust,ignore
 check_machine::<MyMachine>("a_name", &Config::default(), 12);
 ```
 
@@ -133,7 +133,7 @@ makes `erf` twice as inaccurate therefore passes every check: the property still
 already hunts the worst case rather than sampling uniformly; `budget` writes that worst score to a
 committed file and fails a later run that scores higher.
 
-```rust
+```rust,ignore
 Config::default().budget("tests/budgets.txt")   // alongside target(observed_error)
 ```
 
@@ -159,7 +159,7 @@ odd/even symmetry, invariant preservation, fixed point. Each is a function takin
 `Compare` (`Exact`, `Ulps(n)`, `Relative(t)`, `Absolute(t)`), so one relation serves a graph and
 an `f64`:
 
-```rust
+```rust,ignore
 involution("transpose", graph, |g| g.transpose(), &Exact)?;
 involution("reciprocal", x, |v| 1.0 / v, &Ulps(2))?;
 ```

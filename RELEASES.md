@@ -28,19 +28,6 @@ than it sounds and the second half is the part worth watching:
 A relicence is listed too. It changes nothing at compile time and everything about what a
 recipient may do.
 
-## Pending, for the next breaking release
-
-Not released, listed so the next minor bump can carry them together — a breaking euclid release
-costs the fleet six sequential waves of migration, so one release carrying several breaks is much
-cheaper than several carrying one each.
-
-- **`MatrixRealSpectrum` needs a way to lift a spectrum into the carrier**, of the shape
-  `fn from_spectrum(s: Self::RealSpectrum) -> Self`. Without it the eigen and SVD laws
-  (`A·V = V·diag(λ)`, `U·diag(σ)·Vᴴ = A`) cannot be written generically, because combining a
-  `RealSpectrum` with a `Self` is not expressible — so `HermitianEigendecomposition` and
-  `SingularValueDecomposition` are the only part of euclid's contract surface with no law at all.
-  A new required method breaks every implementor, which is why it waits.
-
 ## 0.5.0
 
 **`euclid-property` is now `euclid-stability`.** Rename the dependency and the import
@@ -64,6 +51,23 @@ better: the old law built `[1, 2, 0, 1, 3]` for a rank-4 tensor, which is five e
 1 twice and not a permutation at all. It was correct only when rank was exactly 3, which is where
 euclid's own reference sample stopped. **A backend that was failing this law was probably not
 wrong.** Re-run it.
+
+**`MatrixRealSpectrum` gained a required method, `from_spectrum`.** Every implementor must add
+it — a one-line embedding of a real spectrum into the carrier (the identity for a real carrier,
+`λ + 0i` for a complex one).
+
+It is there because without it the defining property of an eigendecomposition could not be
+*stated*: `A = V·diag(λ)·Vᴴ` needs a `RealSpectrum` and a `Self` in one expression, and nothing
+related the two types. `HermitianEigendecomposition` and `SingularValueDecomposition` were
+consequently the only part of euclid's contract surface with no law behind them, while the
+`conformance` module's header advertised laws for both. Both laws now exist
+(`conformance::eigh_laws`, `conformance::svd_laws`).
+
+**`svd` returns `V`, not `Vᴴ`** — now stated on the trait, where it was previously only implied
+by the formula. LAPACK's `gesdd` hands back `Vᵗ`, so a backend wrapping it directly must
+transpose before returning. Getting this backwards yields a correctly-shaped and silently wrong
+result for any square input, which is why it is worth a paragraph rather than a formula. `eigh`
+likewise returns `(λ, V)` with eigenvectors as *columns*.
 
 **`Tensor::transpose_axes` now documents a precondition it always had**: `axes` must be a
 permutation of `0..rank()`. A shorter list is not a partial permutation leaving the remaining axes

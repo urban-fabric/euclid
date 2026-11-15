@@ -175,7 +175,7 @@ what that crate is for.
 
 **There is no umbrella crate** — depend on the specific crates you need.
 
-```
+```text
 euclid-numeric             no dependencies
 ├── euclid-units           → euclid-numeric
 │   └── euclid-quantity    → euclid-units, euclid-numeric
@@ -219,7 +219,7 @@ tier is a claim — `impl Semiring for MyThing {}` asserts that `⊗` distribute
 over `⊕`, and the type system checks neither — so the laws ship as public
 functions you call against a sample of your own type:
 
-```rust
+```rust,ignore
 euclid_algebra::conformance::semiring_laws(&my_sample, "MyThing");
 euclid_algebra::conformance::ring_laws(&my_sample, "MyThing");
 ```
@@ -291,7 +291,7 @@ rather than the point, which is why they are one crate.
 The budget is the piece worth knowing about from outside, because it closes a
 gap every other check in this repository leaves open:
 
-```rust
+```rust,ignore
 Config::default().budget("tests/budgets.txt")   // alongside target(observed_error)
 ```
 
@@ -476,7 +476,7 @@ changes and nothing else, and why the minor number is the axis.
 A target architecture nobody has verified is a diagram, so this one was checked
 against the manifests rather than drawn. The edges, by repository:
 
-```
+```text
 euclid       -> (none)
 bayes        -> euclid
 hausdorff    -> euclid
@@ -503,7 +503,7 @@ cannot see the fleet in order to verify it. Re-check it when the shape changes.
 `cantor`, `weierstrass` and `dirichlet` are not in the table, and their existing
 edges force where they land:
 
-```
+```text
 dirichlet    -> euclid, sierpinski(4)                           >= layer 5
 weierstrass  -> galois(4)                                       >= layer 5
 cantor       -> hausdorff(2), sierpinski(4), galois(4), dirichlet(5)  >= layer 6
