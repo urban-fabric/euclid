@@ -251,6 +251,13 @@ impl<T: Field + PartialOrd> OrderedField for T {}
 /// Marker: a [`Field`] in which every non-constant polynomial has a root (ℂ).
 pub trait AlgebraicallyClosedField: Field {}
 
+/// Conformance suites for the tiers above — see [`conformance`].
+///
+/// Gated behind the `conformance` feature so a consumer pays nothing unless it asks, and
+/// always compiled under `cfg(test)` so this crate's own suites exercise it.
+#[cfg(any(feature = "conformance", test))]
+pub mod conformance;
+
 mod gaussian;
 mod impls;
 mod integer;
