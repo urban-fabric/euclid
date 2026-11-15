@@ -6,7 +6,7 @@ use super::ScalarQuantity;
 /// interpolation. Opt-in per unit: an absolute scalar such as a temperature does **not**
 /// implement it.
 ///
-/// Every method has a default body over the carrier's own [`Real`](euclid_numeric::Real) surface,
+/// Every method has a default body over the carrier's own [`Real`] surface,
 /// so a linear unit opts in with an empty impl block:
 ///
 /// ```ignore

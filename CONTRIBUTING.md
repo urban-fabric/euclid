@@ -144,7 +144,7 @@ Instead:
   numeric convention gets described. Write it as the permanent record it becomes,
   not as a note to the reviewer.
 - Bump the workspace version in the root `Cargo.toml` when the public surface
-  moves. All four crates share `[workspace.package]`, so they version together.
+  moves. All nine crates share `[workspace.package]`, so they version together.
 - Say so in the PR title when imports or semantics change, since downstream
   projects read titles to decide whether they need to react — and since under a
   squash merge the title is the one line that survives into `jj log`.
@@ -159,8 +159,21 @@ euclid ships contracts, so the usual question is not "does the code work" but
 
 - **New or changed trait method** — update the reference implementations that
   must satisfy it. `ToySampler` (`euclid-random`), `ToyTensor` and `Dense`
-  (`euclid-tensor`), and the unit carriers in `euclid-units` exist so that every
-  contract has at least one implementation proving it can be honored.
+  (`euclid-tensor`), and the toy unit carriers in `euclid-units` exist so that
+  every contract has at least one implementation proving it can be honored.
+
+  **One contract currently has none: `euclid-matrix`.** Its twelve traits and the
+  algorithms written over them have no reference carrier and no tests.
+
+  Note what that does *not* argue for. The crate is roughly half trait surface
+  (~156 lines) and half matrix kernels (~126 lines: `least_squares`, `gram`,
+  `inverse`, `dominant_eigenvector`, …), and giving the kernels a reference
+  carrier here would mean implementing Cholesky, LU and QR for a tensor inside
+  euclid — pulling the repository *further* from being a skeleton of traits.
+  euclid holds **scalar** kernels on purpose, because a special function has one
+  right answer and needs a canonical home; matrix and tensor kernels belong with
+  a backend, where a concrete tensor already exists. The open question is where
+  these go, not how to test them in place.
 - **Anything the contract leaves open** — pick a convention and *write it down*
   in the trait docs, not only in an implementation. Two backends reading the same
   signature differently is the one failure mode that defeats the point of the
@@ -181,11 +194,15 @@ own bar. The suites in `euclid-numeric/src/tests/` are organized by the property
 under test rather than by the function under test, so one function is exercised
 from several directions at once.
 
-**The module header of `euclid-numeric/src/tests/mod.rs` is the authoritative
+**The module header of `euclid-numeric/src/tests.rs` is the authoritative
 index** — every suite, what question it answers, and the house rules on file size
 and tolerances. Read it before adding a suite, and update it when you do. It
 lives there rather than here because a list in two places is a list that goes
 stale in one of them.
+
+(Note the path: the workspace denies `clippy::mod_module_files`, so a module with
+children is `foo.rs` beside `foo/`, never `foo/mod.rs`. That applies to the test
+tree like everywhere else.)
 
 Two rules from that header are worth repeating, because they are easy to breach
 without noticing:
@@ -220,4 +237,10 @@ the reason; an unexplained loosening hides the regression it was meant to catch.
 ## License
 
 By contributing you agree your contributions are licensed under the
-[Apache License, Version 2.0](LICENSE), per section 5 of that license.
+[Apache License, Version 2.0](LICENSE), per section 5 of that license — **except**
+in `euclid-algebra`, `euclid-scalar` and `euclid-matrix`, which each declare
+`license = "Proprietary"` rather than inheriting the workspace's Apache-2.0.
+`euclid-algebra` and `euclid-matrix` arrived from their own repositories and
+`euclid-scalar` was split out of `euclid-algebra`; a move should not relicense
+code, and neither should a split. A contribution to one of those three is made
+under its licence, not Apache-2.0, so check which crate you are touching.
