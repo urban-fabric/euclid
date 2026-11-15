@@ -1,8 +1,11 @@
 # euclid
 
-The base numeric and units package for Urban Fabric.
+**euclid is where Urban Fabric agrees with itself about numbers.**
 
-**Write a formula once; run it on anything that holds a number.**
+It holds the definitions that independently-written parts of the fleet have to
+mean *identically* — what a real number supports, what a length is, which
+algebraic tier a carrier reaches, what `erf(0.7)` returns. Anything those parts
+may legitimately differ on lives with them instead.
 
 A **carrier** is whatever actually holds the value — an ordinary `f64`, an
 expression handle, a graph node, a tensor, a dataframe column, a unit-aware
@@ -29,9 +32,53 @@ quantities, arrays, and randomness.
 
 ## Why This Exists
 
-euclid is the numerics, units, and mathematical base for Urban Fabric. Its job
-is to make a formula **usable across multiple interfaces** instead of being
-rewritten for each one.
+### The problem is silent disagreement
+
+Thirty-odd repositories compute over the same quantities. `abel` works out a
+drive time, `ramsey` a betweenness estimate, `galois` pushes the same formula
+into a dataframe, a backend runs it elementwise over an array. Nothing makes
+them agree on what a length is, on what `+` means at which tier, or on what
+`erf` returns at 0.7.
+
+When they drift, **nothing fails.** There is no type error and no panic — you
+get two different numbers from two places that were supposed to be computing
+the same thing, and no indication which is wrong. That is the failure euclid
+exists to prevent, and it is why the deliverable is a *definition* rather than
+a library of helpers.
+
+### The membership rule
+
+> **If two independently-written parts of the fleet must agree on it, it belongs
+> in euclid. If they may legitimately differ, it belongs with them.**
+
+That is the whole test, and it is meant to be usable on a single file without
+appeal to taste:
+
+| | must agree? | lives |
+|---|---|---|
+| `Real`, `Length`, `Tensor`, `Semiring` | yes — otherwise formulas do not compose | here |
+| `erf`, `lgamma`, Bessel, Airy | yes — one right answer per input | here |
+| `LengthMeters`, `Rational`, `Zp`, min-plus | yes — otherwise two projects cannot exchange a value | here |
+| Cholesky, QR, SVD | **no** — blocked, packed or GPU is the backend's call | a backend |
+| a PRNG algorithm | no — backends differ for good reasons | a backend |
+| CSR layout, traversal order, route costs | no | `cayley`, `abel` |
+
+Note what the rule does *not* say. It is not "traits, not implementation" —
+`erf` is 8,400 lines of concrete `f64` code and belongs here, because there is
+one right answer and a second implementation is a second chance to be wrong.
+`cholesky` is also implementation and does *not* belong here, because it has
+many valid implementations and choosing between them is exactly the backend's
+job. **Both are implementation; only one requires agreement.**
+
+The practical consequence is that euclid is mostly trait surface, but not as a
+rule — as a result. Most things that must be agreed are best expressed as a
+contract, and the exceptions are admitted on their merits rather than smuggled
+in.
+
+### What agreement buys
+
+Once the vocabulary is shared, a formula written against it is **usable across
+every interface** instead of being rewritten for each one.
 
 The same mathematics tends to be needed in several places at once — evaluated
 eagerly on host scalars, staged into an expression or graph backend for
@@ -147,8 +194,8 @@ extends, so the edge is the point rather than a shortcut. A consumer still takes
 on only the surface it uses: nothing depends *downward* from a root onto a
 carrier, so taking `euclid-units` never pulls `euclid-quantity`.
 
-The eight published members fall out of two questions: **which concern** is
-this, and **contract or concrete**. Drawn as a grid, the crate list stops looking
+The eight published members fall out of two questions: **which concern** is this,
+and **contract or concrete**. Drawn as a grid, the crate list stops looking
 arbitrary — and the empty cells are as deliberate as the full ones. The first
 four rows are the four kinds of value from the top of this page:
 
@@ -204,9 +251,9 @@ shrink to its trait half.
 
 ### Which kernels euclid holds
 
-euclid is the **skeleton** the rest of Urban Fabric is built on, so the default
-is trait surface rather than implementation. One kind of implementation is
-nonetheless kept here deliberately, and one kind is not:
+This is the [membership rule](#the-membership-rule) applied to the hardest case,
+where "is this a contract?" gives the wrong answer and "must this be agreed?"
+gives the right one:
 
 - **Scalar kernels belong in euclid.** `erf`, `lgamma`, the Bessel and Airy
   functions and the rest of `euclid-numeric/src/kernels/` are ~8.4k lines of
@@ -214,10 +261,14 @@ nonetheless kept here deliberately, and one kind is not:
   right answer, every carrier needs it, and a second implementation of `erf` in
   a consumer is a second chance to get it wrong. It is also what makes
   `f64: Real` satisfiable at all — the reference carrier has to work.
-- **Matrix and tensor kernels do not.** They need a concrete tensor to run on,
-  and the moment euclid ships one it stops being a skeleton. `euclid-tensor`
-  and `euclid-random` therefore define their contracts and ship no carrier; a
+- **Matrix and tensor kernels do not.** `cholesky` has many valid
+  implementations — blocked, packed, GPU — and choosing between them is exactly
+  what a backend is for, so there is nothing to agree on. `euclid-tensor` and
+  `euclid-random` therefore define their contracts and ship no carrier; a
   backend supplies the tensor and the PRNG.
+
+Both are implementation. Only one requires agreement, which is why the rule is
+about agreement and not about traits.
 
 `euclid-matrix` sits across that line today: ~156 lines of traits, which belong
 here, and ~126 lines of matrix kernels (`least_squares`, `gram`, `inverse`,
