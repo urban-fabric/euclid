@@ -16,7 +16,7 @@
 # every platform's optional dependencies and reports crates that are never
 # compiled here.
 targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]
-# Dev-dependencies are in scope. `euclid-property` and `euclid-utils` are
+# Dev-dependencies are in scope. `euclid-stability` and `euclid-utils` are
 # dev-only and a vulnerability in a test engine still runs on a developer's
 # machine; excluding them would be checking the artifact rather than the work.
 all-features = true
@@ -94,9 +94,9 @@ deny = [
     { crate = "num-traits", reason = "euclid-numeric is the fleet's scalar contract" },
     { crate = "num-complex", reason = "euclid-scalar is the fleet's complex contract" },
     { crate = "uom", reason = "euclid-units is the fleet's dimension contract" },
-    { crate = "proptest", reason = "euclid-property is the fleet's property engine" },
-    { crate = "quickcheck", reason = "euclid-property is the fleet's property engine" },
-    { crate = "rand", reason = "euclid-random is the contract; euclid-property carries the engine" },
+    { crate = "proptest", reason = "euclid-stability is the fleet's property engine" },
+    { crate = "quickcheck", reason = "euclid-stability is the fleet's property engine" },
+    { crate = "rand", reason = "euclid-random is the contract; euclid-stability carries the engine" },
 ]
 
 # ---------------------------------------------------------------------------

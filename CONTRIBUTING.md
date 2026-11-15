@@ -255,7 +255,7 @@ README's [data-structure section][ds].
     `conformance`'s own docs argue for it. An algebraic law over a small carrier
     either holds structurally or fails on the first awkward triple.
   - The **generated** sample is a companion suite beside it, written with
-    `euclid-property` (the dev-only engine; take it under `[dev-dependencies]`,
+    `euclid-stability` (the dev-only engine; take it under `[dev-dependencies]`,
     as eight of the ten members now do). It takes the *same* law functions and
     changes only where the slice comes from. Nothing is restated, so a law cannot
     drift between the two. What it adds is the thing a fixed list cannot cover:
@@ -271,6 +271,16 @@ README's [data-structure section][ds].
   a minimised counterexample is persisted as a line of hex that replays exactly,
   on any machine, before any random case runs. **Commit that file** — each line
   is a regression test that cost a search to find.
+
+  Each line carries the case it rendered as, after a `::`, and that is checked on
+  load rather than being a comment. A tape is a sequence of *choices*, not a
+  value, so it only means anything for the generator that consumed it: widen a
+  range or add a `weighted` arm and every committed tape still decodes, into a
+  different case. The line stays, the suite stays green, and the regression
+  silently stops being tested. A mismatch is reported instead, and
+  `EUCLID_STABILITY_RECORD=1` refreshes the file — after which the tape pins a
+  *different* case than the one originally found, so delete the line and assert
+  the case directly if it was the case that mattered.
 
   Put a coverage floor on the cases that motivated the suite — `.require("a
   repeated-extent tensor", 10.0)` — so a generator that stops producing them
@@ -291,6 +301,43 @@ README's [data-structure section][ds].
 - **New numeric function** — add it to the accuracy, stability, and identity
   suites in `euclid-numeric/src/tests/`. A function that is merely *plausible* in
   the normal range is not enough; see below.
+
+  **Give its error a score and a budget.** This is the one habit that separates a
+  suite which notices accuracy changing from one that does not, and it is cheap:
+
+  ```rust
+  Config::default()
+      .regressions("tests/regressions/<suite>.txt")
+      .budget("tests/budgets.txt")       // and call target(score) in the body
+  ```
+
+  The reasoning is that an assertion and a measurement are different statements.
+  `check_ulps!(got, want, 8)` is the **contract** — what a caller may rely on —
+  and it is written with headroom, so it admits today's error and a worse one.
+  `target(score)` makes the search hunt the worst case instead of sampling
+  uniformly, which matters because a kernel's worst input is a thin region that
+  uniform draws step over. `.budget(path)` then records that worst score and
+  fails a later run that scores **higher**, which is the only check here that can
+  see a kernel becoming twice as inaccurate while every assertion still holds.
+
+  Score **error, not accuracy** — higher must mean worse — and prefer a *ratio*
+  to an admissible bound over a raw error: `relation::forward_stable_margin`
+  returns one, `1.0` means "exactly at the limit", and it is comparable across
+  kernels and continuous in the input, which is what the hill climb needs to
+  follow. Baselines are reproducible because the seed is fixed; editing a
+  generator, `cases` or `targeted_fraction` legitimately changes the number, so
+  re-record with `EUCLID_STABILITY_RECORD=1` and commit it. The failure message
+  says as much, because the alternative is a reader concluding they broke a
+  kernel when they had widened a range.
+
+  Where there is a more accurate reference to compare against, state the claim as
+  stability rather than as a tolerance: `relation::forward_stable` bounds the
+  error by `safety · κ(x) · u`, so the assertion becomes "no worse than the
+  problem itself" instead of "within a number I picked" — and its failure reports
+  κ, which is what distinguishes an unstable kernel from a genuinely hard input.
+  For an `f32` kernel beside an `f64` one, `relation::precision_agrees` compares
+  in `f32` ulps against the rounded wide result, which is the only bound that
+  does not charge the narrow kernel for narrowing.
 - **Docs are the product.** These crates are almost entirely trait surface, so a
   method's doc comment is the deliverable. Document panics, saturation and
   rounding behavior, and precision limits. Skip the design-rationale essay unless

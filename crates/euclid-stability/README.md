@@ -1,13 +1,13 @@
-# euclid-property
+# euclid-stability
 
-Randomized property testing with shrinking. Part of [euclid](../..).
+Numerical stability and property testing. Part of [euclid](../..).
 
 Dev-only (`publish = false`), on the same footing as `euclid-utils`: take it under
 `[dev-dependencies]`. These crates are not on crates.io — see
 [the root README](../../README.md#using-it) for the git dependency to add.
 
 ```rust
-use euclid_property::{check_eq, generate, property};
+use euclid_stability::{check_eq, generate, property};
 
 property! {
     fn reversing_twice_is_the_identity(xs in generate::vec(generate::int(0, 9), 0, 8)) {
@@ -58,6 +58,19 @@ on any machine.
 
 ## Surface
 
+**The numerical half** — why the crate is named for stability rather than for properties:
+
+| module | role |
+|---|---|
+| `numeric` | condition numbers, forward and two-stage error bounds, seam hunting, ulp monotonicity scans |
+| `tolerance` | ULP, relative and absolute comparison, and the condition number of a sum |
+| `target` | a score for the search to maximise, so it hunts the worst case instead of sampling |
+| `budget` | that worst score, committed — so losing accuracy fails even while the assertion holds |
+| `relation` | the metamorphic relations, named, including `forward_stable` and `precision_agrees` |
+
+**The property-testing foundation those sit on** — a search needs cases to search over and a way
+to minimise what it finds:
+
 | module | role |
 |---|---|
 | `source` | the choice tape; a value is a pure function of it |
@@ -65,21 +78,53 @@ on any machine.
 | `generate::float` | float generation built to find numerical bugs, not to be uniform |
 | `shrink` | one generic minimiser over the tape, no per-type rules |
 | `runner` | search, shrink, persist, report |
-| `persist` | minimised failures as committable hex |
-| `relation` | the metamorphic relations, named |
+| `persist` | minimised failures as committable hex, with the case they render as |
 | `stats` | case classification, with coverage you can *require* |
-| `target` | a score for the search to maximise, so it hunts the worst case |
-| `tolerance` | ULP and relative-error comparison, and a condition number |
 | `rng` | SplitMix64, the only randomness here |
 
-Generators: `int`, `index`, `boolean`, `just`, `vec`, `one_of`, `weighted`, `pair`, `triple`,
-`recursive`, plus `map` / `and_then` / `filter`. For floats: `finite`, `any`, `magnitude`
-(log-uniform by exponent), `in_range`, `positive`, `notable`, `non_finite`, `cancelling_pair`.
+Generators: `int`, `index`, `boolean`, `just`, `vec`, `distinct`, `permutation`, `one_of`,
+`weighted`, `pair`, `triple`, `recursive`, plus `map` / `and_then` / `filter`. For floats:
+`finite`, `any`, `magnitude` (log-uniform by exponent), `in_range`, `positive`, `notable`,
+`non_finite`, `cancelling_pair`.
+
+`distinct` and `permutation` are both "valid by construction rather than by rejection", which is
+the house rule for a generator with a constraint: the shrinker's job is to make values smaller
+and more alike, so it walks straight into whatever a `filter` rejects and spends its budget
+there. `distinct` dedups (and so may come out short); `permutation` argsorts generated keys, which
+is a genuine bijection every time and spread across the symmetric group — where "draw indices and
+fix up the duplicates" biases towards the identity, the one permutation a broken `transpose`
+survives.
 
 Macros: `property!` to declare tests; `check!` / `check_eq!` / `check_ne!` / `check_ulps!` /
 `check_relative!` to assert; `assume!` to skip a case; `classify!` to label one.
 
-## Three things beyond the basics
+## Four things beyond the basics
+
+**An accuracy budget.** A property asserts a contract — `check_ulps!(got, want, 8)` — and a
+contract is written with headroom, so it admits today's error *and* a worse one. A refactor that
+makes `erf` twice as inaccurate therefore passes every check: the property still holds. `target`
+already hunts the worst case rather than sampling uniformly; `budget` writes that worst score to a
+committed file and fails a later run that scores higher.
+
+```rust
+Config::default().budget("tests/budgets.txt")   // alongside target(observed_error)
+```
+
+```text
+property regressed: the_erf_round_trip_is_forward_stable
+  worst target() score rose from 3.0e-1 to 5.5e-1 (+84%)
+  recorded in: tests/budgets.txt
+```
+
+The assertion stays the contract; the baseline notices the day the contract starts being used up.
+It is only meaningful because the seed is fixed — the score is a property of the code, not of the
+run — and the number lives in a file rather than a constant for the same reason a persisted
+counterexample does: it is evidence produced by a run, and it should arrive in a diff as one line
+rather than buried in a rewritten assertion. Score error, not accuracy, and prefer a ratio to an
+admissible bound (`relation::forward_stable_margin`) over a raw error: `1.0` then means "exactly
+at the limit", comparable across kernels.
+
+
 
 **Metamorphic relations, named.** The same dozen shapes recur — involution, idempotence, round
 trip, commutativity, associativity, distributivity, two-implementations-agree, monotonicity,
@@ -128,7 +173,7 @@ The seed is fixed by default. A suite that passes today passes tomorrow, and a p
 only fails on one seed in ten is a property that fails — reporting that as a flake wastes the
 finding. Vary `Config::seed` deliberately for a longer soak; do not vary it per run.
 
-Set `EUCLID_PROPERTY_VERBOSE=1` to let panic backtraces through during a search; they are
+Set `EUCLID_STABILITY_VERBOSE=1` to let panic backtraces through during a search; they are
 suppressed by default because shrinking re-runs a failing property hundreds of times.
 
 ## Not here

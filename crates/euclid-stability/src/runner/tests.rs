@@ -12,7 +12,11 @@ use crate::Failure;
 use crate::generate::{Gen, int, vec as gen_vec};
 
 /// Run `check` and capture its panic message, if any.
-fn failure_message<T: 'static>(
+///
+/// `Debug` is required because the runner renders each case to put it on the failure report and
+/// into the regression file — see [`persist`](crate::persist) for why that rendering is checked
+/// rather than decorative.
+fn failure_message<T: 'static + core::fmt::Debug>(
     generator: Gen<T>,
     property: impl FnMut(T) -> Result<(), Failure>,
 ) -> Option<String> {

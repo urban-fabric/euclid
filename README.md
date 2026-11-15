@@ -187,7 +187,7 @@ euclid-numeric             no dependencies
 euclid-algebra             no dependencies ───┘
 
 euclid-utils               dev-only, no dependencies   ┐ publish = false;
-euclid-property            dev-only, no dependencies   ┘ never in the graph above
+euclid-stability            dev-only, no dependencies   ┘ never in the graph above
 ```
 
 Three crates depend on a **peer** as well as on a root — `euclid-quantity` on
@@ -256,9 +256,9 @@ published artifact and in no part of the graph above.
 | crate | purpose |
 |-------|---------|
 | [`euclid-utils`](crates/euclid-utils) | shared test helpers — comparison criteria, finite-difference calculus, domain sweeps, shape assertions |
-| [`euclid-property`](crates/euclid-property) | randomized property testing with shrinking, over a replayable choice tape |
+| [`euclid-stability`](crates/euclid-stability) | numerical stability and property testing — condition numbers, forward-error bounds, seam hunting, accuracy budgets, and randomized search with shrinking |
 
-`euclid-property` is the one member that looks like it fails the [membership
+`euclid-stability` is the one member that looks like it fails the [membership
 rule](#the-membership-rule) and does not. A test engine is not something the
 fleet must agree on numerically — but it is also not a *deliverable*: it exists
 so the suites in this repository can search for the input that breaks a contract
@@ -276,6 +276,33 @@ sample, and once over generated input. The two answer different questions, which
 [CONTRIBUTING](CONTRIBUTING.md#what-a-change-should-come-with) spells out — the
 fixed sample proves a tier is satisfiable, the generated one hunts the
 representation invariants underneath it.
+
+**The name says "stability" rather than "property" on purpose.** It was
+`euclid-property` until 0.5, and that pointed at the wrong tradition: property
+testing in the QuickCheck/proptest lineage is *type-driven*, where an `Arbitrary`
+instance per type does the work and the interesting question is how to build a
+well-formed value. This crate has no `Arbitrary`, deliberately — a generator is
+declared, in the same spirit as `ConformanceSample` — and its weight is
+numerical rather than type-theoretic: condition numbers, forward and two-stage
+error bounds, seam hunting at algorithm crossovers, ulp monotonicity scans, and
+accuracy budgets. The property-testing machinery is the foundation those sit on
+rather than the point, which is why they are one crate.
+
+The budget is the piece worth knowing about from outside, because it closes a
+gap every other check in this repository leaves open:
+
+```rust
+Config::default().budget("tests/budgets.txt")   // alongside target(observed_error)
+```
+
+A property asserts a contract — "within 8 ulp" — with enough headroom to admit
+today's error and tomorrow's. So a refactor that makes `erf` twice as inaccurate
+passes every check here: the property still holds. `target` already hunts the
+worst case rather than sampling uniformly; `budget` writes that worst score to a
+committed file and **fails a later run that scores higher**. The assertion stays
+the contract; the baseline notices the day the contract starts being used up.
+It works because the search seed is fixed, so the number is a property of the
+code rather than of the run.
 
 ### Which kernels euclid holds
 
@@ -351,7 +378,7 @@ euclid shipping a tensor is worse than two tested ones.
 Only `euclid-quantity` pulls a third-party dependency (`bytemuck` and `serde`),
 and that cost is per-crate: a consumer of the contract crates still gets none.
 
-`euclid-utils` and `euclid-property` are the two dev-only members — the crates
+`euclid-utils` and `euclid-stability` are the two dev-only members — the crates
 take them under `[dev-dependencies]` for shared test helpers and for the
 property engine, and both are `publish = false`, so neither reaches a consumer.
 

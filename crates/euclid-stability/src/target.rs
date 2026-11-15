@@ -14,7 +14,7 @@
 //! the framework:
 //!
 //! ```
-//! use euclid_property::{check_ulps, generate, property, target, tolerance};
+//! use euclid_stability::{check_ulps, generate, property, target, tolerance};
 //!
 //! property! {
 //!     fn exp_ln_round_trips(x in generate::float::positive()) {

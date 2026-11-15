@@ -11,8 +11,8 @@ repository.workspace = true
 publish = false
 
 [dev-dependencies]
-# The property engine. Testing the measuring instrument is the point here.
-euclid-property.workspace = true
+# The stability and property engine. Testing the measuring instrument is the point here.
+euclid-stability.workspace = true
 
 [lints]
 workspace = true

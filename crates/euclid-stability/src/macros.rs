@@ -12,7 +12,7 @@
 /// Declare one or more properties as `#[test]` functions.
 ///
 /// ```
-/// use euclid_property::{check_eq, generate, property};
+/// use euclid_stability::{check_eq, generate, property};
 ///
 /// property! {
 ///     /// Doc comments carry through to the generated test.

@@ -31,11 +31,10 @@ use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::generate::{DrawError, Gen};
-use crate::persist;
 use crate::rng::SplitMix64;
 use crate::shrink::{self, Probe};
 use crate::source::Source;
-use crate::{stats, target};
+use crate::{budget, persist, stats, target};
 
 /// A property's verdict on one case.
 pub type Outcome = Result<(), Failure>;
@@ -82,6 +81,10 @@ pub struct Config {
     /// [`target`](crate::target()) score, rather than drawing fresh. Ignored when the property
     /// never reports a score.
     pub targeted_fraction: f64,
+    /// File recording the worst [`target`](crate::target()) score this property has reported, so
+    /// that a later run scoring higher fails. `None` disables the check. See
+    /// [`crate::budget`].
+    pub budget: Option<String>,
 }
 
 impl Default for Config {
@@ -97,6 +100,7 @@ impl Default for Config {
             // would abandon exploration and get stuck in the first local maximum found; a
             // fifty-fifty split keeps a fresh draw coming while still concentrating effort.
             targeted_fraction: 0.5,
+            budget: None,
         }
     }
 }
@@ -134,6 +138,18 @@ impl Config {
         self.targeted_fraction = fraction.clamp(0.0, 1.0);
         self
     }
+
+    /// Record the worst [`target`](crate::target()) score to `path`, and fail a later run that
+    /// scores higher.
+    ///
+    /// Requires the property to call [`target`](crate::target()): a budget over a property that
+    /// reports no score is protection that does not exist, so it is an error rather than a
+    /// no-op. See [`crate::budget`] for why the number belongs in a committed file.
+    #[must_use]
+    pub fn budget(mut self, path: impl Into<String>) -> Self {
+        self.budget = Some(path.into());
+        self
+    }
 }
 
 /// Run `property` over cases drawn from `generator`.
@@ -143,7 +159,7 @@ impl Config {
 ///
 /// # Panics
 /// If the property fails, or if every case was rejected.
-pub fn check<T: 'static>(
+pub fn check<T: 'static + core::fmt::Debug>(
     name: &str,
     config: &Config,
     generator: &Gen<T>,
@@ -156,18 +172,52 @@ pub fn check<T: 'static>(
         .as_deref()
         .map(persist::load)
         .unwrap_or_default();
-    for tape in persisted {
-        if let Verdict::Failed(failure) = replay(generator, &mut property, tape.clone()) {
+    let mut stale: Vec<Stale> = Vec::new();
+    let mut current: Vec<(Vec<u64>, Option<String>)> = Vec::new();
+
+    for entry in persisted {
+        let (verdict, rendering) = replay_rendered(generator, &mut property, entry.tape.clone());
+        if let Verdict::Failed(failure) = verdict {
             report(
                 name,
                 config,
-                &tape,
+                &entry.tape,
                 &failure,
                 generator,
                 &mut property,
                 true,
             );
         }
+        // Only this property's own lines are its business. A regressions file holds a whole
+        // suite, and a sibling property with a different generator renders the same tape
+        // differently — so comparing across properties would report staleness that is not
+        // there, and refreshing would delete the sibling's regressions. Every tape is still
+        // *replayed* above, which is cheap and occasionally catches a case that breaks two laws.
+        if !entry.belongs_to(name) {
+            continue;
+        }
+        current.push((entry.tape.clone(), rendering.clone()));
+
+        // A tape that no longer produces a case at all, or that produces a different one than
+        // was recorded, has stopped being the regression it was committed as.
+        let drifted = match (&entry.rendering, &rendering) {
+            (Some(recorded), Some(now)) if recorded != now => Some(now.clone()),
+            (Some(_), None) => Some("<no longer produces a case>".to_string()),
+            _ => None,
+        };
+        if let Some(now) = drifted {
+            stale.push(Stale {
+                tape: persist::encode(&entry.tape),
+                recorded: entry.rendering.clone().unwrap_or_default(),
+                now,
+            });
+        }
+    }
+
+    if !stale.is_empty()
+        && let Some(path) = config.regressions.as_deref()
+    {
+        report_stale(name, path, &stale, &current);
     }
 
     stats::reset();
@@ -238,7 +288,7 @@ pub fn check<T: 'static>(
         dedup(&reasons)
     );
 
-    if std::env::var_os("EUCLID_PROPERTY_STATS").is_some() {
+    if std::env::var_os("EUCLID_STABILITY_STATS").is_some() {
         let climbed = climber.best_score().map_or_else(String::new, |best| {
             format!("\n  best target score: {best:e}")
         });
@@ -272,6 +322,67 @@ pub fn check<T: 'static>(
             .join("\n"),
         stats::report()
     );
+
+    // The accuracy baseline last of all. A coverage shortfall has to be reported first: the
+    // worst score found over input that never reached the interesting region is not a number
+    // worth comparing against anything, so enforcing the budget before coverage would be
+    // enforcing it on a measurement already known to be unrepresentative.
+    if let Some(path) = config.budget.as_deref() {
+        enforce_budget(name, path, climber.best_score());
+    }
+}
+
+/// Compare the run's worst score against its committed baseline.
+///
+/// # Panics
+/// If the score rose above the baseline, or if the property never reported one.
+#[allow(clippy::panic)]
+fn enforce_budget(name: &str, path: &str, best: Option<f64>) {
+    let Some(best) = best else {
+        panic!(
+            "{name}: a budget file is configured but the property never called target(), so \
+             there is no score to record and nothing is being protected.\n  \
+             budget: {path}\n\n\
+             Either report a score — target(observed_error) — or drop .budget() from the config. \
+             A budget over a property with no score is the one configuration that looks like \
+             protection and provides none."
+        );
+    };
+
+    let (verdict, previous) = budget::evaluate(path, name, best);
+    match verdict {
+        budget::Verdict::Recorded => eprintln!(
+            "{name}: recorded a target() baseline of {best:e} in {path}. Commit it — a later run \
+             scoring higher will fail."
+        ),
+        budget::Verdict::Held => {}
+        budget::Verdict::Improved => eprintln!(
+            "{name}: worst target() score is {best:e}, well under the recorded {}. The baseline \
+             is now loose enough to admit a regression; re-record with {}=1 and commit it.",
+            previous.unwrap_or(f64::NAN),
+            budget::RECORD
+        ),
+        budget::Verdict::Regressed => {
+            let baseline = previous.unwrap_or(f64::NAN);
+            let change = if baseline == 0.0 {
+                String::new()
+            } else {
+                format!(" ({:+.0}%)", (best / baseline - 1.0) * 100.0)
+            };
+            panic!(
+                "property regressed: {name}\n  \
+                 worst target() score rose from {baseline:e} to {best:e}{change}\n  \
+                 recorded in: {path}\n\n\
+                 The property still holds — its own assertion has headroom for both numbers — so \
+                 this is the only check that can see the change. Either the code under test got \
+                 less accurate, or the search changed: editing a generator, `cases`, or \
+                 `targeted_fraction` makes the search visit different tapes and find a different \
+                 worst case, which is a legitimate new baseline. If that is what happened, \
+                 re-record with {}=1 and commit the new number.",
+                budget::RECORD
+            );
+        }
+    }
 }
 
 /// Hill-climbs towards a higher [`target`](crate::target()) score.
@@ -383,6 +494,79 @@ enum Verdict {
     Overrun,
 }
 
+/// A committed tape whose case has drifted out from under it.
+struct Stale {
+    tape: String,
+    recorded: String,
+    now: String,
+}
+
+/// Report tapes whose renderings no longer match, or refresh the file if asked to.
+///
+/// # Panics
+/// If any tape has gone stale and this is not a recording run.
+#[allow(clippy::panic)]
+fn report_stale(name: &str, path: &str, stale: &[Stale], current: &[(Vec<u64>, Option<String>)]) {
+    if budget::recording() {
+        persist::refresh(path, name, current);
+        eprintln!(
+            "{name}: refreshed {} stale rendering(s) in {path}. The tapes are kept, but each now \
+             pins a different case than the one originally found — delete a line instead if the \
+             original case mattered. Recording is a read-modify-write, so use \
+             `--test-threads=1` if a suite has several properties sharing this file.",
+            stale.len()
+        );
+        return;
+    }
+
+    panic!(
+        "stale regressions: {name}\n{}\n  in: {path}\n\n\
+         A tape is a sequence of choices, not a value, so it only means anything for the \
+         generator that consumed it. These tapes still decode, but they now produce different \
+         cases than the ones that were committed — so the regressions they were saved to pin are \
+         no longer being tested, and the suite would have stayed green about it.\n\n\
+         If you changed a generator deliberately, re-record with {}=1 and commit the result. If a \
+         particular case above still matters, delete its line and assert it directly, where no \
+         generator edit can move it.",
+        stale
+            .iter()
+            .map(|entry| format!(
+                "  tape {}:\n    recorded: {}\n    now:      {}",
+                &entry.tape[..entry.tape.len().min(16)],
+                entry.recorded,
+                entry.now
+            ))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        budget::RECORD
+    );
+}
+
+/// Rebuild a value from `tape`, note what it renders as, and run the property on it.
+///
+/// Separate from [`replay`] because rendering allocates and formats, which is wasted work on the
+/// search's hot path — this one runs once per committed tape and once on the minimised case,
+/// where the cost is irrelevant and the string is the point.
+fn replay_rendered<T: 'static + core::fmt::Debug>(
+    generator: &Gen<T>,
+    property: &mut impl FnMut(T) -> Outcome,
+    tape: Vec<u64>,
+) -> (Verdict, Option<String>) {
+    let mut source = Source::replaying(tape);
+    match generator.draw(&mut source) {
+        Err(DrawError::Overrun) => (Verdict::Overrun, None),
+        Err(DrawError::Rejected(_)) => (Verdict::Rejected, None),
+        Ok(value) => {
+            let rendering = persist::render(&value);
+            let verdict = match run_quietly(property, value) {
+                Ok(()) => Verdict::Held,
+                Err(failure) => Verdict::Failed(failure),
+            };
+            (verdict, Some(rendering))
+        }
+    }
+}
+
 /// Rebuild a value from `tape` and run the property on it.
 ///
 /// A free function rather than a closure, so the shrinker and the search can both borrow
@@ -411,7 +595,7 @@ fn replay<T: 'static>(
 /// workspace denies `panic` to stop a library from aborting a consumer's process over a
 /// recoverable condition, which is not what this is.
 #[allow(clippy::panic)]
-fn report<T: 'static>(
+fn report<T: 'static + core::fmt::Debug>(
     name: &str,
     config: &Config,
     tape: &[u64],
@@ -428,14 +612,16 @@ fn report<T: 'static>(
     });
 
     // Re-run the minimal case so the message a reader sees describes the *small* input rather
-    // than whatever the search happened to stumble on first.
-    let final_failure = match replay(generator, property, minimal.clone()) {
+    // than whatever the search happened to stumble on first, and render it while we have it —
+    // the rendering goes on the saved line and into the report.
+    let (verdict, rendering) = replay_rendered(generator, property, minimal.clone());
+    let final_failure = match verdict {
         Verdict::Failed(failure) => failure,
         _ => original.clone(),
     };
 
     if !was_persisted && let Some(path) = config.regressions.as_deref() {
-        persist::save(path, &minimal, name);
+        persist::save(path, &minimal, name, rendering.as_deref());
     }
 
     let saved = match (&config.regressions, was_persisted) {
@@ -449,9 +635,14 @@ fn report<T: 'static>(
         ""
     };
 
+    let case = match &rendering {
+        Some(rendering) => format!("\n  case:       {rendering}"),
+        None => String::new(),
+    };
+
     panic!(
         "property failed: {name}\n  \
-         {}\n  at:         {}\n  \
+         {}\n  at:         {}{case}\n  \
          shrank:     {} -> {} tape entries in {probes} probes\n  \
          tape:       {}{saved}{truncated}",
         final_failure.message,
@@ -477,7 +668,7 @@ fn install_hook_once() {
         let previous = panic::take_hook();
         panic::set_hook(Box::new(move |info| {
             let probing = PROBING.with(Cell::get);
-            if !probing || std::env::var_os("EUCLID_PROPERTY_VERBOSE").is_some() {
+            if !probing || std::env::var_os("EUCLID_STABILITY_VERBOSE").is_some() {
                 previous(info);
             }
         }));

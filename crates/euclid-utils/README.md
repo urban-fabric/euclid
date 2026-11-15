@@ -3,7 +3,7 @@
 Shared numerical helpers for tests: comparison, calculus, sweeps, and shape
 assertions. Part of [euclid](../..).
 
-Dev-only (`publish = false`), on the same footing as `euclid-property`: take it
+Dev-only (`publish = false`), on the same footing as `euclid-stability`: take it
 under `[dev-dependencies]`. These crates are not on crates.io — see
 [the root README](../../README.md#using-it) for the git dependency to add.
 
@@ -42,7 +42,7 @@ wherever the quantity is large. Scaling by `max(1, |want|)` degrades gracefully 
 absolute near zero and to relative away from it.
 
 Where a result should be *as accurate as the format allows*, prefer
-`euclid_property::tolerance::within_ulps` instead: ULP is scale-free and is the
+`euclid_stability::tolerance::within_ulps` instead: ULP is scale-free and is the
 unit the hardware and the literature both use.
 
 ## What is exact, and what is not

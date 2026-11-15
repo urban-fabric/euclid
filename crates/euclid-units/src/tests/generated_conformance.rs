@@ -32,7 +32,7 @@
 //! withholds `LinearQuantity`, which is the asymmetry the tier split exists to
 //! express, and a new carrier would only re-test what those two already pin.
 
-use euclid_property::{Config, Gen, classify, generate, property};
+use euclid_stability::{Config, Gen, classify, generate, property};
 
 use crate::Measure;
 

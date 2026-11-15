@@ -41,7 +41,7 @@
 //! with a transposed weight is still linear, so linearity alone is not enough;
 //! combined with exactness on a polynomial basis it pins every coefficient.
 
-use euclid_property::{Config, Gen, check, classify, generate, property, target};
+use euclid_stability::{Config, Gen, check, classify, generate, property, target};
 use euclid_utils::{derivative, integrate, log_sweep, rel, sweep};
 
 fn settings(suite: &str) -> Config {

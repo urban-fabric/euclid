@@ -13,7 +13,7 @@
 //!
 //! 1. **The safe form is accurate**, checked against an independent reference.
 //! 2. **The naive form really is bad**, enforced by
-//!    [`Config::require`](euclid_property::Config::require): the property *requires* that some
+//!    [`Config::require`](euclid_stability::Config::require): the property *requires* that some
 //!    fraction of generated cases exhibit severe naive error, so the test fails if the
 //!    generator ever stops reaching the ill-conditioned region.
 //!
@@ -36,13 +36,13 @@
 //! and not a workaround: outside the stated range the naive form is well conditioned anyway, so
 //! nothing interesting is being skipped.
 //!
-//! Set `EUCLID_PROPERTY_STATS=1` to see the distribution each property reached and the worst
+//! Set `EUCLID_STABILITY_STATS=1` to see the distribution each property reached and the worst
 //! error its climb found.
 
 use euclid_numeric::Real;
 use euclid_numeric::compensated;
-use euclid_property::relation::Relative;
-use euclid_property::{
+use euclid_stability::relation::Relative;
+use euclid_stability::{
     Config, check, check_relative, check_ulps, classify, generate, property, relation, target,
     tolerance,
 };

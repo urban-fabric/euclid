@@ -40,7 +40,7 @@
 //! for: shrinking a shape re-draws the data and the permutation under the new rank, so every
 //! candidate stays well-formed by construction and there is no filter to exhaust.
 
-use euclid_property::{Config, Gen, check, classify, generate, property};
+use euclid_stability::{Config, Gen, check, classify, generate, property};
 
 use super::dense::Dense;
 use crate::Tensor;
@@ -98,24 +98,17 @@ fn tensor() -> Gen<Dense> {
     shape().and_then(dense_of)
 }
 
-/// A permutation of `0..rank`, by argsort of generated keys.
-///
-/// Built this way rather than by rejection so that every draw is a valid permutation and the
-/// shrinker never has to discard a candidate. Ties broken by index, so the result is a total
-/// order and therefore a bijection.
-fn permutation(rank: usize) -> Gen<Vec<usize>> {
-    generate::vec(generate::index(0, 32), rank, rank).map(|keys| {
-        let mut axes: Vec<usize> = (0..keys.len()).collect();
-        axes.sort_by_key(|&i| (keys[i], i));
-        axes
-    })
-}
-
 /// A tensor paired with a permutation of its own axes — the dependent draw.
+///
+/// `generate::permutation` exists because of this suite: it was hand-rolled here first, and the
+/// argsort construction is worth having in one place rather than re-derived per crate, since the
+/// obvious alternatives are both wrong. Rejection almost never produces a valid permutation, and
+/// "draw indices then fix up the duplicates" biases towards the identity — which is the one
+/// permutation a backwards `transpose` survives.
 fn tensor_and_permutation() -> Gen<(Dense, Vec<usize>)> {
     shape().and_then(|s| {
         let rank = s.len();
-        generate::pair(dense_of(s), permutation(rank))
+        generate::pair(dense_of(s), generate::permutation(rank))
     })
 }
 

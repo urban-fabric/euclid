@@ -45,8 +45,8 @@ conformance = []
 # violates none of them, so inheriting costs nothing and stops the crate from
 # silently drifting out of the workspace's standard.
 [dev-dependencies]
-# The property engine, for the generated companion to the fixed conformance suite.
-euclid-property.workspace = true
+# The stability and property engine, for the generated companion to the fixed conformance suite.
+euclid-stability.workspace = true
 
 [lints]
 workspace = true

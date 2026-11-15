@@ -58,12 +58,12 @@
 //! nor the primary unit names. A 2-ULP bound on the result looked tighter and
 //! was simply false; this one is tight against the right denominator.
 
-use euclid_property::{Config, Gen, check, check_ulps, classify, generate, property};
 use euclid_quantity::{
     AngleDegrees, AngleRadians, LengthFeet, LengthKm, LengthMeters, MassGrams, MassKilograms,
     MassMilligrams, TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin, TimeHours,
     TimeMillis, TimeMinutes, TimeSeconds, UnitOfMeasure,
 };
+use euclid_stability::{Config, Gen, check, check_ulps, classify, generate, property};
 use euclid_units::Measure;
 
 fn settings(suite: &str) -> Config {

@@ -1,6 +1,6 @@
 [package]
-name = "euclid-property"
-description = "Randomized property testing with shrinking, over a replayable choice tape. Dev-only."
+name = "euclid-stability"
+description = "Numerical stability and property testing: condition numbers, forward-error bounds, seam hunting, accuracy budgets, and randomized search with shrinking over a replayable choice tape. Dev-only."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

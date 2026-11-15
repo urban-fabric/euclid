@@ -22,7 +22,7 @@
 //! Label from inside the property body, after you know which case you got:
 //!
 //! ```
-//! use euclid_property::{Config, check, classify, generate, property};
+//! use euclid_stability::{Config, check, classify, generate, property};
 //!
 //! property! {
 //!     #![config(Config::default().require("subnormal", 1.0).require("normal", 50.0))]
@@ -38,7 +38,7 @@
 //! }
 //! ```
 //!
-//! Set `EUCLID_PROPERTY_STATS=1` to print the distribution for every property, required or not.
+//! Set `EUCLID_STABILITY_STATS=1` to print the distribution for every property, required or not.
 //!
 //! # A label is not a branch
 //!

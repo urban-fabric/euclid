@@ -40,7 +40,7 @@
 //! generated parameters, which is where an implementation that rescales with the wrong sign, or
 //! that derives a range as `low + u * high` rather than `low + u * (high - low)`, shows up.
 
-use euclid_property::{Config, Gen, check, classify, generate, property};
+use euclid_stability::{Config, Gen, check, classify, generate, property};
 
 use super::toy_sampler::ToySampler;
 use crate::conformance as laws;
@@ -76,17 +76,18 @@ fn seed() -> Gen<u64> {
     .map(|v| v as u64)
 }
 
-/// Distinct seeds, sorted and deduplicated so the pairwise inequality laws have a valid sample.
+/// Distinct seeds, so the pairwise inequality laws have a valid sample.
+///
+/// `generate::distinct` exists because of this suite — it was hand-rolled here first, and the
+/// reasoning is worth having in one place: deduplicating by construction keeps every draw and
+/// every shrink candidate valid, where a `filter` would shrink *towards* the collisions it then
+/// rejects.
 ///
 /// Four is the widest worth running: `key_laws` is quadratic in the sample and draws several
 /// times per pair, so a wider sample buys repetition rather than coverage — the breadth here
 /// comes from the case count, not the sample size.
 fn seeds() -> Gen<Vec<u64>> {
-    generate::vec(seed(), 1, 4).map(|mut xs| {
-        xs.sort_unstable();
-        xs.dedup();
-        xs
-    })
+    generate::distinct(seed(), 1, 4)
 }
 
 /// A finite value well inside the exponent range, so a difference or a product in a sampler's

@@ -38,9 +38,9 @@
 //! and `2.5` and never does.
 
 use euclid_algebra::HasZero;
-use euclid_property::relation::Exact;
-use euclid_property::{Config, Gen, check, check_eq, classify, generate, property, relation};
 use euclid_scalar::Real;
+use euclid_stability::relation::Exact;
+use euclid_stability::{Config, Gen, check, check_eq, classify, generate, property, relation};
 
 fn settings(suite: &str) -> Config {
     Config::default()

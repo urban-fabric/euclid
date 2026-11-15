@@ -55,7 +55,7 @@
 
 use super::*;
 use crate::conformance::{self as laws};
-use euclid_property::{Config, Gen, check, classify, generate, property};
+use euclid_stability::{Config, Gen, check, classify, generate, property};
 
 /// Enough cases that the shrinker has something to work with, and few enough
 /// that each one running every tier law over a triple stays quick.

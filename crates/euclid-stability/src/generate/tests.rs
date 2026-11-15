@@ -1,7 +1,8 @@
 //! Generators: that they stay in their declared bounds, compose, and reject rather than lie.
 
 use super::{
-    DrawError, Gen, boolean, index, int, just, one_of, pair, recursive, triple, vec, weighted,
+    DrawError, Gen, boolean, distinct, index, int, just, one_of, pair, permutation, recursive,
+    triple, vec, weighted,
 };
 use crate::source::Source;
 
@@ -178,4 +179,99 @@ fn a_generated_value_is_a_function_of_its_tape() {
     let second = generator.draw(&mut replaying).expect("tape is complete");
 
     assert_eq!(first, second);
+}
+
+// ===== distinct ===========================================================
+
+/// The point of `distinct` is that no draw contains a repeat, even when the element generator is
+/// narrow enough that collisions are the norm.
+#[test]
+fn distinct_never_repeats_a_value() {
+    // Three possible elements and a requested length of eight, so a plain `vec` would repeat in
+    // essentially every draw.
+    let generator = distinct(int(0, 2), 8, 8);
+    for (case, drawn) in draw_many(&generator, 64, 7).into_iter().enumerate() {
+        let mut seen = drawn.clone();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), drawn.len(), "case {case} repeated: {drawn:?}");
+    }
+}
+
+/// The documented consequence: deduplication shortens the result, so the length is a ceiling
+/// rather than a guarantee. Asserted so the behaviour cannot drift into rejection later without
+/// someone noticing — rejection is what this function exists to avoid.
+#[test]
+fn distinct_comes_out_short_rather_than_rejecting() {
+    let generator = distinct(int(0, 2), 8, 8);
+    let drawn = draw_many(&generator, 32, 11);
+    assert!(!drawn.is_empty(), "nothing was drawn at all");
+    assert!(
+        drawn.iter().any(|v| v.len() < 8),
+        "no draw was shortened, so this is not testing the dedup path"
+    );
+    assert!(
+        drawn.iter().all(|v| !v.is_empty() && v.len() <= 3),
+        "every draw must be non-empty and within the element range's cardinality"
+    );
+}
+
+#[test]
+fn distinct_is_a_function_of_its_tape() {
+    let generator = distinct(int(0, 50), 2, 6);
+    let mut generating = Source::generating(5, 4_096);
+    let first = generator.draw(&mut generating).expect("room on the tape");
+    let mut replaying = Source::replaying(generating.consumed());
+    assert_eq!(first, generator.draw(&mut replaying).expect("complete"));
+}
+
+// ===== permutation ========================================================
+
+/// Every draw must be a genuine bijection of `0..n`. A generator that produced a repeated or
+/// out-of-range axis would be worse than useless: `transpose_axes` would be handed an invalid
+/// permutation and whatever it did with it would be blamed on the backend.
+#[test]
+fn every_permutation_is_a_bijection() {
+    for n in 0..8usize {
+        let generator = permutation(n);
+        for drawn in draw_many(&generator, 32, 1_000 + n as u64) {
+            assert_eq!(drawn.len(), n, "wrong length for n = {n}: {drawn:?}");
+            let mut sorted = drawn.clone();
+            sorted.sort_unstable();
+            assert_eq!(
+                sorted,
+                (0..n).collect::<Vec<_>>(),
+                "not a permutation of 0..{n}: {drawn:?}"
+            );
+        }
+    }
+}
+
+/// `n = 0` is the rank-0 case, and must give the empty permutation rather than failing.
+#[test]
+fn the_empty_permutation_is_valid() {
+    let drawn = draw_many(&permutation(0), 4, 3);
+    assert!(drawn.iter().all(Vec::is_empty));
+}
+
+/// Argsort was chosen over "draw indices and fix up the duplicates" because the fix-up biases
+/// towards the identity — and the identity is the one permutation a broken `transpose` survives.
+/// So the generator has to actually produce non-identity permutations.
+#[test]
+fn permutations_are_not_all_the_identity() {
+    let identity: Vec<usize> = (0..5).collect();
+    let drawn = draw_many(&permutation(5), 64, 17);
+    assert!(
+        drawn.iter().any(|p| *p != identity),
+        "every draw was the identity, so the symmetric group is not being covered"
+    );
+}
+
+#[test]
+fn permutation_is_a_function_of_its_tape() {
+    let generator = permutation(6);
+    let mut generating = Source::generating(9, 4_096);
+    let first = generator.draw(&mut generating).expect("room on the tape");
+    let mut replaying = Source::replaying(generating.consumed());
+    assert_eq!(first, generator.draw(&mut replaying).expect("complete"));
 }

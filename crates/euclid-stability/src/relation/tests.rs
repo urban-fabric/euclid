@@ -6,7 +6,8 @@
 
 use super::{
     Absolute, Compare, Exact, Relative, Ulps, agree, associative, bounded, commutative,
-    distributes, even, fixed_point, idempotent, involution, monotone, odd, preserves, round_trip,
+    distributes, even, fixed_point, forward_stable, forward_stable_margin, idempotent, involution,
+    monotone, odd, order_independent, precision_agrees, preserves, round_trip,
 };
 
 // ===== The comparators ====================================================
@@ -259,4 +260,162 @@ fn a_failure_names_the_relation_and_the_comparison() {
         "{}",
         failure.message
     );
+}
+
+// ===== order_independent ==================================================
+
+/// A sum over well-scaled values is order-independent to a few ulps, and a reduction that
+/// genuinely depends on order is not.
+#[test]
+fn order_independent_accepts_a_sum_and_rejects_an_order_dependent_fold() {
+    let xs = vec![1.0_f64, 2.0, 3.0, 4.0];
+    let order = vec![3usize, 1, 0, 2];
+
+    order_independent("sum", &xs, &order, |v| v.iter().sum::<f64>(), &Ulps(2))
+        .expect("a sum of well-scaled values is order independent");
+
+    // The classic bug this exists to catch: an accumulator seeded from the first element instead
+    // of the additive identity, which double-counts whatever happens to be first.
+    order_independent(
+        "seeded-fold",
+        &xs,
+        &order,
+        |v| v.first().copied().unwrap_or(0.0) + v.iter().sum::<f64>(),
+        &Ulps(2),
+    )
+    .expect_err("a fold seeded from the first element depends on order");
+}
+
+/// `min` and `max` reassociate exactly, so `Exact` is the right bound and must be honoured
+/// rather than quietly tolerated.
+#[test]
+fn order_independent_holds_exactly_for_a_selection_reduction() {
+    let xs = vec![5.0_f64, -2.0, 9.0, 0.5];
+    let order = vec![2usize, 0, 3, 1];
+    order_independent(
+        "max",
+        &xs,
+        &order,
+        |v| v.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        &Exact,
+    )
+    .expect("max is exactly order independent");
+}
+
+/// A malformed order is the test's bug, not the reduction's, and the message has to say so —
+/// otherwise a wrong permutation in a suite reads as a failure of the code under test.
+#[test]
+fn order_independent_rejects_a_malformed_order_as_the_callers_fault() {
+    let xs = vec![1.0_f64, 2.0];
+    for bad in [vec![0usize], vec![0, 0, 1], vec![0, 5]] {
+        let failure = order_independent("r", &xs, &bad, |v| v.iter().sum::<f64>(), &Exact)
+            .expect_err("a malformed order must be refused");
+        assert!(
+            failure.message.contains("bug in the test"),
+            "{}",
+            failure.message
+        );
+    }
+}
+
+// ===== forward_stable =====================================================
+
+/// An accurate kernel is forward stable; a deliberately perturbed one is not.
+#[test]
+fn forward_stable_accepts_an_accurate_kernel_and_rejects_a_sloppy_one() {
+    // `exp` against itself is exact, so it is trivially within its own bound.
+    forward_stable("exp", 1.5, f64::exp, f64::exp, 8.0).expect("exp agrees with itself");
+
+    // A kernel off by a part in ten thousand is nowhere near forward stable at a benign point.
+    forward_stable(
+        "sloppy-exp",
+        1.5,
+        |x| f64::exp(x) * (1.0 + 1e-4),
+        f64::exp,
+        8.0,
+    )
+    .expect_err("a relative error of 1e-4 is not forward stable");
+}
+
+/// The failure message has to distinguish a bad implementation from a hard problem, since that
+/// is the whole reason to use a conditioning-based bound rather than a literal.
+#[test]
+fn forward_stable_names_the_conditioning_in_its_message() {
+    let failure = forward_stable("sloppy", 1.5, |x| f64::exp(x) * (1.0 + 1e-4), f64::exp, 8.0)
+        .expect_err("not stable");
+    assert!(failure.message.contains("condition"), "{}", failure.message);
+    assert!(
+        failure.message.contains("unstable kernel"),
+        "at a benign point the message should blame the implementation: {}",
+        failure.message
+    );
+}
+
+/// Where the bound is undefined the relation abstains rather than failing. `x = 0` has no
+/// relative condition number, and reporting a failure there would be reporting one for a
+/// question that was never asked.
+#[test]
+fn forward_stable_abstains_where_the_bound_is_undefined() {
+    forward_stable("at-zero", 0.0, f64::exp, f64::exp, 8.0).expect("x = 0 abstains");
+    forward_stable("non-finite", f64::INFINITY, f64::exp, f64::exp, 8.0)
+        .expect("a non-finite input abstains");
+}
+
+/// The margin is the score a budget baseline records, so it has to be a ratio around 1 rather
+/// than an absolute error: 1.0 means "exactly at the admissible bound".
+#[test]
+fn the_margin_is_a_ratio_against_the_admissible_bound() {
+    let exact = forward_stable_margin(1.5, f64::exp, f64::exp, 8.0).expect("defined at 1.5");
+    assert!(exact < 1.0, "an exact kernel is inside its bound: {exact}");
+
+    let sloppy = forward_stable_margin(1.5, |x| f64::exp(x) * (1.0 + 1e-4), f64::exp, 8.0)
+        .expect("defined at 1.5");
+    assert!(sloppy > 1.0, "a sloppy kernel is over its bound: {sloppy}");
+    // And the ratio scales with the error, which is what makes it climbable.
+    let sloppier = forward_stable_margin(1.5, |x| f64::exp(x) * (1.0 + 1e-3), f64::exp, 8.0)
+        .expect("defined at 1.5");
+    assert!(sloppier > sloppy, "{sloppier} should exceed {sloppy}");
+}
+
+#[test]
+fn the_margin_is_undefined_where_the_reference_vanishes() {
+    assert_eq!(forward_stable_margin(1.0, |_| 0.0, |_| 0.0, 8.0), None);
+    assert_eq!(forward_stable_margin(0.0, f64::exp, f64::exp, 8.0), None);
+}
+
+// ===== precision_agrees ===================================================
+
+/// A correct narrow kernel agrees with the wide one to narrow precision; one using the wrong
+/// coefficients does not.
+#[test]
+fn precision_agrees_accepts_a_matching_narrow_kernel() {
+    precision_agrees("exp", 1.25, f64::exp, f32::exp, 2).expect("f32 exp matches f64 exp");
+    precision_agrees("sqrt", 2.0, f64::sqrt, f32::sqrt, 2).expect("f32 sqrt matches f64 sqrt");
+}
+
+#[test]
+fn precision_agrees_rejects_a_narrow_kernel_that_drifted() {
+    precision_agrees("drifted", 1.25, f64::exp, |x| f32::exp(x) * 1.001, 2)
+        .expect_err("a part in a thousand is far more than 2 f32 ulp");
+}
+
+/// The comparison is in `f32` ulps against the *rounded* wide result. Comparing in `f64` terms
+/// would reject every correct narrow kernel, since narrowing alone costs about 2^-24.
+#[test]
+fn precision_agrees_does_not_charge_the_narrow_kernel_for_narrowing() {
+    // `ln` at an awkward argument: the f32 answer cannot be closer to the f64 one than one f32
+    // ulp, and the relation must accept that rather than treating it as disagreement.
+    for x in [0.1_f64, 0.7, 1.9, 12.75, 1e6] {
+        precision_agrees("ln", x, f64::ln, f32::ln, 2)
+            .unwrap_or_else(|e| panic!("f32 ln should agree at {x}: {}", e.message));
+    }
+}
+
+/// Both sides agreeing on a non-finite answer is agreement, not a disagreement that happens to
+/// involve infinity.
+#[test]
+fn precision_agrees_treats_matching_non_finite_results_as_agreement() {
+    precision_agrees("overflow", 1e30, |x| x * x, |x| x * x, 2)
+        .expect("both overflow to +inf, which is agreement");
+    precision_agrees("nan", -1.0, f64::sqrt, f32::sqrt, 2).expect("both are NaN");
 }

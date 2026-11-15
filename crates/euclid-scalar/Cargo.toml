@@ -33,10 +33,11 @@ euclid-algebra.workspace = true
 euclid-numeric.workspace = true
 
 [dev-dependencies]
-# The property engine. There is no algorithm in this crate to search for a worst case in — what
-# it checks is that the two same-named tiers this crate fuses agree about the value, which is an
-# agreement property over generated input rather than a law over a fixed sample.
-euclid-property.workspace = true
+# The stability and property engine. There is no algorithm in this crate to search for a worst
+# case in — what it checks is that the two same-named tiers this crate fuses agree about the
+# value, which is an agreement property over generated input rather than a law over a fixed
+# sample.
+euclid-stability.workspace = true
 
 [lints]
 workspace = true

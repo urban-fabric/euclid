@@ -32,8 +32,8 @@
 //! numerical test that cannot pass.
 //!
 //! ```
-//! use euclid_property::relation::{Exact, Ulps, involution};
-//! use euclid_property::{generate, property};
+//! use euclid_stability::relation::{Exact, Ulps, involution};
+//! use euclid_stability::{generate, property};
 //!
 //! property! {
 //!     fn negation_is_an_involution(x in generate::int(-1000, 1000)) {
@@ -300,6 +300,251 @@ pub fn agree<T: Clone, R: Debug>(
             &second,
         ))
     }
+}
+
+/// A reduction over `xs` does not depend on the order of `xs` — to within `compare`.
+///
+/// Sum, product, min, max, a norm, a dot product, `logsumexp`. Mathematically these are all
+/// order-independent and in floating point **none of them is**, which is exactly why the relation
+/// takes a [`Compare`] rather than asserting equality: `(a + b) + c` and `a + (b + c)` differ by
+/// rounding, and a reduction that reassociates — pairwise, blocked, vectorised, or run across
+/// threads — gives a different answer from the naive left fold by design.
+///
+/// So the property is not "the order does not matter". It is **"the order does not matter more
+/// than this much"**, and the bound is the interesting part:
+///
+/// - `Exact` is right for an integer, a `min`/`max`, or a reduction over a dioid, where
+///   reassociation genuinely changes nothing.
+/// - For a float sum, the honest bound grows with the condition number of the sum — `Σ|xᵢ| /
+///   |Σxᵢ|` — which [`crate::tolerance::condition_number`] computes.
+///   A sample that cancels has no tight fixed bound and asserting one is asserting something
+///   false.
+///
+/// The failure this catches in practice is not a reassociation that lost an ulp. It is a
+/// reduction that is order-*dependent* in a way nobody intended: an accumulator initialised from
+/// the first element rather than the identity, a running `max` that mishandles the first
+/// comparison, a Kahan compensation term that is reset inside the loop. Each of those is wrong by
+/// much more than rounding, and each passes a test over a sorted fixture.
+///
+/// Pairs with [`generate::permutation`](crate::generate::permutation), which supplies `order`.
+///
+/// # Panics
+/// Never. A malformed `order` — wrong length, repeated or out-of-range index — is reported as a
+/// failure of the *caller* rather than indexed into, since a panic here would be attributed to
+/// the code under test.
+pub fn order_independent<T: Clone + Debug, R: Debug>(
+    name: &str,
+    xs: &[T],
+    order: &[usize],
+    reduce: impl Fn(&[T]) -> R,
+    compare: &impl Compare<R>,
+) -> Outcome {
+    if order.len() != xs.len() || order.iter().any(|&i| i >= xs.len()) {
+        return Err(Failure::new(
+            format!(
+                "{name}: order {order:?} is not a permutation of 0..{} — this is a bug in the \
+                 test, not in the reduction",
+                xs.len()
+            ),
+            "a metamorphic relation",
+        ));
+    }
+
+    let permuted: Vec<T> = order.iter().map(|&i| xs[i].clone()).collect();
+    let direct = reduce(xs);
+    let reordered = reduce(&permuted);
+    if compare.same(&direct, &reordered) {
+        Ok(())
+    } else {
+        Err(Failure::new(
+            format!(
+                "{name}: the reduction depends on input order by more than {}\n    \
+                 in order:  {direct:?}\n    permuted:  {reordered:?}\n    order:     {order:?}",
+                compare.describe()
+            ),
+            "a metamorphic relation",
+        ))
+    }
+}
+
+/// `f` is **forward stable** at `x`: its relative error is no worse than the problem's own
+/// conditioning allows.
+///
+/// The central claim of numerical stability, and the one a tolerance literal cannot express.
+/// Asserting `within 8 ulp` says "within a number I picked"; this says "no worse than the problem
+/// itself", which stays true when someone rewrites the kernel and stays honest where the problem
+/// is genuinely hard.
+///
+/// `reference` is a more accurate computation of the same quantity — a wider type, a series
+/// summed further, an independent implementation. The bound is
+/// [`crate::numeric::forward_error_bound`], which is
+/// `safety · κ(x) · u`: the error a forward-stable implementation is *entitled* to at `x`.
+///
+/// # It distinguishes a bad kernel from a hard problem
+///
+/// That distinction is the reason to use this rather than a fixed tolerance, and it is the one
+/// numerical reviewers actually argue about. An error of `1e-9` is a scandal at `κ = 1` and
+/// excellent at `κ = 1e7`. A fixed tolerance conflates them, so it is either too loose to catch
+/// an unstable kernel in the benign region or too tight to pass a well-written one near a
+/// singularity — and the usual resolution is to loosen it until the suite goes green, which
+/// discards the finding. The failure message reports `κ` alongside the error so the reader can
+/// tell which situation they are in.
+///
+/// Returns `Ok` where the bound is undefined — at `x = 0`, where relative conditioning has no
+/// meaning, or where `f` is non-finite nearby. Those are not passes so much as abstentions, and a
+/// suite that cares should classify them.
+///
+/// # Reporting the margin
+///
+/// The ratio of observed error to admissible bound is the natural score for
+/// [`target`](crate::target()) and for a [`budget`](crate::budget) baseline: `1.0` means
+/// "exactly at the limit", it is comparable across kernels and inputs, and it is continuous in
+/// `x`, which is what the hill climb needs. [`forward_stable_margin`] returns it.
+pub fn forward_stable(
+    name: &str,
+    x: f64,
+    f: impl Fn(f64) -> f64,
+    reference: impl Fn(f64) -> f64,
+    safety: f64,
+) -> Outcome {
+    let Some(margin) = forward_stable_margin(x, &f, &reference, safety) else {
+        return Ok(());
+    };
+    if margin <= 1.0 {
+        return Ok(());
+    }
+
+    let condition = crate::numeric::condition_at(&f, x).unwrap_or(f64::NAN);
+    let (computed, expected) = (f(x), reference(x));
+    let relative = ((computed - expected) / expected).abs();
+    Err(Failure::new(
+        format!(
+            "{name}: not forward stable at x = {x:e}\n    \
+             computed:   {computed:e}\n    \
+             reference:  {expected:e}\n    \
+             relative:   {relative:e}\n    \
+             admissible: {:e} (safety {safety} x condition {condition:e} x unit roundoff)\n    \
+             over by:    {margin:.2}x\n    \
+             {}",
+            relative / margin,
+            if condition > 1e6 {
+                "The condition number is large, so the *problem* is ill conditioned here. If this \
+                 input is one callers really hit, the kernel needs a different algorithm in this \
+                 region, not a looser tolerance."
+            } else {
+                "The condition number is small, so the problem is benign and the error is the \
+                 implementation's own. This is an unstable kernel rather than a hard input."
+            }
+        ),
+        "a stability relation",
+    ))
+}
+
+/// How much of its admissible error `f` used at `x`, as a ratio: `1.0` is exactly at the limit.
+///
+/// The score to feed [`target`](crate::target()) and [`budget`](crate::budget). `None` where the
+/// bound is undefined — see [`forward_stable`].
+#[must_use]
+pub fn forward_stable_margin(
+    x: f64,
+    f: impl Fn(f64) -> f64,
+    reference: impl Fn(f64) -> f64,
+    safety: f64,
+) -> Option<f64> {
+    let bound = crate::numeric::forward_error_bound(&f, x, safety)?;
+    let expected = reference(x);
+    if expected == 0.0 || !expected.is_finite() {
+        return None;
+    }
+    let computed = f(x);
+    if !computed.is_finite() {
+        return None;
+    }
+    let relative = ((computed - expected) / expected).abs();
+    (bound > 0.0).then(|| relative / bound)
+}
+
+/// A narrow-precision implementation agrees with its wide-precision counterpart, to narrow
+/// precision.
+///
+/// euclid ships an `f32` kernel beside almost every `f64` one, and the `f32` one is the easier to
+/// get wrong: it is written second, exercised less, and its constants are usually the `f64`
+/// coefficients rounded — which is the right starting point and not always the right answer,
+/// because a polynomial fitted for `f64` can be the wrong polynomial at `f32`.
+///
+/// The relation is "two implementations agree" with the only bound that makes sense across a
+/// precision change: the wide result, rounded to narrow, is the best the narrow one could
+/// possibly do, so the comparison is in **`f32` ulps against that**. Comparing in `f64` ulps
+/// would fail every correct narrow kernel; comparing with a relative tolerance picked by hand
+/// re-introduces the number nobody can justify.
+///
+/// `ulps` is the slack allowed on top, in `f32` ulps — `2` to `4` for a single evaluation.
+pub fn precision_agrees(
+    name: &str,
+    x: f64,
+    wide: impl Fn(f64) -> f64,
+    narrow: impl Fn(f32) -> f32,
+    ulps: u32,
+) -> Outcome {
+    #[allow(clippy::cast_possible_truncation)]
+    let narrow_input = x as f32;
+    // Evaluate the wide version at the *narrowed* input, not at `x`. Otherwise the difference
+    // includes the input's own rounding, which is not the narrow kernel's fault and swamps
+    // everything else near a steep region.
+    let expected = wide(f64::from(narrow_input));
+    let computed = narrow(narrow_input);
+
+    #[allow(clippy::cast_possible_truncation)]
+    let rounded = expected as f32;
+    if !rounded.is_finite() || !computed.is_finite() {
+        // Both non-finite in the same way is agreement; otherwise it is a disagreement worth
+        // reporting through the normal path.
+        if rounded.is_nan() && computed.is_nan() {
+            return Ok(());
+        }
+        if rounded == computed {
+            return Ok(());
+        }
+    }
+
+    if f32_ulps_between(computed, rounded).is_some_and(|gap| gap <= u64::from(ulps)) {
+        Ok(())
+    } else {
+        Err(Failure::new(
+            format!(
+                "{name}: the narrow kernel disagrees with the wide one at x = {x:e}\n    \
+                 narrow:        {computed:e}\n    \
+                 wide, rounded: {rounded:e}\n    \
+                 gap:           {} f32 ulp (allowed {ulps})\n    \
+                 The wide result rounded to f32 is the best the narrow kernel could return, so \
+                 this gap is the narrow implementation's own — most often an f64 coefficient set \
+                 reused at f32, where it is no longer the right polynomial.",
+                f32_ulps_between(computed, rounded)
+                    .map_or_else(|| "non-finite".to_string(), |gap| gap.to_string())
+            ),
+            "a stability relation",
+        ))
+    }
+}
+
+/// Representable `f32` steps between `a` and `b`, or `None` if either is non-finite.
+///
+/// The `f32` peer of [`crate::tolerance::ulps_between`], kept here
+/// because it exists for exactly one caller. Sign-magnitude bits are mapped to a monotone
+/// ordering so a pair straddling zero measures correctly rather than wrapping.
+fn f32_ulps_between(a: f32, b: f32) -> Option<u64> {
+    if !a.is_finite() || !b.is_finite() {
+        return None;
+    }
+    let order = |x: f32| -> i64 {
+        let bits = i64::from(x.to_bits() as i32);
+        if bits < 0 {
+            i64::from(i32::MIN) - bits
+        } else {
+            bits
+        }
+    };
+    Some(order(a).abs_diff(order(b)))
 }
 
 /// `a <= b` implies `f(a) <= f(b)` — `f` preserves order.

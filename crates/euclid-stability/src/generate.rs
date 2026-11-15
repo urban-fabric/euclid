@@ -153,6 +153,79 @@ pub fn vec<T: 'static>(element: Gen<T>, min: usize, max: usize) -> Gen<Vec<T>> {
     })
 }
 
+/// A `Vec<T>` of pairwise-distinct values, with length in `min..=max`.
+///
+/// Distinct **by construction, not by rejection.** The obvious spelling is
+/// `vec(element, min, max).filter("distinct", …)`, and it is a trap: the shrinker's whole job is
+/// to make values smaller and more alike, so it walks straight into collisions and spends its
+/// probe budget on candidates the filter throws away. Deduplicating instead means every draw and
+/// every shrink candidate is valid, and the length simply comes out shorter than requested when
+/// duplicates appeared.
+///
+/// That shortening is the documented behaviour rather than a wart: the result may be shorter than
+/// `min`, down to one element. A caller needing a guaranteed length cannot have one — there is no
+/// way to honour it without rejection — so the law under test has to tolerate a short list, which
+/// every law over a sample already does.
+///
+/// The motivating case is a law with an inequality in it. `euclid-random`'s `key_laws` asserts
+/// that every *pair* of seeds draws differently, so a sample containing the same seed twice fails
+/// it — and that failure says nothing about the backend, because the same seed is *required* to
+/// draw the same value. Distinctness there is a precondition on the sample, which a hand-written
+/// list satisfies by inspection and a generator has to be told about.
+///
+/// # Panics
+/// If `min > max`.
+pub fn distinct<T: PartialEq + 'static>(element: Gen<T>, min: usize, max: usize) -> Gen<Vec<T>> {
+    assert!(min <= max, "empty length range {min}..={max}");
+    Gen::new(move |source| {
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+        let len = source.in_range(min as i64, max as i64)? as usize;
+        let mut out: Vec<T> = Vec::with_capacity(len);
+        for _ in 0..len {
+            let candidate = element.draw(source)?;
+            // Quadratic, and deliberately so: these samples are a handful of elements, and
+            // `PartialEq` is a far weaker bound than the `Ord` or `Hash` a cleverer structure
+            // would need. A sample large enough for that to matter is too large for the `O(n³)`
+            // laws it exists to feed.
+            if !out.contains(&candidate) {
+                out.push(candidate);
+            }
+        }
+        Ok(out)
+    })
+}
+
+/// A permutation of `0..n`, as a `Vec<usize>` of length `n`.
+///
+/// Every draw is a genuine bijection — built by sorting the indices against generated keys, so
+/// there is nothing to reject and no way to produce a repeated or out-of-range axis. `n == 0`
+/// gives the empty permutation, which is correct and is the rank-0 case a tensor law has to skip
+/// rather than fail on.
+///
+/// Written because the alternative is wrong in a way that is hard to see. Generating `n` indices
+/// and hoping they form a permutation fails almost always for any interesting `n`; drawing them
+/// and then "fixing up" the duplicates biases the result towards the identity, which is the one
+/// permutation that passes a broken `transpose`. Argsort has neither problem: the keys are
+/// unconstrained, so the permutations come out spread across the symmetric group.
+///
+/// The motivating case is `euclid-tensor`, where `structural_laws` can only name the three
+/// permutations it can write down without knowing the rank — the identity, a swap, and a
+/// 3-cycle. A generated permutation covers the rest of the group, which is what caught that
+/// crate's 3-cycle being malformed at rank 4.
+pub fn permutation(n: usize) -> Gen<Vec<usize>> {
+    Gen::new(move |source| {
+        let mut keys = Vec::with_capacity(n);
+        for _ in 0..n {
+            keys.push(source.in_range(0, 1 << 20)?);
+        }
+        let mut axes: Vec<usize> = (0..n).collect();
+        // Ties broken by index, so the comparison is a total order and the result is a genuine
+        // bijection even when two keys collide.
+        axes.sort_by_key(|&i| (keys[i], i));
+        Ok(axes)
+    })
+}
+
 /// One of `choices`, uniformly.
 ///
 /// # Panics

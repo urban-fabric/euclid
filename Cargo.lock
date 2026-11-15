@@ -24,14 +24,14 @@ dependencies = [
 
 [[package]]
 name = "euclid-algebra"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
- "euclid-property",
+ "euclid-stability",
 ]
 
 [[package]]
 name = "euclid-matrix"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "euclid-numeric",
  "euclid-tensor",
@@ -39,23 +39,19 @@ dependencies = [
 
 [[package]]
 name = "euclid-numeric"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
- "euclid-property",
+ "euclid-stability",
  "euclid-utils",
 ]
 
 [[package]]
-name = "euclid-property"
-version = "0.4.0"
-
-[[package]]
 name = "euclid-quantity"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "bytemuck",
  "euclid-numeric",
- "euclid-property",
+ "euclid-stability",
  "euclid-units",
  "serde",
  "serde_json",
@@ -63,44 +59,48 @@ dependencies = [
 
 [[package]]
 name = "euclid-random"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "euclid-numeric",
- "euclid-property",
+ "euclid-stability",
  "euclid-utils",
 ]
 
 [[package]]
 name = "euclid-scalar"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "euclid-algebra",
  "euclid-numeric",
- "euclid-property",
+ "euclid-stability",
 ]
 
 [[package]]
+name = "euclid-stability"
+version = "0.5.0"
+
+[[package]]
 name = "euclid-tensor"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "euclid-numeric",
- "euclid-property",
+ "euclid-stability",
  "euclid-utils",
 ]
 
 [[package]]
 name = "euclid-units"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "euclid-numeric",
- "euclid-property",
+ "euclid-stability",
 ]
 
 [[package]]
 name = "euclid-utils"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
- "euclid-property",
+ "euclid-stability",
 ]
 
 [[package]]

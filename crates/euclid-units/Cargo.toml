@@ -19,8 +19,8 @@ conformance = []
 euclid-numeric.workspace = true
 
 [dev-dependencies]
-# The property engine, for the generated conformance suite.
-euclid-property.workspace = true
+# The stability and property engine, for the generated conformance suite.
+euclid-stability.workspace = true
 
 [lints]
 workspace = true

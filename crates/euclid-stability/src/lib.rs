@@ -1,9 +1,9 @@
-//! # euclid-property
+//! # euclid-stability
 //!
-//! Randomized property testing with shrinking, built on a **replayable choice tape**.
+//! **Numerical stability and property testing**, over a replayable choice tape.
 //!
 //! ```
-//! use euclid_property::{check_eq, generate, property};
+//! use euclid_stability::{check_eq, generate, property};
 //!
 //! property! {
 //!     fn reversing_twice_is_the_identity(xs in generate::vec(generate::int(0, 9), 0, 8)) {
@@ -14,6 +14,41 @@
 //!     }
 //! }
 //! ```
+//!
+//! # The name, and why it is not `euclid-property`
+//!
+//! It was, until 0.5. The rename is a correction rather than a preference, because "property
+//! testing" names the smaller half of what this does and points at the wrong tradition.
+//!
+//! In the Haskell and Rust lineage — QuickCheck, proptest — property testing is **type-driven**:
+//! an `Arbitrary` instance per type, generation derived from structure, and the interesting
+//! question is how to produce a well-formed value. That is a real and useful thing, and it is
+//! not where this crate's weight sits. There is no `Arbitrary` here and deliberately so (see
+//! [`generate`]); a generator is declared, in the same spirit as euclid's own
+//! `ConformanceSample`.
+//!
+//! What the fleet actually needs from it is **numerical**: how much error a kernel has at its
+//! worst input, whether that error is explained by the problem's conditioning or by the
+//! implementation, whether an algorithm crossover leaves a discontinuity, whether accuracy got
+//! worse since last week. Those questions are not about types at all, and most of the surface
+//! here exists to answer them:
+//!
+//! - [`numeric`] — condition numbers, forward and two-stage error bounds, seam hunting, ulp
+//!   monotonicity scans. None of it is property testing; all of it is numerical analysis.
+//! - [`tolerance`] — ulp, relative and absolute comparison, and the condition number of a sum,
+//!   because `==` on a computed float is the single most common way to write a numerical test
+//!   that cannot pass.
+//! - [`target()`] — hill-climbing towards the *worst* case rather than sampling uniformly, which
+//!   matters because a kernel's worst input is a thin region that uniform draws miss.
+//! - [`budget`] — recording that worst case so losing accuracy fails the suite, even while every
+//!   assertion still holds.
+//! - [`relation`] — the metamorphic shapes, each taking a comparison, including the two that are
+//!   purely about stability: `forward_stable` and `precision_agrees`.
+//!
+//! The property-testing machinery — [`source`], [`generate`], [`shrink`], [`runner`],
+//! [`persist`] — is the **foundation those sit on** rather than the point. A search needs cases
+//! to search over and a way to minimise what it finds; that is what a tape buys, and it is why
+//! this is one crate instead of two.
 //!
 //! # Why this exists, given euclid's own membership rule
 //!
@@ -52,6 +87,7 @@
 //! | [`relation`] | the metamorphic relations, named — involution, round trip, two-impls-agree |
 //! | [`stats`] | case classification, with coverage you can *require* rather than merely read |
 //! | [`mod@target`] | a score for the search to maximise, so it hunts the worst case |
+//! | [`budget`] | that worst score, committed, so losing accuracy fails the suite |
 //!
 //! [`generate::float`] is the numerics half: float generation built to find numerical bugs
 //! rather than to be uniform, which is a different and much more useful distribution.
@@ -81,6 +117,7 @@
 // other crate in the fleet takes for its own suites.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::panic, clippy::unwrap_used))]
 
+pub mod budget;
 pub mod generate;
 pub mod numeric;
 pub mod persist;
