@@ -1,0 +1,17 @@
+[package]
+name = "euclid-property"
+description = "Randomized property testing with shrinking, over a replayable choice tape. Dev-only."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme = "README.md"
+# Dev-only, like euclid-utils: a consumer takes this under [dev-dependencies] and it never
+# reaches a published artifact. That is also why it is allowed to exist here at all — see the
+# crate docs for why a test engine does not violate euclid's membership rule.
+publish = false
+
+[lints]
+workspace = true

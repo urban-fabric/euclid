@@ -16,6 +16,7 @@ readme = "README.md"
 conformance = []
 
 [dev-dependencies]
+euclid-property.workspace = true
 euclid-utils.workspace = true
 
 [lints]
