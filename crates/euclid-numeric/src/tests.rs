@@ -69,6 +69,7 @@ use super::*;
 
 mod accuracy;
 mod compensated;
+mod conformance_suites;
 mod constants;
 mod control_flow;
 mod conventions;
