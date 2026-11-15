@@ -1,3 +1,13 @@
+//! The crate's tests, split by what they establish.
+//!
+//! - [`laws`] — the tier axioms themselves, run over a fixed sample of every carrier. A
+//!   carrier "is a `Field`" exactly when it satisfies the field laws, so that suite is the
+//!   definition rather than a sampling of it.
+//! - This file — that the *tiers* are reachable: a formula written once at a tier compiles and
+//!   runs for the carriers that claim it, and the blanket impls fire as intended.
+
+mod laws;
+
 use super::*;
 
 /// A numeric formula written once over any field, using operators.
