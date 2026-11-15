@@ -3,6 +3,11 @@ use bytemuck::{Pod, Zeroable};
 use std::ops::{Div, Mul};
 
 #[repr(transparent)]
+/// A **dimensionless** multiplier.
+///
+/// The unit a ratio of two like quantities collapses to, so it is what
+/// `length / length` produces and what scales any quantity without changing its
+/// dimension.
 #[derive(
     Copy, Clone, Debug, PartialEq, PartialOrd, Pod, Zeroable, serde::Serialize, serde::Deserialize,
 )]
@@ -16,57 +21,95 @@ impl Default for Factor {
 }
 
 impl Factor {
+    /// The multiplicative identity, `1`. Scaling by it changes nothing.
+    ///
+    /// Named `IDENTITY` rather than `ONE` because that is what it is *for* here: a `Factor` is
+    /// applied, and the neutral element of application is an identity.
     pub const IDENTITY: Self = Self(1.0);
 
+    /// The additive identity in this unit.
     pub const ZERO: Self = Self(0.0);
 
+    /// Wrap a raw `f64` already expressed in this unit.
+    ///
+    /// Asserted rather than checked: the caller is promising `v` is in this unit, and nothing
+    /// here can verify that. Passing a value in the wrong unit is the one mistake the type
+    /// system cannot catch at this boundary, which is why conversions exist.
+    ///
+    /// # Panics
+    /// On `NaN`, in a **debug build only** — the check is a `debug_assert!`, so a release build
+    /// accepts a `NaN` and propagates it silently through every later operation.
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
     }
 
+    /// The raw value in f64, discarding the dimension.
+    ///
+    /// The escape hatch out of the units system; prefer the dimensional operations and reach
+    /// for this at an edge that does not speak units.
     #[inline]
     #[must_use]
     pub const fn as_f64(self) -> f64 {
         self.0
     }
 
+    /// Neither infinite nor `NaN`.
     #[inline]
     #[must_use]
     pub fn is_finite(self) -> bool {
         self.0.is_finite()
     }
 
+    /// Strictly greater than zero. `false` for zero and for `NaN`.
     #[inline]
     #[must_use]
     pub fn is_positive(self) -> bool {
         self.0 > 0.0
     }
 
+    /// Zero or greater. `false` for `NaN`, so this is **not** the negation of
+    /// [`is_negative`-style checks](Self::is_positive) — both are false for `NaN`.
     #[inline]
     #[must_use]
     pub fn is_non_negative(self) -> bool {
         self.0 >= 0.0
     }
 
+    /// Exactly zero. Both signed zeroes qualify; a value merely close to zero does not.
     #[inline]
     #[must_use]
     pub fn is_zero(self) -> bool {
         self.0 == 0.0
     }
 
+    /// Strictly greater than a **dimensionless** threshold.
+    ///
+    /// `epsilon` is a bare `f64` compared against the raw value, so it is read in this type's
+    /// own unit — a threshold chosen for metres means something else against kilometres. That
+    /// is a seam in the units discipline, kept because a tolerance is usually a magnitude
+    /// rather than a quantity.
     #[inline]
     #[must_use]
     pub fn is_greater_than_epsilon(self, epsilon: f64) -> bool {
         self.0 > epsilon
     }
 
+    /// Clamp into `[min, max]`, both given as bare `f64` in this type's own (dimensionless)
+    /// scale.
+    ///
+    /// # Panics
+    /// Delegates to `f64::clamp`, which panics if `min > max` or either bound is `NaN`.
     #[inline]
     #[must_use]
     pub fn clamped(self, min: f64, max: f64) -> Self {
         Self(self.0.clamp(min, max))
     }
 
+    /// Clamp to zero at the bottom, returning the value unchanged if already non-negative.
+    ///
+    /// For a quantity that is physically non-negative but arrived from arithmetic that could
+    /// have gone slightly below zero — a subtraction of two nearly-equal measurements.
     #[inline]
     #[must_use]
     pub fn non_negative(self) -> Self {

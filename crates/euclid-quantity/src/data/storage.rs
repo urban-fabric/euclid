@@ -31,16 +31,20 @@ use serde::{Deserialize, Serialize};
 pub struct TimeCentiseconds(u32);
 
 impl TimeCentiseconds {
+    /// Zero.
     pub const ZERO: Self = Self(0);
 
+    /// Wrap a raw `u32` already expressed in this unit. Asserted rather than checked.
     pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
+    /// The raw count, discarding the unit.
     pub const fn as_u32(self) -> u32 {
         self.0
     }
 
+    /// The raw value in hundredths of a second.
     pub const fn as_centiseconds(self) -> u32 {
         self.0
     }
@@ -85,16 +89,20 @@ impl From<TimeCentiseconds> for u32 {
 pub struct DistanceDecimeters(u32);
 
 impl DistanceDecimeters {
+    /// Zero.
     pub const ZERO: Self = Self(0);
 
+    /// Wrap a raw `u32` already expressed in this unit. Asserted rather than checked.
     pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
+    /// The raw count, discarding the unit.
     pub const fn as_u32(self) -> u32 {
         self.0
     }
 
+    /// The raw value in tenths of a metre.
     pub const fn as_decimeters(self) -> u32 {
         self.0
     }

@@ -4,6 +4,12 @@ use crate::{TemperatureFahrenheit, TemperatureKelvin};
 use bytemuck::{Pod, Zeroable};
 
 #[repr(transparent)]
+/// A temperature in **degrees Celsius** — an **affine** scale, offset 273.15 from kelvin.
+///
+/// Affine means addition and scaling are not defined on it: `20 °C + 20 °C` has no
+/// physical reading, and a *difference* of two Celsius temperatures is a kelvin
+/// interval rather than a Celsius one. That is why this type does not implement the
+/// linear quantity contract and [`crate::TemperatureKelvin`] does.
 #[derive(
     Copy,
     Clone,
@@ -20,21 +26,48 @@ use bytemuck::{Pod, Zeroable};
 pub struct TemperatureCelsius(pub(crate) f64);
 
 impl TemperatureCelsius {
+    /// Zero degrees Celsius — a **position on an affine scale**, not an additive identity.
+    ///
+    /// Adding it to a temperature does not leave that temperature unchanged, because
+    /// addition is not defined on this scale at all. It is a named point (water's freezing
+    /// point, or Fahrenheit's brine reference), which is a different kind of thing from
+    /// [`crate::TemperatureKelvin::ZERO`] — absolute zero, where the scale genuinely begins.
     pub const ZERO: Self = Self(0.0);
 
+    /// Wrap a raw `f64` already expressed in this unit.
+    ///
+    /// Asserted rather than checked: the caller is promising `v` is in this unit, and nothing
+    /// here can verify that. Passing a value in the wrong unit is the one mistake the type
+    /// system cannot catch at this boundary, which is why conversions exist.
+    ///
+    /// # Panics
+    /// On `NaN`, in a **debug build only** — the check is a `debug_assert!`, so a release build
+    /// accepts a `NaN` and propagates it silently through every later operation.
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
     }
 
+    /// The raw value in celsius, discarding the dimension.
+    ///
+    /// The escape hatch out of the units system; prefer the dimensional operations and reach
+    /// for this at an edge that does not speak units.
     pub const fn as_celsius(self) -> f64 {
         self.0
     }
 
+    /// Convert to [`TemperatureKelvin`].
+    ///
+    /// An **affine** conversion: an offset as well as a scale, so it does not distribute
+    /// over addition and a *difference* of two temperatures does not convert this way.
     pub fn to_kelvin(self) -> TemperatureKelvin {
         TemperatureKelvin(self.0 + KELVIN_OFFSET_CELSIUS)
     }
 
+    /// Convert to [`TemperatureFahrenheit`].
+    ///
+    /// An **affine** conversion: an offset as well as a scale, so it does not distribute
+    /// over addition and a *difference* of two temperatures does not convert this way.
     pub fn to_fahrenheit(self) -> TemperatureFahrenheit {
         self.to_kelvin().to_fahrenheit()
     }

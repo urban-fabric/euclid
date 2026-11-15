@@ -20,12 +20,15 @@ rather than a push:
 - a release is a tag, cut after the merge — see [Releasing](#releasing)
 
 **Not 1.0, and not soon.** 1.0 is a promise that the surface will not break
-without a major bump, and three things have to close first: `euclid-matrix`'s
+without a major bump, and two things have to close first: `euclid-matrix`'s
 twelve traits have never been executed by any carrier (no tensor exists here to
-satisfy them, and the boundary forbids shipping one), `euclid-quantity` has 270
-undocumented public items, and the generated half of the conformance strategy is
-still internal to this repository. Pinning works today and is the point; 1.0 is
-a separate claim.
+satisfy them, and the boundary forbids shipping one), and the generated half of
+the conformance strategy is still internal to this repository. Pinning works
+today and is the point; 1.0 is a separate claim.
+
+`euclid-quantity`'s 270 undocumented public items were the third, and are
+written — `missing_docs` is now denied with no crate-wide exception anywhere in
+the workspace.
 
 ## Version Control: Jujutsu
 

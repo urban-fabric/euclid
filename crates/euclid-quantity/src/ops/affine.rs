@@ -1,6 +1,6 @@
 //! Affine positions versus vector displacements.
 //!
-//! A quantity newtype like [`TimeSeconds`](crate::TimeSeconds) is a *displacement*:
+//! A quantity newtype like [`crate::TimeSeconds`] is a *displacement*:
 //! a magnitude you can add, negate, and scale. An *absolute position* is different.
 //! Two timestamps can be subtracted to get a duration, and a duration can be added
 //! to a timestamp to get another timestamp, but adding two timestamps is
@@ -18,7 +18,7 @@
 //!
 //! `Point<Q>` is the reusable floating-point form of this affine pattern for any
 //! [`LinearQuantity`]. It is *not* the same thing as the integer time newtypes
-//! [`TimeMicros`](crate::TimeMicros) / [`TimeMicrosDelta`](crate::TimeMicrosDelta):
+//! [`crate::TimeMicros`] / [`crate::TimeMicrosDelta`]:
 //! `TimeMicros` is a summable magnitude (it implements `Add` and `Sum`), and
 //! `TimeMicrosDelta` is its signed difference, produced with
 //! [`TimeMicrosDelta::between`](crate::TimeMicrosDelta::between) — not an affine

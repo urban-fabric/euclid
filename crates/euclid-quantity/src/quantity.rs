@@ -31,6 +31,10 @@ pub use euclid_units::Dimension;
 /// bodies, and [`DiscreteQuantity`] is the integer-carrier counterpart for counts and sizes.
 pub use euclid_units::{DiscreteQuantity, LinearQuantity, Measure, Quantity, ScalarQuantity};
 
+/// Why a quantity could not be converted into a representation that cannot hold it.
+///
+/// Returned by the fallible conversions on [`crate::HostQuantity`], where the
+/// target is an integer or a bounded encoding and the source is an unconstrained `f64`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum QuantityError {
     /// The source value was `NaN` or infinite, so it has no finite encoding.

@@ -25,6 +25,10 @@ impl core::fmt::Display for TimePicosDelta {
 }
 
 #[repr(transparent)]
+/// A duration in **whole picoseconds**, backed by `u64`.
+///
+/// `u64` picoseconds spans only about 213 days — the shortest range in the time family,
+/// and the reason to reach for it only where picosecond resolution is genuinely needed.
 #[derive(
     Copy,
     Clone,
@@ -44,6 +48,7 @@ impl core::fmt::Display for TimePicosDelta {
 pub struct TimePicos(pub(crate) u64);
 
 #[repr(transparent)]
+/// A signed difference between two [`TimePicos`], backed by `i64`.
 #[derive(
     Copy,
     Clone,
@@ -75,24 +80,41 @@ impl euclid_units::Measure for TimePicos {
 }
 
 impl TimePicos {
+    /// The additive identity in this unit.
     pub const ZERO: Self = Self(0);
 
+    /// Wrap a raw whole-picosecond count. Asserted rather than checked.
     pub const fn new(ps: u64) -> Self {
         Self(ps)
     }
 
+    /// The raw count in whole picoseconds.
     pub const fn as_picos(self) -> u64 {
         self.0
     }
 
+    /// Add, clamping at the type's maximum instead of overflowing.
+    ///
+    /// Saturating rather than wrapping or panicking: for a size or a count, a total that is
+    /// implausibly large is a less dangerous failure than one that has silently wrapped to near
+    /// zero and reads as plausible.
     pub const fn saturating_add(self, rhs: Self) -> Self {
         Self(self.0.saturating_add(rhs.0))
     }
 
+    /// Subtract, clamping at zero instead of underflowing.
+    ///
+    /// The clamp is why this type can be unsigned at all. Note it is **lossy by design**:
+    /// `a.saturating_sub(b)` is zero whenever `b >= a`, so it cannot be used to discover which
+    /// of two values was larger.
     pub const fn saturating_sub(self, rhs: Self) -> Self {
         Self(self.0.saturating_sub(rhs.0))
     }
 
+    /// Convert from a [`std::time::Duration`].
+    ///
+    /// Saturates at this type's maximum rather than wrapping, so a `Duration` beyond its range
+    /// clamps. `Duration` is unsigned, so this is always a valid duration.
     pub fn from_duration(d: std::time::Duration) -> Self {
         #[allow(clippy::cast_possible_truncation)]
         Self(d.as_nanos().saturating_mul(PS_PER_NS as u128) as u64)
@@ -108,10 +130,12 @@ impl TimePicos {
         self.to_nanos().to_micros()
     }
 
+    /// Convert to [`TimeMillis`].
     pub fn to_millis(self) -> TimeMillis {
         self.to_seconds().to_millis()
     }
 
+    /// Convert to [`TimeSeconds`].
     pub fn to_seconds(self) -> TimeSeconds {
         TimeSeconds::new(self.0 as f64 / PS_PER_S)
     }
@@ -130,16 +154,20 @@ impl euclid_units::Measure for TimePicosDelta {
 }
 
 impl TimePicosDelta {
+    /// The additive identity in this unit.
     pub const ZERO: Self = Self(0);
 
+    /// Wrap a raw signed picosecond difference.
     pub const fn new(ps: i64) -> Self {
         Self(ps)
     }
 
+    /// The signed difference in whole picoseconds.
     pub const fn as_picos(self) -> i64 {
         self.0
     }
 
+    /// The signed interval from `before` to `after`; negative when they are out of order.
     #[allow(clippy::cast_possible_wrap)]
     pub fn between(before: TimePicos, after: TimePicos) -> Self {
         Self(after.as_picos() as i64 - before.as_picos() as i64)

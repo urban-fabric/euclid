@@ -5,6 +5,11 @@ use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
 #[repr(transparent)]
+/// A count of **bytes**, backed by `u64`.
+///
+/// Unsigned and integral because a size is neither negative nor fractional. Conversions to
+/// KiB/MiB/GiB are binary (1024-based), not decimal — the units a filesystem and an
+/// allocator report in.
 #[derive(
     Clone,
     Copy,
@@ -24,24 +29,39 @@ use serde::{Deserialize, Serialize};
 pub struct Bytes(u64);
 
 impl Bytes {
+    /// Zero.
     pub const ZERO: Self = Self(0);
 
+    /// Wrap a raw `u64` already expressed in this unit. Asserted rather than checked.
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
+    /// The raw count, discarding the unit.
     pub const fn as_u64(self) -> u64 {
         self.0
     }
 
+    /// The count as `f32`.
+    ///
+    /// Exact only up to 2^24 — about 16.7 million — so this is for display and interchange
+    /// rather than arithmetic.
     pub fn as_f32(self) -> f32 {
         self.0 as f32
     }
 
+    /// The count as `f64`.
+    ///
+    /// Exact up to 2^53; above that, consecutive counts stop being distinguishable.
     pub fn as_f64(self) -> f64 {
         self.0 as f64
     }
 
+    /// Subtract, clamping at zero instead of underflowing.
+    ///
+    /// The clamp is why this type can be unsigned at all. Note it is **lossy by design**:
+    /// `a.saturating_sub(b)` is zero whenever `b >= a`, so it cannot be used to discover which
+    /// of two values was larger.
     pub fn saturating_sub(self, rhs: Self) -> Self {
         Self(self.0.saturating_sub(rhs.0))
     }
@@ -116,6 +136,11 @@ impl PartialOrd<u64> for Bytes {
 }
 
 #[repr(C)]
+/// A half-open byte range `[start, end)`, as used for a range request or a slice of an
+/// object.
+///
+/// Half-open so that an empty range is representable and adjacent ranges tile without
+/// overlapping, which the inclusive spelling cannot do.
 #[derive(
     Clone,
     Copy,
@@ -132,15 +157,22 @@ impl PartialOrd<u64> for Bytes {
     Deserialize,
 )]
 pub struct ByteRange {
+    /// Offset of the first byte in the range.
     pub offset: Bytes,
+    /// Number of bytes in the range.
     pub len: Bytes,
 }
 
 impl ByteRange {
+    /// A range of `len` bytes starting at `offset`.
     pub const fn new(offset: Bytes, len: Bytes) -> Self {
         Self { offset, len }
     }
 
+    /// A zero-length range at `offset`.
+    ///
+    /// Representable because the range is half-open, which is the reason for that choice: an
+    /// empty range still has a position, and an inclusive spelling cannot express one.
     pub const fn empty(offset: Bytes) -> Self {
         Self {
             offset,
@@ -148,10 +180,12 @@ impl ByteRange {
         }
     }
 
+    /// One past the last byte — `offset + len`, the exclusive upper bound.
     pub fn end(&self) -> Bytes {
         self.offset + self.len
     }
 
+    /// Whether the range covers no bytes.
     pub fn is_empty(&self) -> bool {
         self.len.0 == 0
     }

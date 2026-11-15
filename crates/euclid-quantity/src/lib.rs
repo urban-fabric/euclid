@@ -14,32 +14,14 @@
 //! the same trait. Only [`HostQuantity`] and [`QuantityError`] originate here — see
 //! [`quantity`] for why those two cannot live in a carrier-generic crate.
 //!
-//! ## The one crate `missing_docs` is not yet enforced on
-//!
-//! The workspace denies `missing_docs`, because euclid is mostly trait surface and a doc comment
-//! is therefore the deliverable. This crate is excepted, and the exception is a **known debt
-//! with a number on it rather than a decision**: 270 public items here carry no doc comment.
-//!
-//! They are not all equal, and whoever picks this up should take them in this order:
-//!
-//! - **36 structs and 3 modules** — genuine gaps. `pub struct Bytes(u64);` with nothing above it
-//!   leaves a reader to infer what a `Bytes` is and what it does not do, and there is no second
-//!   place to find out.
-//! - **46 associated constants** — worth a line each where the value is not its own explanation
-//!   (`TimeSeconds::INFINITY` means something specific about saturation).
-//! - **132 methods and 49 associated functions** — the repetitive carrier surface: `as_km`,
-//!   `to_mph`, `is_zero`, `new`, repeated across every unit type. These are the ones where a
-//!   mechanical `/// The value in kilometres.` would make the docs *longer* without making them
-//!   more useful, and they should be written where the conversion has a convention worth stating
-//!   (rounding, saturation, an affine offset) and skipped where it does not.
-//!
-//! Enforcing the lint here before that work is done would mean writing 270 lines of filler to
-//! satisfy a tool, which is the opposite of what the lint is for.
-
-#![allow(missing_docs)]
-
 pub mod conversion;
+/// Storage, count and timestamp newtypes: byte sizes, cardinal counts, and epoch instants.
+///
+/// Dimensionally these are either dimensionless or affine, which is why they sit apart from
+/// [`crate::units`] — a count does not scale and an instant does not add.
 pub mod data;
+/// Operations *over* quantities rather than quantities themselves: uncertainty intervals
+/// ([`crate::Interval`]) and affine positions ([`crate::Point`]).
 pub mod ops;
 pub mod quantity;
 pub mod units;

@@ -150,10 +150,10 @@ euclid-stability = { version = "0.5.0", path = "crates/euclid-stability" }
 # which makes an undocumented public item a missing *product*, not a missing nicety. Denied here
 # so that stays true by construction.
 #
-# Two documented exceptions, both narrow. `DType` and `Dimension` allow it on their variant
+# One documented exception, and it is narrow: `DType` and `Dimension` allow it on their variant
 # lists, where `/// Length.` above `Length` is noise and the grouping comments already carry the
-# structure. And `euclid-quantity` allows it crate-wide, as a debt with a number on it — see its
-# lib.rs for the 270 items and the order to take them in.
+# structure. Nothing else is excepted — `euclid-quantity` carried a crate-wide allow for 270
+# items until they were written.
 missing_docs = "deny"
 unsafe_code = "deny"
 unreachable_pub = "deny"

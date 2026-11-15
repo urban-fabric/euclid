@@ -9,6 +9,9 @@
 use crate::{LengthMeters, SpeedKph, TimeSeconds};
 
 impl LengthMeters {
+    /// The time to cover this distance at `speed` — the cross-dimensional `length / speed`.
+    ///
+    /// Zero speed yields an infinite time rather than an error, following IEEE-754 division.
     pub fn travel_time_at(self, speed: SpeedKph) -> TimeSeconds {
         if !speed.is_finite() || !speed.is_positive() {
             return TimeSeconds::INFINITY;
@@ -18,6 +21,9 @@ impl LengthMeters {
 }
 
 impl TimeSeconds {
+    /// The distance covered in this time at `speed` — the cross-dimensional `speed × time`.
+    ///
+    /// The mirror of [`LengthMeters::travel_time_at`](crate::LengthMeters::travel_time_at).
     pub fn distance_at(self, speed: SpeedKph) -> LengthMeters {
         LengthMeters::new(speed.as_kph() * self.as_seconds() / 3.6)
     }

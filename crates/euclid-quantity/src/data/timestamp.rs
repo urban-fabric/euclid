@@ -3,6 +3,11 @@
 use bytemuck::{Pod, Zeroable};
 
 #[repr(transparent)]
+/// An instant, as **whole seconds** since the Unix epoch, backed by `i64`.
+///
+/// A point on the timeline rather than a duration, so it is **affine**: two instants
+/// subtract to a duration, but adding two instants is meaningless. Signed, so instants
+/// before 1970 are representable.
 #[derive(
     Copy,
     Clone,
@@ -22,6 +27,9 @@ use bytemuck::{Pod, Zeroable};
 pub struct UnixSeconds(i64);
 
 #[repr(transparent)]
+/// An instant, as **whole milliseconds** since the Unix epoch, backed by `i64`. The
+/// affine counterpart of [`crate::TimeMillis`], as
+/// [`UnixSeconds`] is of [`crate::TimeSeconds`].
 #[derive(
     Copy,
     Clone,
@@ -41,16 +49,24 @@ pub struct UnixSeconds(i64);
 pub struct UnixMillis(i64);
 
 impl UnixSeconds {
+    /// The Unix epoch, 1970-01-01T00:00:00Z — this type's origin rather than a zero, since an
+    /// instant is affine.
     pub const EPOCH: Self = Self(0);
 
+    /// Wrap a raw second count since the epoch. Asserted rather than checked.
     pub const fn new(secs: i64) -> Self {
         Self(secs)
     }
 
+    /// Whole seconds since the Unix epoch; negative before 1970.
     pub const fn as_secs(self) -> i64 {
         self.0
     }
 
+    /// The current instant, from the system clock.
+    ///
+    /// The system clock is not monotonic: it can jump backwards across an NTP correction, so two
+    /// successive calls are not ordered. Use a monotonic source to measure an elapsed interval.
     pub fn now() -> Self {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -63,16 +79,22 @@ impl UnixSeconds {
 }
 
 impl UnixMillis {
+    /// The Unix epoch, 1970-01-01T00:00:00Z — this type's origin rather than a zero, since an
+    /// instant is affine.
     pub const EPOCH: Self = Self(0);
 
+    /// The latest representable instant.
     pub const MAX: Self = Self(i64::MAX);
 
+    /// The earliest representable instant, well before the epoch.
     pub const MIN: Self = Self(i64::MIN);
 
+    /// Wrap a raw millisecond count since the epoch. Asserted rather than checked.
     pub const fn new(ms: i64) -> Self {
         Self(ms)
     }
 
+    /// Whole milliseconds since the Unix epoch; negative before 1970.
     pub const fn as_millis(self) -> i64 {
         self.0
     }
