@@ -151,7 +151,8 @@ use euclid_numeric::Real;
 use euclid_units::Length;
 ```
 
-Each crate's README covers its own trait surface. Beyond the three rules above,
+Every published crate's README covers its own trait surface (`euclid-utils` is
+the dev-only member and has none). Beyond the three rules above,
 one habit matters: **choose the narrowest trait bound that contains the
 operations your formula needs** — `Ring` for `+ - *`, `Real` for
 transcendentals, `Compare` only when you need masks or `select`. The bound is
@@ -188,7 +189,14 @@ lint and demands `mod.rs`.
 Licensed under the [Apache License, Version 2.0](LICENSE).
 Copyright 2026 Raymond Mead.
 
+**Two crates are excepted.** `euclid-algebra` and `euclid-matrix` each declare
+`license = "Proprietary"` rather than inheriting the workspace's Apache-2.0.
+Both arrived here from their own repositories, and a move should not relicense
+code. Everything else — the four contract crates, `oresme`, and the dev-only
+`euclid-utils` — takes `license.workspace = true` and is Apache-2.0.
+
 Apache-2.0 governs what a recipient may do with the code; it does not oblige
 anyone to publish it. Keeping this repository private is a separate, purely
 practical matter. Note the corollary: anyone who *does* receive it under
-Apache-2.0 holds an irrevocable right to redistribute it, publicly included.
+Apache-2.0 holds an irrevocable right to redistribute it, publicly included —
+which is exactly why the two proprietary crates are tracked separately above.
