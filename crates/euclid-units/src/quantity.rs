@@ -21,9 +21,22 @@ pub type Mask<Q> = <<Q as Measure>::Repr as Compare>::Mask;
 pub trait Measure: Clone {
     /// The numeric carrier, such as `f64`, `u64`, or `i64`.
     type Repr: Element;
+    /// The physical dimension, available at runtime for error messages and dynamic checks.
+    ///
+    /// The *type* already encodes it — that is what makes a dimension error a compile error —
+    /// so this is for the cases a type cannot reach: formatting, serialisation, and a planner
+    /// deciding what it has been handed.
     const DIMENSION: Dimension;
+    /// The unit symbol, as it should appear to a reader: `"m"`, `"km/h"`, `"°C"`.
     const UNIT_NAME: &'static str;
+    /// The underlying number, with the dimension stripped.
+    ///
+    /// The escape hatch out of the units system, and the one place a dimension error becomes
+    /// possible again — so prefer the dimensional operations and reach for this at the edges,
+    /// where a number has to be handed to something that does not speak units.
     fn raw(&self) -> Self::Repr;
+    /// Attach this unit to a bare number, which is **asserted rather than checked**: the caller
+    /// is promising the value is already in [`UNIT_NAME`](Self::UNIT_NAME).
     fn from_raw(v: Self::Repr) -> Self;
 }
 

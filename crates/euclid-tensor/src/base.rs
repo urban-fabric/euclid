@@ -20,6 +20,10 @@ pub trait Tensor: Clone {
     /// The axis lengths, returned owned — a tensor's shape may be dynamic metadata an implementation
     /// computes, not necessarily a stored slice.
     fn shape(&self) -> Vec<usize>;
+    /// Number of axes, i.e. `shape().len()`.
+    ///
+    /// Defaulted through [`shape`](Self::shape); override it if the carrier knows its rank
+    /// without computing a shape, which a statically-ranked backend does.
     fn rank(&self) -> usize {
         self.shape().len()
     }
@@ -71,7 +75,16 @@ pub trait Tensor: Clone {
     /// in `broadcast_dims`.
     fn broadcast_in_dim(&self, out_dims: &[usize], broadcast_dims: &[usize]) -> Self;
 
-    /// General axis permutation.
+    /// General axis permutation: the result carries `shape()[axes[i]]` at position `i`.
+    ///
+    /// `axes` must be a permutation of `0..rank()` — every axis exactly once, no more and no
+    /// fewer. A shorter list is **not** a partial permutation leaving the remaining axes alone;
+    /// it is out of contract, and a backend is free to do anything with it. Pad it to the full
+    /// rank instead: cycling the first three axes of a rank-5 tensor is `[1, 2, 0, 3, 4]`.
+    ///
+    /// Stated because the signature cannot: a `&[usize]` admits the wrong length and a repeated
+    /// axis, and a backend that computes strides by indexing `axes` will silently produce a
+    /// tensor of the wrong rank rather than reporting the mistake.
     fn transpose_axes(&self, axes: &[usize]) -> Self;
 
     /// Remove a size-1 axis.
@@ -169,6 +182,12 @@ pub trait Tensor: Clone {
         Self: Ring;
 
     // --- reductions over the given axes ---
+    /// Sum over `axes`, which are **removed** from the result.
+    ///
+    /// An empty `axes` reduces over *every* axis to a rank-0 tensor — the only way this
+    /// signature can express a full reduction, and the convention the rest of the reduction
+    /// family follows. Summation order is unspecified, so a backend may reassociate and the
+    /// result is not bit-reproducible across backends for a float carrier.
     fn sum(self, axes: &[usize]) -> Self
     where
         Self: Ring;

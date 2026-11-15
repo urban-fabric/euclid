@@ -1,13 +1,23 @@
 [package]
 name = "euclid-algebra"
-# euclid-algebra predates the fold into euclid and carries its own licence rather than
-# inheriting the workspace's Apache-2.0. A move should not relicense code.
-license = "Proprietary"
+# Apache-2.0, inherited from the workspace like every other member.
+#
+# This crate carried `license = "Proprietary"` and a comment arguing that "a move
+# should not relicense code", on the reasoning that it predated the fold into
+# euclid. That has been overridden deliberately by the copyright holder: the
+# fleet ships under one licence, and a single member under different terms makes
+# the whole workspace unpublishable as a set.
+#
+# `cargo deny check` is what surfaced it — "Proprietary" is not a valid SPDX
+# expression, so the crate read as *unlicensed* rather than as restrictively
+# licensed, which is a worse position than either.
+license.workspace = true
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
+readme = "README.md"
 description = "The abstract-algebra tower: the semiring/dioid trunk, the ring/field numeric branch, and the exact carriers Rational, Zn/Zp, GaussianRational. Dependency-free."
 
 [lib]
@@ -18,7 +28,7 @@ path = "src/lib.rs"
 # Off by default: a consumer that only writes formulas pays nothing for it, and one
 # verifying a carrier opts in. Always compiled under `cfg(test)` regardless, so this
 # crate's own suites exercise the same code a consumer would call.
-conformance = []
+conformance = ["dep:euclid-stability"]
 
 # No dependencies, not even euclid-numeric. Algebraic structure needs nothing from
 # analysis: this crate says which tier a carrier reaches, euclid-numeric says what
@@ -34,5 +44,16 @@ conformance = []
 # came over with the fold named the same lints one severity down, and euclid-algebra
 # violates none of them, so inheriting costs nothing and stops the crate from
 # silently drifting out of the workspace's standard.
+[dependencies]
+# The property/stability engine, now an **optional runtime dependency** rather than dev-only,
+# enabled by the `conformance` feature. That feature's whole shape is "test surface a consumer
+# opts into and otherwise pays nothing for", and the generated laws are that surface — so the
+# engine travels with them. A consumer that only binds the contract never sees it.
+euclid-stability = { workspace = true, optional = true }
+
+[dev-dependencies]
+# The stability and property engine, for the generated companion to the fixed conformance suite.
+euclid-stability.workspace = true
+
 [lints]
 workspace = true

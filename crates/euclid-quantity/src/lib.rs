@@ -13,9 +13,15 @@
 //! `euclid-units`, so `use euclid_quantity::Quantity` and `use euclid_units::Quantity` name
 //! the same trait. Only [`HostQuantity`] and [`QuantityError`] originate here — see
 //! [`quantity`] for why those two cannot live in a carrier-generic crate.
-
+//!
 pub mod conversion;
+/// Storage, count and timestamp newtypes: byte sizes, cardinal counts, and epoch instants.
+///
+/// Dimensionally these are either dimensionless or affine, which is why they sit apart from
+/// [`crate::units`] — a count does not scale and an instant does not add.
 pub mod data;
+/// Operations *over* quantities rather than quantities themselves: uncertainty intervals
+/// ([`crate::Interval`]) and affine positions ([`crate::Point`]).
 pub mod ops;
 pub mod quantity;
 pub mod units;
@@ -52,3 +58,33 @@ pub use euclid_units::{
     Power, Pressure, Resistance, SpecificEnergy, SpecificHeatCapacity, Speed, SurfaceTension,
     Temperature, Time, Torque, Voltage, Volume, VolumetricFlowRate,
 };
+
+// The README's examples, compiled.
+//
+// `cfg(doctest)` means this item exists only while rustdoc is collecting doctests: it is absent
+// from every real build, adds nothing to the public surface, and never appears in the rendered
+// docs. What it buys is that `cargo test --doc` compiles the code blocks in README.md itself.
+//
+// A crate whose deliverable is its trait surface has a README whose example *is* part of that
+// surface, and a README example that no longer compiles is worse than none — it documents a
+// signature the crate no longer has. Two crates used to check this by hand-copying the example
+// into `tests/readme_check.rs`, which compiles the copy and lets the original drift. This checks
+// the original.
+//
+// Illustrative fragments in the README are marked ```rust,ignore, which is the honest marking:
+// they reference names that are deliberately undefined.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeExamples;
+
+// The **workspace** README's examples, compiled here because no crate owns that file.
+//
+// Its remaining live examples need `euclid-numeric` and `euclid-units`, and this is the only
+// member that depends on both — which is the whole reason it landed here rather than somewhere
+// more obviously appropriate. If that stops being true, move this item; do not delete it, or the
+// front page of the repository goes back to being unverified prose.
+//
+// The two illustrative fragments in it are marked ```rust,ignore for the same reason as above.
+#[cfg(doctest)]
+#[doc = include_str!("../../../README.md")]
+struct WorkspaceReadmeExamples;

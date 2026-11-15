@@ -88,8 +88,13 @@ pub trait Real:
     // The elementwise analysis (trig, rounding, `min`/`max`/`clamp`, …) lives on
     // [`euclid_numeric::Real`] and is inherited here through
     // `Real: euclid_numeric::Real`.
+    /// Neither infinite nor `NaN`.
     fn is_finite(self) -> bool;
+    /// Not a number. A `NaN` is not equal to itself, so this is the only way to test for one.
     fn is_nan(self) -> bool;
+    /// The sign **bit** is set, which is a question about the representation rather than the
+    /// value — so `(-0.0).is_sign_negative()` is `true` while `-0.0 < 0.0` is `false`. Both are
+    /// right, and a predicate written as `x < ZERO` is a different test.
     fn is_sign_negative(self) -> bool;
 }
 

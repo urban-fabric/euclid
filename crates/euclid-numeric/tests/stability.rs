@@ -47,7 +47,7 @@
 //! measurement, and improving it should be a visible decision rather than a silent drift.
 
 use euclid_numeric::Real;
-use euclid_property::numeric::{LIKELY_THRESHOLDS, hunt_seams, next_up, scan_monotone};
+use euclid_stability::numeric::{LIKELY_THRESHOLDS, hunt_seams, next_up, scan_monotone};
 
 /// A named kernel, for the scan tables below.
 type Kernel = (&'static str, fn(f64) -> f64);
@@ -245,39 +245,79 @@ fn erfcx_wiggle_stays_within_its_budget() {
 /// The generalisable lesson, and the reason this test is worth its length: **do not compose
 /// through a saturating intermediate and expect the composite's conditioning to describe the
 /// result.**
-#[test]
-fn the_erf_round_trip_is_forward_stable() {
-    use euclid_property::numeric::{condition_at, two_stage_error_bound};
+///
+/// # Why this is a search with a budget rather than a grid
+///
+/// It began as a loop over 200 evenly spaced arguments, which found the `x = 1.76` case above and
+/// was how the two-stage bound got written. Two things were wrong with it, and both are the
+/// reason the engine grew the features this now uses.
+///
+/// A grid finds the worst case *on the grid*. The failure is a thin region — the round trip is
+/// benign almost everywhere and bad where `erf` saturates — so whether the grid lands on it is
+/// luck, and a 200-point grid over `(0, 2)` has a 0.01 resolution that could easily have stepped
+/// over it. `target` replaces that with a hill climb towards the worst ratio it can construct,
+/// which is the same question asked properly.
+///
+/// And the grid *discarded* the answer. `worst_ratio` was computed, compared against 1.0, and
+/// dropped on the floor — so the suite could only ever notice the round trip becoming
+/// *unstable*, never it becoming twice as inaccurate while still inside its bound. The margin is
+/// around 0.5 today; a change taking it to 0.9 is a real loss of accuracy that the assertion
+/// cannot see and `.budget()` can.
+mod round_trip {
+    use euclid_numeric::Real;
+    use euclid_stability::numeric::{condition_at, two_stage_error_bound};
+    use euclid_stability::{Config, check, classify, generate, property, target};
 
-    let mut worst_ratio = 0.0_f64;
-    let mut worst_at = f64::NAN;
-
-    for step in 1..200 {
-        let x = f64::from(step) * 0.01;
+    /// How much of its admissible two-stage error the round trip used at `x`. `1.0` is exactly at
+    /// the bound, which is the ratio form a budget baseline wants: comparable across inputs, and
+    /// continuous in `x` so the climb has a gradient to follow.
+    fn margin(x: f64) -> Option<f64> {
         let round_trip = Real::erf_inv(Real::erf(x));
         if !round_trip.is_finite() {
-            continue;
+            return None;
         }
-
         let observed = ((round_trip - x) / x).abs();
-        let Some(bound) = two_stage_error_bound(Real::erf, Real::erf_inv, x, 64.0) else {
-            continue;
-        };
-
-        let ratio = observed / bound;
-        if ratio > worst_ratio {
-            worst_ratio = ratio;
-            worst_at = x;
-        }
+        let bound = two_stage_error_bound(Real::erf, Real::erf_inv, x, 64.0)?;
+        (bound > 0.0).then_some(observed / bound)
     }
 
-    let composite = condition_at(|v| Real::erf_inv(Real::erf(v)), worst_at).unwrap_or(f64::NAN);
-    let inner = condition_at(Real::erf, worst_at).unwrap_or(f64::NAN);
-    assert!(
-        worst_ratio <= 1.0,
-        "the erf round trip exceeded its two-stage forward-stability bound by \
-         {worst_ratio:.2}x at x = {worst_at}. The composite's condition number is \
-         {composite:e} and erf's own is {inner:e}, so if the composite looks benign the \
-         amplification is in the intermediate."
-    );
+    property! {
+        #![config(
+            Config::default()
+                .cases(600)
+                .regressions("tests/regressions/erf-round-trip.txt")
+                .budget("tests/budgets.txt")
+                .require("saturating", 5.0)
+        )]
+
+        /// The round trip stays inside its two-stage bound, and no less accurate than today.
+        ///
+        /// Two assertions in one property, deliberately. `check!` is the **contract** — forward
+        /// stable, which is what a caller may rely on and what would still be true if the margin
+        /// doubled. The budget is the **measurement** — and today it is 0.5 — which is what
+        /// notices the doubling. Neither subsumes the other.
+        fn the_erf_round_trip_is_forward_stable(x in generate::float::in_range(0.01, 2.0)) {
+            let Some(margin) = margin(x) else {
+                return Ok(());
+            };
+
+            // `erf` saturates above about 1.5, which is where the intermediate's rounding gets
+            // amplified and the only region this property is really about. Required, because a
+            // run that never got there would report a clean pass over the benign part.
+            classify!("saturating", x > 1.5);
+            classify!("benign", x <= 1.5);
+
+            target(margin);
+
+            let composite = condition_at(|v| Real::erf_inv(Real::erf(v)), x).unwrap_or(f64::NAN);
+            let inner = condition_at(Real::erf, x).unwrap_or(f64::NAN);
+            check!(
+                margin <= 1.0,
+                "the erf round trip exceeded its two-stage forward-stability bound by \
+                 {margin:.2}x at x = {x}. The composite's condition number is {composite:e} \
+                 and erf's own is {inner:e}, so if the composite looks benign the \
+                 amplification is in the intermediate."
+            );
+        }
+    }
 }

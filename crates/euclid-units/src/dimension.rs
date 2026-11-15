@@ -5,6 +5,13 @@
 /// via [`Dimension::exponents`], so two distinct names that share a dimensional
 /// signature (energy and torque, frequency and angular velocity) are
 /// [`Dimension::commensurable`] even though they are not [`Dimension::same`].
+///
+/// The sixty-seven variants carry no doc comments and `missing_docs` is allowed for that reason.
+/// `/// Length.` above `Length` is noise, and the section comments below — base, geometric,
+/// kinematic, mechanical, and so on — already group them the way a reader scans them. What a
+/// dimension actually *means* is fixed by its exponents, which live in the
+/// [`exponents`](Dimension::exponents) table rather than in prose.
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]
 pub enum Dimension {

@@ -24,4 +24,5 @@
 mod algebra;
 mod defaults;
 mod dim;
+mod generated_conformance;
 mod toy_units;

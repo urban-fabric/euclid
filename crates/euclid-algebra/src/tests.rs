@@ -3,6 +3,10 @@
 //! - [`laws`] — the tier axioms themselves, run over a fixed sample of every carrier. A
 //!   carrier "is a `Field`" exactly when it satisfies the field laws, so that suite is the
 //!   definition rather than a sampling of it.
+//! - [`generated_laws`] — the same laws over *generated* carriers, hunting the representation
+//!   invariants underneath them: that `Rational` stays reduced through arithmetic, that `Zp`'s
+//!   Fermat inverse agrees with division at every residue. Shares the law definitions with
+//!   [`laws`] and changes only where the sample comes from.
 //! - [`witnesses`] — the same, for the witnessed semirings, where the structure is a type
 //!   parameter rather than the type. These matter more than their element-layer counterparts:
 //!   a witness carries no property markers, so the laws are the only thing between it and a
@@ -10,6 +14,7 @@
 //! - This file — that the *tiers* are reachable: a formula written once at a tier compiles and
 //!   runs for the carriers that claim it, and the blanket impls fire as intended.
 
+mod generated_laws;
 mod laws;
 mod witnesses;
 

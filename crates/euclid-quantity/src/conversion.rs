@@ -43,7 +43,7 @@ use crate::{Measure, ScalarQuantity};
 /// Two units convert into one another only when they share the same marker, which the compiler
 /// enforces. These are the type-level counterparts of the runtime [`crate::Dimension`] enum;
 /// [`euclid_units::Dimensioned`] is the canonical bridge from a marker to its runtime
-/// [`Dimension`](crate::Dimension). euclid owns both, so the concrete units here and euclid's
+/// [`crate::Dimension`]. euclid owns both, so the concrete units here and euclid's
 /// carrier-generic contracts share exactly one marker set instead of maintaining parallel copies.
 pub use euclid_units::dim;
 

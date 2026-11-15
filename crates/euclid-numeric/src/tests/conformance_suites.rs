@@ -73,3 +73,70 @@ fn bool_satisfies_the_boolean_laws() {
     // The whole domain, so this is exhaustive rather than sampled.
     laws::boolean_laws_for::<bool>("bool");
 }
+
+// ===== The exported generated laws, run against the reference carriers ==========
+//
+// `GeneratedSample` is public API now, so euclid is its first caller. These impls double as the
+// worked examples a carrier author copies, which is why the ranges are justified rather than
+// merely picked.
+
+use crate::conformance::generated::{self, GeneratedSample};
+use euclid_stability::{Gen, generate};
+
+impl GeneratedSample for f64 {
+    /// The domain the fixed sample states and `real_laws` requires: **strictly positive and
+    /// inside `(0, π/2)`**, drawn log-uniformly so the decades below `1` are as well covered as
+    /// the one above.
+    ///
+    /// `magnitude` rather than `in_range` for that reason — a uniform draw over `(0, 1.5)` puts
+    /// almost nothing near `1e-3`, and the logarithm and `ln_1p` crossovers live down there.
+    ///
+    /// # The `abs` and the `clamp` are both load-bearing
+    ///
+    /// Writing this generator got the domain wrong twice, and both times the law caught it rather
+    /// than passing — which is the argument for shipping the laws rather than describing them:
+    ///
+    /// - without `abs`, `magnitude` is **signed**, and `-0.015625` made `exp(ln(x))` return `NaN`;
+    /// - without the `clamp`, `magnitude(-6, 0)` reaches past `1`, and `1.5707963267948968` —
+    ///   one ulp above `π/2` — made `atan(tan(x))` come back negated, because `tan` had crossed
+    ///   the pole and `atan` returned the other branch.
+    ///
+    /// Neither is a defect in the law. `real_laws` documents its sample as finite, strictly
+    /// positive and inside the principal branch, and **a generator is as much part of that
+    /// contract as the list it replaces.**
+    fn generator() -> Gen<Self> {
+        generate::weighted(vec![
+            (3, generate::just(1.0)),
+            (
+                6,
+                generate::float::magnitude(-6, 0).map(|v| v.abs().clamp(1e-6, 1.5)),
+            ),
+            (3, generate::float::in_range(0.5, 1.5)),
+        ])
+    }
+}
+
+impl GeneratedSample for bool {
+    /// The whole domain, so the boolean laws stay exhaustive rather than sampled even under a
+    /// generator.
+    fn generator() -> Gen<Self> {
+        generate::boolean()
+    }
+}
+
+#[test]
+fn f64_satisfies_the_generated_real_laws() {
+    // The same tolerance the fixed suite uses at this width — the generated search is a wider
+    // domain at the same bound, not a looser one.
+    generated::real_laws_generated::<f64>(1e-14, "f64");
+}
+
+#[test]
+fn f64_satisfies_the_generated_mask_laws() {
+    generated::mask_laws_generated::<f64>("f64");
+}
+
+#[test]
+fn bool_satisfies_the_generated_boolean_laws() {
+    generated::boolean_laws_generated::<bool>("bool");
+}

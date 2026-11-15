@@ -4,7 +4,7 @@ members = [
     "crates/euclid-algebra",
     "crates/euclid-matrix",
     "crates/euclid-numeric",
-    "crates/euclid-property",
+    "crates/euclid-stability",
     "crates/euclid-quantity",
     "crates/euclid-random",
     "crates/euclid-scalar",
@@ -89,9 +89,28 @@ members = [
 # [dev-dependencies] for shared test helpers, and it is publish = false, so it never
 # reaches a consumer. The carrier and content crates (euclid-quantity,
 # euclid-scalar, euclid-algebra, euclid-matrix) do not take it.
+#
+# euclid-stability is the second dev-only member, on the same footing. Two responsibilities,
+# which is what the name says and what `euclid-property` (its name through 0.4) did not:
+#
+#   Numerical stability -- condition numbers, forward and two-stage error bounds, seam hunting at
+#   algorithm crossovers, ulp monotonicity scans, and accuracy budgets. A budget is the piece
+#   that closes a gap nothing else here can see: a property asserts a contract with headroom, so
+#   a kernel getting twice as inaccurate still passes it, and only a committed worst-case score
+#   notices. This half is numerical analysis rather than property testing.
+#
+#   Property testing -- the foundation the above searches over. It is why a `conformance`
+#   module's laws can be run twice: once over the fixed ConformanceSample that proves a tier is
+#   satisfiable, once over generated input that hunts the representation invariants underneath.
+#   It replaces proptest, which deny.toml bans: the fleet's generators are mostly dependent (a
+#   rank bounding the axes that index it), which is proptest's documented weak spot, and
+#   generating from a replayable choice tape re-derives such a bound on every shrink candidate
+#   instead. Note there is no `Arbitrary` here, deliberately -- a generator is declared, in the
+#   same spirit as ConformanceSample, which is also why "property testing" named the wrong half:
+#   that tradition is type-driven, and this crate's weight is not.
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Raymond Mead"]
@@ -99,16 +118,16 @@ rust-version = "1.95"
 repository = "https://github.com/urban-fabric/euclid"
 
 [workspace.dependencies]
-euclid-numeric = { version = "0.4.0", path = "crates/euclid-numeric" }
+euclid-numeric = { version = "0.5.0", path = "crates/euclid-numeric" }
 # The algebra tower that `euclid-scalar` fuses with the analysis surface above.
 # Declared here now that a member depends on it; it was deliberately absent while
 # nothing in the workspace did.
-euclid-algebra = { version = "0.4.0", path = "crates/euclid-algebra" }
+euclid-algebra = { version = "0.5.0", path = "crates/euclid-algebra" }
 # The dimension contracts `euclid-quantity` implements. Declared here now that a member
 # crate depends on it rather than only consumers outside the workspace.
-euclid-units = { version = "0.4.0", path = "crates/euclid-units" }
+euclid-units = { version = "0.5.0", path = "crates/euclid-units" }
 # The rank-n Tensor contract that `euclid-matrix` extends.
-euclid-tensor = { version = "0.4.0", path = "crates/euclid-tensor" }
+euclid-tensor = { version = "0.5.0", path = "crates/euclid-tensor" }
 # `euclid-quantity`, `euclid-scalar` and `euclid-matrix` are deliberately absent: an entry here is
 # for a dependency some *member* takes, and all three are leaves of the graph
 # above — they implement or extend the contract crates and nothing in the
@@ -116,13 +135,29 @@ euclid-tensor = { version = "0.4.0", path = "crates/euclid-tensor" }
 # reports as `unused_workspace_dependencies`. Re-add one only when a member
 # actually names it; a consumer outside the workspace does not need it here.
 # Dev-only shared helpers; never a runtime dependency of a published crate.
-euclid-utils = { version = "0.4.0", path = "crates/euclid-utils" }
-# Dev-only property-test engine. Declared here now that a member's own suites use it —
-# euclid-numeric's `tests/` take it to search for worst-case numerical error. Like
-# euclid-utils it is publish = false and never reaches a published artifact.
-euclid-property = { version = "0.4.0", path = "crates/euclid-property" }
+euclid-utils = { version = "0.5.0", path = "crates/euclid-utils" }
+# Dev-only property-test engine. Eight of the nine other members take it: euclid-numeric to
+# search for worst-case numerical error, euclid-algebra/-units/-tensor/-random for the generated
+# companion to each fixed conformance suite, euclid-quantity for conversion round trips,
+# euclid-scalar to check the two same-named tiers it fuses agree, and euclid-utils because the
+# measuring instrument is worth measuring. Only euclid-matrix does not, and cannot: its traits
+# are backend primitives with no carrier here to run a law against, generated or fixed.
+# Unlike euclid-utils it is not purely dev-only: the five contract crates take it as an
+# *optional* dependency enabled by their `conformance` feature, because the generated laws they
+# export are written against it. A consumer that only binds the contract never sees it; one that
+# turns on `conformance` is asking for the test surface and gets the engine with it.
+euclid-stability = { version = "0.5.0", path = "crates/euclid-stability" }
 
 [workspace.lints.rust]
+# euclid is mostly trait surface, so a doc comment is the deliverable rather than a courtesy —
+# which makes an undocumented public item a missing *product*, not a missing nicety. Denied here
+# so that stays true by construction.
+#
+# One documented exception, and it is narrow: `DType` and `Dimension` allow it on their variant
+# lists, where `/// Length.` above `Length` is noise and the grouping comments already carry the
+# structure. Nothing else is excepted — `euclid-quantity` carried a crate-wide allow for 270
+# items until they were written.
+missing_docs = "deny"
 unsafe_code = "deny"
 unreachable_pub = "deny"
 

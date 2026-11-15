@@ -65,7 +65,12 @@ with no dependencies at all.
 
 ## License
 
-euclid-scalar was split out of euclid-algebra, which predates the fold into
-euclid and keeps its own `Proprietary` licence rather than inheriting the
-workspace's Apache-2.0. This crate is that crate's code, so it keeps the same
-licence — a split should not relicense any more than a move.
+Apache-2.0, inherited from the workspace like every other member — see
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+This crate was split out of `euclid-algebra`, which predates the fold into
+euclid, and carried that crate's `Proprietary` licence until 0.4 — on the
+reasoning that a split should not relicense any more than a move. That has been
+overridden deliberately by the copyright holder: the fleet ships under one
+licence. `cargo deny` is what surfaced it — `"Proprietary"` is not valid SPDX,
+so the crate read as *unlicensed* rather than as restrictively licensed.

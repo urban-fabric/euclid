@@ -18,6 +18,12 @@
 //! | [`control_flow`] | the conditional/loop contract is implementable |
 //! | [`capabilities`] | the eight capability extensions behave, over `dense` |
 //! | [`conformance_suites`] | `dense` satisfies the public [`conformance`](crate::conformance) laws |
+//! | [`generated_conformance`] | the same laws over generated shapes, hunting repeated extents and unit axes |
+//!
+//! The last two are a pair and the division of labour is worth knowing: the fixed sample proves
+//! the laws are satisfiable and reaches every rank they need, while the generated suite varies
+//! the *extents*, which is where a permutation applied backwards still produces the right shape
+//! and only the data can catch it.
 //!
 //! Note that `dense` is a **data structure**, which is why it lives here rather than being
 //! shipped: euclid implements over universal datatypes and ships no structure, so a reference
@@ -30,6 +36,7 @@ mod constructors;
 mod control_flow;
 mod dense;
 mod dense_capabilities;
+mod generated_conformance;
 mod toy_tensor;
 
 use toy_tensor::ToyTensor;

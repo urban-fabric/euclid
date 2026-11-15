@@ -74,6 +74,11 @@ removed the dependency, the aliases, and the collision together.
 
 ## License
 
-euclid-algebra predates the fold into euclid and keeps its own `Proprietary`
-licence rather than inheriting the workspace's Apache-2.0 — a move should not
-relicense code.
+Apache-2.0, inherited from the workspace like every other member — see
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+This crate predates the fold into euclid and carried its own `Proprietary`
+licence until 0.4, on the reasoning that a move should not relicense code. That
+has been overridden deliberately by the copyright holder: the fleet ships under
+one licence. `cargo deny` is what surfaced it — `"Proprietary"` is not valid
+SPDX, so the crate read as *unlicensed* rather than as restrictively licensed.

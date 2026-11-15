@@ -1,0 +1,4 @@
+# Worst target() score per property, recorded by euclid-stability.
+# Commit this file: a rise here is an accuracy regression that every other check passes.
+# Re-record deliberately with EUCLID_STABILITY_RECORD=1 after changing a generator.
+the_erf_round_trip_is_forward_stable 5.510272789619652e-1

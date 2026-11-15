@@ -5,6 +5,14 @@
 //! lowering; euclid only names the portable metadata.
 
 /// Backend-neutral element dtype metadata.
+///
+/// The variants are the names themselves and carry no doc comments, which is why `missing_docs`
+/// is allowed here. `/// 32-bit float.` above `F32` is not information a reader lacks, and
+/// fifteen such lines would push the variant list off a screen it currently fits on. Where a
+/// variant *does* need saying — `Bf16`'s exponent range, or that `C64` means two `f32`s rather
+/// than a 64-bit component — it is said on the method that observes it
+/// ([`bit_width`](Self::bit_width)) rather than repeated per variant.
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DType {
     Bool,
@@ -25,6 +33,10 @@ pub enum DType {
 }
 
 impl DType {
+    /// The lowercase portable name — `"f64"`, `"bf16"`, `"c128"`.
+    ///
+    /// Stable across versions, because backends use it in serialised plans and error messages
+    /// where a renamed string is a breaking change rather than a cosmetic one.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Bool => "bool",
@@ -45,30 +57,39 @@ impl DType {
         }
     }
 
+    /// The boolean dtype, which is the mask dtype for a unified-dtype carrier.
     pub const fn is_bool(self) -> bool {
         matches!(self, Self::Bool)
     }
 
+    /// One of `I8`…`I64`. `Bool` is not an integer here, deliberately — it is a mask.
     pub const fn is_signed_integer(self) -> bool {
         matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64)
     }
 
+    /// One of `U8`…`U64`.
     pub const fn is_unsigned_integer(self) -> bool {
         matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64)
     }
 
+    /// Signed or unsigned, excluding `Bool`.
     pub const fn is_integer(self) -> bool {
         self.is_signed_integer() || self.is_unsigned_integer()
     }
 
+    /// A real floating dtype, including the two 16-bit formats. **Not** the complex ones, whose
+    /// components are floats — use [`is_complex`](Self::is_complex) for those.
     pub const fn is_float(self) -> bool {
         matches!(self, Self::F16 | Self::Bf16 | Self::F32 | Self::F64)
     }
 
+    /// `C64` or `C128`.
     pub const fn is_complex(self) -> bool {
         matches!(self, Self::C64 | Self::C128)
     }
 
+    /// Width of one element in bits, counting **both components** of a complex dtype: `C64` is
+    /// 64 bits total (two `f32`s), matching the name rather than the component width.
     pub const fn bit_width(self) -> u32 {
         match self {
             Self::Bool | Self::I8 | Self::U8 => 8,
@@ -79,6 +100,8 @@ impl DType {
         }
     }
 
+    /// Width of one element in bytes. `Bool` reports 1, since no portable backend addresses a
+    /// bit — a bit-packed mask is a backend's storage choice and not visible here.
     pub const fn element_size_in_bytes(self) -> usize {
         (self.bit_width() as usize) / 8
     }
@@ -98,6 +121,7 @@ pub struct TensorSpec {
 }
 
 impl TensorSpec {
+    /// A spec from a dtype and a shape. An empty shape is rank 0, i.e. a scalar.
     pub fn new(dtype: DType, shape: impl Into<Vec<usize>>) -> Self {
         Self {
             dtype,
@@ -105,26 +129,39 @@ impl TensorSpec {
         }
     }
 
+    /// The element dtype.
     pub const fn dtype(&self) -> DType {
         self.dtype
     }
 
+    /// The axis lengths.
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
 
+    /// Take the shape, consuming the spec — for a caller building a new spec from this one
+    /// without a copy.
     pub fn into_shape(self) -> Vec<usize> {
         self.shape
     }
 
+    /// Number of axes.
     pub fn rank(&self) -> usize {
         self.shape.len()
     }
 
+    /// Rank 0. Note this is *not* "holds one element": a shape of `[1, 1]` holds one element at
+    /// rank 2, and the distinction matters to every structural operation.
     pub fn is_scalar(&self) -> bool {
         self.shape.is_empty()
     }
 
+    /// The product of the axis lengths, or `None` if that **overflows `usize`**.
+    ///
+    /// `Option` rather than a saturating or panicking product because a shape can arrive from a
+    /// deserialised plan or a user request, where a nonsensical product is input rather than a
+    /// bug. A rank-0 spec gives `Some(1)`, the empty product, which is what makes a scalar
+    /// behave as one element in a generic size calculation.
     pub fn num_elements(&self) -> Option<usize> {
         self.shape
             .iter()
@@ -137,10 +174,17 @@ impl TensorSpec {
 /// Metadata may be unavailable for deferred-error values, abstract carriers, or backends that do
 /// not track dtype. This is inspection only: it does not imply host materialization.
 pub trait HasTensorSpec {
+    /// The element dtype, or `None` where the carrier does not track one.
     fn dtype(&self) -> Option<DType>;
 
+    /// The axis lengths. Returned owned, since a shape may be metadata the carrier computes
+    /// rather than stores — the same reason [`Tensor::shape`](crate::Tensor::shape) does.
     fn shape(&self) -> Vec<usize>;
 
+    /// Dtype and shape together, or `None` when the dtype is unavailable.
+    ///
+    /// Defaulted, and an implementor should override only to avoid recomputing a shape it
+    /// already holds alongside its dtype.
     fn spec(&self) -> Option<TensorSpec> {
         self.dtype()
             .map(|dtype| TensorSpec::new(dtype, self.shape()))
@@ -152,6 +196,12 @@ pub trait HasTensorSpec {
 /// Implementations decide the exact conversion semantics. For graph/tensor backends this usually
 /// records a cast node; for eager carriers it may convert immediately.
 pub trait Cast: Sized {
+    /// Reinterpret or convert to `dtype`.
+    ///
+    /// **Rounding and out-of-range behaviour are the backend's to define** and are deliberately
+    /// not fixed here: a narrowing float cast, or a float-to-integer cast of a value past the
+    /// integer's range, has no portable answer worth imposing. A caller needing a specific
+    /// convention should clamp or round before casting rather than rely on this.
     fn to_dtype(&self, dtype: DType) -> Self;
 }
 

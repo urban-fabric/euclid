@@ -6,6 +6,7 @@ use bytemuck::{Pod, Zeroable};
 use euclid_units::Speed;
 
 #[repr(transparent)]
+/// A speed in **metres per second**, the anchor for the speed dimension.
 #[derive(
     Copy,
     Clone,
@@ -22,23 +23,43 @@ use euclid_units::Speed;
 pub struct SpeedMs(pub(crate) f64);
 
 impl SpeedMs {
+    /// The additive identity in this unit.
     pub const ZERO: Self = Self(0.0);
 
+    /// Positive infinity, for use as an unreachable sentinel in a minimisation.
+    ///
+    /// Arithmetic on it follows IEEE-754 rather than saturating, so `INFINITY - INFINITY` is
+    /// `NaN` and not zero.
     pub const INFINITY: Self = Self(f64::INFINITY);
 
+    /// Wrap a raw `f64` already expressed in this unit.
+    ///
+    /// Asserted rather than checked: the caller is promising `v` is in this unit, and nothing
+    /// here can verify that. Passing a value in the wrong unit is the one mistake the type
+    /// system cannot catch at this boundary, which is why conversions exist.
+    ///
+    /// # Panics
+    /// On `NaN`, in a **debug build only** — the check is a `debug_assert!`, so a release build
+    /// accepts a `NaN` and propagates it silently through every later operation.
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
     }
 
+    /// The raw value in ms, discarding the dimension.
+    ///
+    /// The escape hatch out of the units system; prefer the dimensional operations and reach
+    /// for this at an edge that does not speak units.
     pub const fn as_ms(self) -> f64 {
         self.0
     }
 
+    /// Convert to [`SpeedKph`].
     pub fn to_kph(self) -> SpeedKph {
         SpeedKph(self.0 / MS_PER_KPH)
     }
 
+    /// Convert to [`SpeedMph`].
     pub fn to_mph(self) -> SpeedMph {
         SpeedMph(self.0 / MS_PER_MPH)
     }

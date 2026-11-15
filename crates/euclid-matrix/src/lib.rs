@@ -153,6 +153,38 @@ pub trait MatrixRealSpectrum: MatrixTensor {
     /// The rank-1 eigenvalue / singular-value tensor. Real by construction, which is why it
     /// is a distinct type from `Self` for a complex carrier.
     type RealSpectrum: Tensor + Real;
+
+    /// Lift a real spectrum into the carrier, preserving shape.
+    ///
+    /// For a real carrier this is usually the identity. For a complex one it embeds each real
+    /// value as `λ + 0i`, which is exactly what makes a spectrum usable in arithmetic with the
+    /// matrix it came from.
+    ///
+    /// # Why this exists on the contract rather than in a caller
+    ///
+    /// Without it, **the defining property of an eigendecomposition cannot be written**.
+    /// `A = V·diag(λ)·Vᴴ` requires combining a `RealSpectrum` with a `Self`, and nothing else in
+    /// this trait relates the two types — so for a complex carrier there is no expression for
+    /// `V·diag(λ)` at all, generic or otherwise. The practical consequence was that
+    /// [`conformance`]'s eigen and SVD laws could not be written, leaving
+    /// [`HermitianEigendecomposition`] and [`SingularValueDecomposition`] as the only part of
+    /// euclid's contract surface with no law behind it.
+    ///
+    /// It is a *required* method rather than defaulted because no default is correct: the
+    /// embedding is the carrier's own, and a blanket `Self::from(..)` would restrict the trait to
+    /// carriers that happen to implement a conversion euclid does not control.
+    ///
+    /// The idiom for `diag(λ)` applied on the right of an `n × n` `V`, which is what both laws
+    /// need, is a broadcast and an elementwise multiply rather than a materialised diagonal:
+    ///
+    /// ```ignore
+    /// let scaled = v.clone() * Self::from_spectrum(lambda).broadcast_in_dim(&[n, n], &[1]);
+    /// ```
+    ///
+    /// Mapping input axis 0 onto output axis 1 makes `λ` vary along the columns, so element
+    /// `[i, j]` becomes `V[i, j] · λ[j]` — which is `V·diag(λ)` without ever forming an `n × n`
+    /// matrix that is zero off the diagonal.
+    fn from_spectrum(spectrum: Self::RealSpectrum) -> Self;
 }
 
 /// General nonsingular linear solve `A⁻¹B`.
@@ -179,13 +211,39 @@ pub trait QrDecomposition: MatrixTensor {
 
 /// Hermitian eigendecomposition.
 pub trait HermitianEigendecomposition: MatrixRealSpectrum {
-    /// Hermitian eigendecomposition `A = V diag(λ) Vᴴ`, eigenvalues ascending.
+    /// Hermitian eigendecomposition `A = V diag(λ) Vᴴ`, eigenvalues **ascending**.
+    ///
+    /// Returns `(λ, V)` — spectrum first. `λ` is rank-1 of length `n`, `V` is `n × n` with the
+    /// eigenvectors as its **columns**, so `A·V = V·diag(λ)`.
+    ///
+    /// `self` must be rank-2 and Hermitian; only one triangle need be meaningful, and which one
+    /// a backend reads is its own business since a Hermitian argument makes them agree. A
+    /// non-Hermitian input is out of contract rather than an error to report.
+    ///
+    /// Eigenvectors are determined only up to phase (sign, for a real carrier), so no law here
+    /// fixes their signs and no caller should depend on them — see
+    /// [`conformance::eigh_laws`].
     fn eigh(self) -> (Self::RealSpectrum, Self);
 }
 
 /// Singular value decomposition.
 pub trait SingularValueDecomposition: MatrixRealSpectrum {
-    /// Singular value decomposition `A = U diag(σ) Vᴴ`, singular values descending.
+    /// Singular value decomposition `A = U diag(σ) Vᴴ`, singular values **descending**.
+    ///
+    /// Returns `(U, σ, V)` — and **`V`, not `Vᴴ`**. The caller conjugate-transposes it to
+    /// reassemble `A`, matching the formula as written.
+    ///
+    /// That is the one thing this signature cannot express and backends genuinely differ on:
+    /// LAPACK's `gesdd` hands back `Vᵗ` and expects you to know it, so a backend wrapping LAPACK
+    /// directly must transpose before returning. Getting it backwards produces a matrix of the
+    /// right shape for a square input and silently wrong values, which is the worst available
+    /// failure mode — hence stating it rather than leaving it to the formula.
+    ///
+    /// Reduced/economy form: for an `m × n` input with `k = min(m, n)`, `U` is `m × k`, `σ` is
+    /// rank-1 of length `k`, and `V` is `n × k`.
+    ///
+    /// Singular vectors are determined only up to a matched phase pair, so no law fixes their
+    /// signs — see [`conformance::svd_laws`].
     fn svd(self) -> (Self, Self::RealSpectrum, Self);
 }
 

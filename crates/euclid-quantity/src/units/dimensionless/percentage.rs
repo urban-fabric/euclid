@@ -3,6 +3,12 @@ use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
 
 #[repr(transparent)]
+/// A **dimensionless** proportion expressed in percent, so 50% is stored as `50.0` and
+/// not `0.5`.
+///
+/// The storage convention is the whole reason this is a distinct type from
+/// [`crate::Factor`]: both are dimensionless, and mixing them silently is a
+/// factor-of-100 error that no dimension check can catch.
 #[derive(
     Copy,
     Clone,
@@ -19,39 +25,70 @@ use bytemuck::{Pod, Zeroable};
 pub struct Percentage(pub(crate) f64);
 
 impl Percentage {
+    /// The additive identity in this unit.
     pub const ZERO: Self = Self(0.0);
 
+    /// One hundred percent, stored as `100.0` — the whole, not a fraction.
+    ///
+    /// The storage convention this type exists to keep straight: `FULL` is numerically `100`,
+    /// where the equivalent [`crate::Factor`] is numerically `1`.
     pub const FULL: Self = Self(100.0);
 
+    /// Wrap a raw `f64` already expressed in this unit.
+    ///
+    /// Asserted rather than checked: the caller is promising `v` is in this unit, and nothing
+    /// here can verify that. Passing a value in the wrong unit is the one mistake the type
+    /// system cannot catch at this boundary, which is why conversions exist.
+    ///
+    /// # Panics
+    /// On `NaN`, in a **debug build only** — the check is a `debug_assert!`, so a release build
+    /// accepts a `NaN` and propagates it silently through every later operation.
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
     }
 
+    /// Build from a [`crate::Factor`], multiplying by 100.
+    ///
+    /// The only safe way across that boundary, since both types are dimensionless `f64` and
+    /// nothing in the type system catches a raw value crossing it unscaled.
     pub fn from_fraction(f: Factor) -> Self {
         Self(f.as_f64() * 100.0)
     }
 
+    /// Convert to [`Factor`].
     pub fn to_fraction(self) -> Factor {
         Factor::new(self.0 / 100.0)
     }
 
+    /// The raw value in percent, discarding the dimension.
+    ///
+    /// The escape hatch out of the units system; prefer the dimensional operations and reach
+    /// for this at an edge that does not speak units.
     pub const fn as_percent(self) -> f64 {
         self.0
     }
 
+    /// Exactly zero. Both signed zeroes qualify; a value merely close to zero does not.
     pub fn is_zero(self) -> bool {
         self.0 == 0.0
     }
 
+    /// Zero or greater. `false` for `NaN`, so this is **not** the negation of
+    /// [`is_negative`-style checks](Self::is_positive) — both are false for `NaN`.
     pub fn is_non_negative(self) -> bool {
         self.0 >= 0.0
     }
 
+    /// Strictly greater than zero. `false` for zero and for `NaN`.
     pub fn is_positive(self) -> bool {
         self.0 > 0.0
     }
 
+    /// Whether the value lies in `[0, 100]` and is finite.
+    ///
+    /// Not enforced on construction — a percentage outside the range is representable, because
+    /// an over-100% utilisation or a negative change is often exactly what is being measured.
     pub fn is_in_range(self) -> bool {
         self.0.is_finite() && (0.0..=100.0).contains(&self.0)
     }

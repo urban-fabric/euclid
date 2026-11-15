@@ -7,7 +7,7 @@
 //!
 //! # Written through `relation`, deliberately
 //!
-//! Nearly every property here is one call into [`euclid_property::relation`] rather than a
+//! Nearly every property here is one call into [`euclid_stability::relation`] rather than a
 //! hand-written pair of evaluations and a comparison. That is the standardization this suite
 //! exists to demonstrate, and the reason is not brevity:
 //!
@@ -31,8 +31,8 @@
 //! undefined and `within_relative` correctly refuses it.
 
 use euclid_numeric::Real;
-use euclid_property::relation::{Absolute, Exact, Relative, Ulps};
-use euclid_property::{Config, check, check_ulps, classify, generate, property, relation};
+use euclid_stability::relation::{Absolute, Exact, Relative, Ulps};
+use euclid_stability::{Config, check, check_ulps, classify, generate, property, relation};
 
 fn settings(suite: &str) -> Config {
     Config::default()

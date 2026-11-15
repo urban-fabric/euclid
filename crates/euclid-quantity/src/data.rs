@@ -1,3 +1,4 @@
+/// Byte sizes and byte ranges, in binary multiples.
 pub mod bytes;
 pub mod count;
 pub mod storage;

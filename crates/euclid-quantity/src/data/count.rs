@@ -7,6 +7,10 @@ use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 
 #[repr(transparent)]
+/// A cardinal **count** of things, backed by `u64`.
+///
+/// Dimensionless but deliberately not a [`crate::Factor`]: a count is integral and
+/// unsigned, and arithmetic that would make it fractional is a mistake worth a type error.
 #[derive(
     Clone,
     Copy,
@@ -26,24 +30,39 @@ use serde::{Deserialize, Serialize};
 pub struct Count(u64);
 
 impl Count {
+    /// Zero.
     pub const ZERO: Self = Self(0);
 
+    /// Wrap a raw `u64` already expressed in this unit. Asserted rather than checked.
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
 
+    /// The raw count, discarding the unit.
     pub const fn as_u64(self) -> u64 {
         self.0
     }
 
+    /// The count as `f32`.
+    ///
+    /// Exact only up to 2^24 — about 16.7 million — so this is for display and interchange
+    /// rather than arithmetic.
     pub fn as_f32(self) -> f32 {
         self.0 as f32
     }
 
+    /// The count as `f64`.
+    ///
+    /// Exact up to 2^53; above that, consecutive counts stop being distinguishable.
     pub fn as_f64(self) -> f64 {
         self.0 as f64
     }
 
+    /// Subtract, clamping at zero instead of underflowing.
+    ///
+    /// The clamp is why this type can be unsigned at all. Note it is **lossy by design**:
+    /// `a.saturating_sub(b)` is zero whenever `b >= a`, so it cannot be used to discover which
+    /// of two values was larger.
     pub fn saturating_sub(self, rhs: Self) -> Self {
         Self(self.0.saturating_sub(rhs.0))
     }
@@ -128,6 +147,11 @@ impl PartialOrd<u64> for Count {
 }
 
 #[repr(transparent)]
+/// A count of **threads**, backed by `u32`.
+///
+/// Distinct from [`crate::Count`] because it is a configuration value with its own
+/// sane range, and because a thread count accidentally used as an item count is the kind
+/// of substitution a newtype exists to stop.
 #[derive(
     Clone,
     Copy,
@@ -147,14 +171,19 @@ impl PartialOrd<u64> for Count {
 pub struct ThreadCount(u32);
 
 impl ThreadCount {
+    /// Wrap a raw `u32` already expressed in this unit. Asserted rather than checked.
     pub const fn new(value: u32) -> Self {
         Self(value)
     }
 
+    /// The raw count, discarding the unit.
     pub const fn as_u32(self) -> u32 {
         self.0
     }
 
+    /// The raw count as `usize`, for indexing a host collection.
+    ///
+    /// Truncates on a 32-bit target, where `u64` does not fit.
     pub fn as_usize(self) -> usize {
         self.0 as usize
     }

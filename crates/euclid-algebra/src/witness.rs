@@ -55,7 +55,7 @@
 /// associated [`Domain`](Self::Domain), and the operations are associated functions over it.
 ///
 /// Implementors must satisfy the semiring axioms, which
-/// [`conformance::witness_semiring_laws`](crate::conformance::witness_semiring_laws) checks.
+/// `conformance::witness_semiring_laws` checks.
 /// Note that nothing in this signature enforces them: there are no property markers here, by
 /// design, since the marker tower belongs to the element layer.
 pub trait SemiringWitness {
@@ -79,7 +79,7 @@ pub trait SemiringWitness {
 ///
 /// The one property that gates an algorithm rather than merely describing a structure — a
 /// closure or fixed-point iteration terminates for a dioid and need not otherwise. Checked by
-/// [`conformance::witness_dioid_laws`](crate::conformance::witness_dioid_laws).
+/// `conformance::witness_dioid_laws`.
 pub trait DioidWitness: SemiringWitness {}
 
 /// **Min-plus** (the tropical semiring): `⊕` is `min`, `⊗` is `+`.

@@ -391,3 +391,126 @@ where
     scalar_laws(xs, tolerance, what);
     linear_laws(xs, tolerance, what);
 }
+
+/// The same laws over **generated** carriers, for a carrier author who wants the search rather
+/// than a fixed five-value sample.
+///
+/// # What generation reaches that a fixed sample does not
+///
+/// The tier laws themselves are the kind a fixed sample serves well — they either hold
+/// structurally or fail on the first awkward triple. The reason to generate anyway is the
+/// **default method bodies**.
+///
+/// [`ScalarQuantity`] and [`LinearQuantity`] supply `min`, `max`, `clamp`, `floor`, `ceil`,
+/// `round`, `trunc`, `approx_eq`, `add`, `sub`, `neg` and `scale` as defaults, so one body serves
+/// every carrier in every consuming crate — each one a single point of failure. Those bodies
+/// branch on *orderings* and *signs*, which is a combinatorial space rather than a structural
+/// one:
+///
+/// - `clamp(x, lo, hi)` has six orderings of its three arguments, and five fixed values in one
+///   fixed order reach a handful of them;
+/// - `floor`, `ceil` and `trunc` agree on positives and differ on negatives, so a mostly-positive
+///   sample would pass a `trunc` written as `floor`;
+/// - `round` has to choose a direction at exactly `±0.5`.
+///
+/// The generator draws signs and half-integers deliberately for those three reasons, and the
+/// coverage floors require that mixed-sign samples actually appeared rather than hoping they did.
+///
+/// # No new trait method was needed
+///
+/// The carrier is built through [`Measure::from_raw`], which the contract already requires. The
+/// `Repr = f64` bound is the one restriction: `Repr` is any [`euclid_numeric::Element`],
+/// and euclid cannot generate an arbitrary one — an integer-backed carrier should run the fixed
+/// suite, or pass its own values to the slice-taking laws above.
+#[cfg(any(feature = "conformance", test))]
+pub mod generated {
+    use euclid_numeric::Real;
+    use euclid_stability::{Config, Gen, check, classify, generate};
+
+    use super::{Mask, linear_laws, measure_laws, quantity_laws, scalar_laws};
+    use crate::{LinearQuantity, Measure, Quantity, ScalarQuantity};
+
+    /// A raw carrier value, weighted toward what the default bodies branch on.
+    ///
+    /// The half-integers and the small negatives are not decoration: they are the inputs that
+    /// separate `round` from a truncation and `trunc` from a `floor`.
+    fn raw() -> Gen<f64> {
+        generate::weighted(vec![
+            (2, generate::just(0.0)),
+            (2, generate::just(0.5)),
+            (2, generate::just(-0.5)),
+            (2, generate::just(-1.5)),
+            (2, generate::just(1.0)),
+            (12, generate::float::magnitude(-10, 20)),
+        ])
+    }
+
+    /// Three is the minimum that exercises a three-operand law like `clamp`; six matches what a
+    /// fixed sample typically uses, and the laws are `O(n³)`, so wider buys repetition.
+    fn carriers<Q: Measure<Repr = f64> + 'static>() -> Gen<Vec<Q>> {
+        generate::vec(raw().map(Q::from_raw), 3, 6)
+    }
+
+    fn signs(xs: &[f64]) -> &'static str {
+        match (xs.iter().any(|v| *v < 0.0), xs.iter().any(|v| *v > 0.0)) {
+            (true, true) => "mixed signs",
+            (true, false) => "all non-positive",
+            (false, true) => "all non-negative",
+            (false, false) => "all zero",
+        }
+    }
+
+    fn settings() -> Config {
+        Config::default()
+            .cases(400)
+            .require("mixed signs", 1.0)
+            .require("all non-negative", 1.0)
+    }
+
+    /// [`measure_laws`] and [`scalar_laws`] over generated carriers.
+    ///
+    /// The pair a carrier that stops short of linearity can run — an affine scale such as a
+    /// temperature, where addition is not defined and [`LinearQuantity`] is deliberately
+    /// withheld.
+    pub fn measure_and_scalar_laws_generated<Q>(tolerance: &Q, what: &str)
+    where
+        Q: Quantity + ScalarQuantity + Measure<Repr = f64> + PartialEq + core::fmt::Debug + 'static,
+        Q::Repr: PartialEq + core::fmt::Debug + Real,
+        Mask<Q>: PartialEq + core::fmt::Debug,
+    {
+        check(what, &settings(), &carriers::<Q>(), |xs| {
+            classify!(signs(&xs.iter().map(Measure::raw).collect::<Vec<_>>()));
+            measure_laws(&xs, what);
+            scalar_laws(&xs, tolerance, what);
+            Ok(())
+        });
+    }
+
+    /// [`quantity_laws`] — the aggregate — over generated carriers, for a linear carrier.
+    pub fn quantity_laws_generated<Q>(tolerance: &Q, what: &str)
+    where
+        Q: Quantity + LinearQuantity + Measure<Repr = f64> + PartialEq + core::fmt::Debug + 'static,
+        Q::Repr: PartialEq + core::fmt::Debug + Real,
+        Mask<Q>: PartialEq + core::fmt::Debug,
+    {
+        check(what, &settings(), &carriers::<Q>(), |xs| {
+            classify!(signs(&xs.iter().map(Measure::raw).collect::<Vec<_>>()));
+            quantity_laws(&xs, tolerance, what);
+            Ok(())
+        });
+    }
+
+    /// [`linear_laws`] alone, for a carrier whose scalar half is already covered.
+    pub fn linear_laws_generated<Q>(tolerance: &Q, what: &str)
+    where
+        Q: Quantity + LinearQuantity + Measure<Repr = f64> + PartialEq + core::fmt::Debug + 'static,
+        Q::Repr: PartialEq + core::fmt::Debug + Real,
+        Mask<Q>: PartialEq + core::fmt::Debug,
+    {
+        check(what, &settings(), &carriers::<Q>(), |xs| {
+            classify!(signs(&xs.iter().map(Measure::raw).collect::<Vec<_>>()));
+            linear_laws(&xs, tolerance, what);
+            Ok(())
+        });
+    }
+}

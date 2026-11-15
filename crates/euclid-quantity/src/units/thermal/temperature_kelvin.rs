@@ -4,6 +4,12 @@ use crate::{TemperatureCelsius, TemperatureFahrenheit};
 use bytemuck::{Pod, Zeroable};
 
 #[repr(transparent)]
+/// A temperature in **kelvin**, the SI base unit and the anchor for the temperature
+/// dimension.
+///
+/// The only member of the temperature family whose zero is the dimension's zero, which
+/// is what makes it the one that can be scaled: twice 100 K is 200 K, where twice
+/// 100 °C is meaningless.
 #[derive(
     Copy,
     Clone,
@@ -20,21 +26,49 @@ use bytemuck::{Pod, Zeroable};
 pub struct TemperatureKelvin(pub(crate) f64);
 
 impl TemperatureKelvin {
+    /// Absolute zero, which is both the additive identity and the physical floor of the
+    /// scale.
+    ///
+    /// That coincidence is what makes kelvin the linear member of the temperature family:
+    /// scaling is meaningful because the zero is the dimension's zero. The affine siblings'
+    /// `ZERO` constants are named points instead — see
+    /// [`crate::TemperatureCelsius::ZERO`].
     pub const ZERO: Self = Self(0.0);
 
+    /// Wrap a raw `f64` already expressed in this unit.
+    ///
+    /// Asserted rather than checked: the caller is promising `v` is in this unit, and nothing
+    /// here can verify that. Passing a value in the wrong unit is the one mistake the type
+    /// system cannot catch at this boundary, which is why conversions exist.
+    ///
+    /// # Panics
+    /// On `NaN`, in a **debug build only** — the check is a `debug_assert!`, so a release build
+    /// accepts a `NaN` and propagates it silently through every later operation.
     pub const fn new(v: f64) -> Self {
         debug_assert!(!v.is_nan());
         Self(v)
     }
 
+    /// The raw value in kelvin, discarding the dimension.
+    ///
+    /// The escape hatch out of the units system; prefer the dimensional operations and reach
+    /// for this at an edge that does not speak units.
     pub const fn as_kelvin(self) -> f64 {
         self.0
     }
 
+    /// Convert to [`TemperatureCelsius`].
+    ///
+    /// An **affine** conversion: an offset as well as a scale, so it does not distribute
+    /// over addition and a *difference* of two temperatures does not convert this way.
     pub fn to_celsius(self) -> TemperatureCelsius {
         TemperatureCelsius(self.0 - KELVIN_OFFSET_CELSIUS)
     }
 
+    /// Convert to [`TemperatureFahrenheit`].
+    ///
+    /// An **affine** conversion: an offset as well as a scale, so it does not distribute
+    /// over addition and a *difference* of two temperatures does not convert this way.
     pub fn to_fahrenheit(self) -> TemperatureFahrenheit {
         TemperatureFahrenheit((self.0 - KELVIN_OFFSET_FAHRENHEIT) / KELVIN_PER_FAHRENHEIT_DEGREE)
     }
