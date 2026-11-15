@@ -267,6 +267,48 @@ gives the right one:
 Both are implementation. Only one requires agreement, which is why the rule is
 about agreement and not about traits.
 
+### The line is the data structure
+
+The membership rule says *whether* something must be agreed. What decides when
+agreement is cheap enough to ship an implementation is simpler than it looks:
+
+> **euclid implements over universal datatypes. It never ships a data
+> structure.**
+
+`f64` is universal. Every platform has it, it means the same thing everywhere,
+and there is nothing to design — so `erf(x: f64) -> f64` can be written once
+here and be the answer for everyone. The same goes for `f32`, the integers, and
+`bool`, and for a newtype over one of them: `LengthMeters(f64)` and `Zp<P>(u64)`
+add a name and a dimension, not a structure.
+
+A tensor, a matrix or a graph is different in kind. None of them can be
+implemented without *designing a data structure* first — dense or sparse, row or
+column major, owned or borrowed, host or device, CSR or COO — and every one of
+those is a real choice with real trade-offs. They are not mistakes to be
+eliminated by picking one; they are the reason backends exist. So euclid names
+the operations and a backend brings the structure.
+
+That is the whole explanation for a boundary that otherwise looks arbitrary:
+
+| | euclid ships | because |
+|---|---|---|
+| `erf`, `lgamma`, Bessel, Airy | the implementation | `f64` is universal; one right answer |
+| `Real`, `Complex`, `Rational`, `Zp` | the implementation | newtypes over universal datatypes |
+| `LengthMeters`, `TimeSeconds`, … | the implementation | same, with a dimension attached |
+| `Tensor`, `SpdSolve`, `QrDecomposition` | the signature only | needs a data structure, which is a design |
+| a PRNG | the signature only | needs state, and shaped output needs a collection |
+
+The dimensionality of a value is the symptom rather than the cause. A scalar
+needs no data structure, which is why euclid can implement over it; a collection
+needs one, which is why euclid cannot. The reference tensor in this repository,
+`Dense`, lives in a private test module for exactly that reason — it is a data
+structure, so it is scaffolding rather than a deliverable.
+
+So `euclid-quantity` being 14k lines of concrete `f64` is not a tension with the
+rest of the repository. Every one of those types is a newtype over a universal
+datatype, which is the same thing the scalar kernels are built on — a metre is
+an `f64` with a name.
+
 `euclid-matrix` used to sit across that line, holding ~126 lines of matrix
 kernels (`least_squares`, `gram`, `inverse`, `dominant_eigenvector`, …) beside
 its signatures. Those are gone; it is now vocabulary only, and a contract crate
