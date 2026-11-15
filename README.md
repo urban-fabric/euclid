@@ -231,7 +231,7 @@ crates are expected to follow.
 | [`euclid-units`](crates/euclid-units) | physical-dimension contracts over any `Real` carrier — SI base and derived quantities |
 | [`euclid-tensor`](crates/euclid-tensor) | the rank-graded `Tensor` contract, its capability extensions, and dtype/spec metadata |
 | [`euclid-random`](crates/euclid-random) | explicit-key random sampler contracts |
-| [`euclid-algebra`](crates/euclid-algebra) | the abstract-algebra tower — the semiring/dioid trunk, the ring/field branch, the semimodule action, and the exact carriers (`Rational`, `Zn`/`Zp`, `GaussianRational`) |
+| [`euclid-algebra`](crates/euclid-algebra) | the abstract-algebra tower — the semiring/dioid trunk, the ring/field branch, the semimodule action, the witnessed path algebras (min-plus, max-plus, widest-path), and the exact carriers (`Rational`, `Zn`/`Zp`, `GaussianRational`) |
 
 **Carriers** — the concrete side, which breaks the three rules on purpose.
 

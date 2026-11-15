@@ -7,6 +7,7 @@
 //!   runs for the carriers that claim it, and the blanket impls fire as intended.
 
 mod laws;
+mod witnesses;
 
 use super::*;
 
