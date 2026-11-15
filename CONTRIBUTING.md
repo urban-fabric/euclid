@@ -226,8 +226,12 @@ euclid is **layer 1** of a stratified fleet — see
 Being the floor means a breaking change here is the most expensive kind that
 exists in the fleet: it is the only one every other repository has to absorb, and
 they have to absorb it *in layer order*, because cargo resolves one version of a
-package per build graph. Layer 2 moves first, then 3, then 4. Nothing above can
-move until everything below it has.
+package per build graph. Nothing above can move until everything below it has.
+
+**That is six sequential migrations**, on the current graph — layer 2 (`bayes`,
+`hausdorff`, `cayley`), then `abel`, then `sierpinski` and `galois`, then
+`dirichlet` and `weierstrass`, then `cantor`. Not six repositories; six *waves*,
+each of which cannot start until the previous one lands.
 
 The current chain is not hypothetical. `galois` is pinned to euclid `0.3.0` and
 its own manifest records the migration as "blocked outside this repository":
@@ -237,8 +241,10 @@ intended — the failure is loud and at the bottom — but it means a euclid rel
 is the start of a multi-repository sequence rather than an event.
 
 The practical consequence for this repository: **prefer additive change, and
-batch what must break.** Two breaking releases cost the fleet two full
-propagations; one release carrying both costs it one.
+batch what must break.** Two breaking releases cost the fleet two six-wave
+propagations; one release carrying both costs it one. That asymmetry is the
+strongest argument available for holding a breaking change back until there is
+another to travel with it.
 
 ### No CHANGELOG — RELEASES is not one
 

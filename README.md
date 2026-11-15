@@ -450,9 +450,9 @@ on the requirement underneath rather than quietly tracking a reshaped surface.
 | layer | repositories | may depend on |
 |---|---|---|
 | **1** | **euclid** | nothing in the fleet |
-| 2 | `cayley`, `abel`, `bayes`, `hausdorff` | layer 1 |
-| 3 | `galois`, `sierpinski` | layers 1–2 |
-| 4 | `cantor`, `weierstrass`, `dirichlet` | layers 1–3 |
+| 2 | `bayes`, `hausdorff`, `cayley` | layer 1 |
+| 3 | `abel` | layers 1–2 |
+| 4 | `sierpinski`, `galois` | layers 1–3 |
 
 A layer may depend on any layer *below* it, never on its own or above. That is
 what makes the graph acyclic by construction and an upgrade a finite chain: a
@@ -471,25 +471,52 @@ here is the most expensive kind in the fleet — it is the only one every other
 repository must absorb — which is why [RELEASES](RELEASES.md) records breaking
 changes and nothing else, and why the minor number is the axis.
 
-#### Two edges currently contradict the layering
+#### Checked, as of 0.5.0
 
-Recorded rather than smoothed over, because a target architecture nobody has
-checked is a diagram. Verified against the ten manifests:
+A target architecture nobody has verified is a diagram, so this one was checked
+against the manifests rather than drawn. The edges, by repository:
 
-- **`abel` depends on `bayes`, `cayley` and `hausdorff`** — all three are its
-  layer-2 peers. Those are plain, non-optional git dependencies, so `abel` sits
-  *above* them rather than beside them.
-- **`cantor` depends on `dirichlet`** — both are layer 4.
+```
+euclid       -> (none)
+bayes        -> euclid
+hausdorff    -> euclid
+cayley       -> euclid
+abel         -> euclid, bayes, cayley, hausdorff
+sierpinski   -> euclid
+galois       -> euclid, bayes, cayley, hausdorff, abel
+```
 
-Either reading resolves each: move the dependent crate up a layer (`abel` to 3,
-which pushes `galois` to 4 and layer 4 to 5; `cantor` to 5), or remove the edge.
-That is a fleet decision and not euclid's to make — but euclid is where the
-consequence lands, since the layer count is the length of the upgrade chain.
+**No violations**: every edge points strictly downward. `abel` is layer 3 rather
+than a peer of the three it depends on, and `galois` is layer 4 above it, which
+is what makes that true.
 
-One observation that is not a violation: `sierpinski` depends on nothing in the
-set, so nothing forces it to layer 3. It is permitted there — a layer is a
-ceiling on what you may depend on, not a requirement to use it — and only
-`dirichlet`'s edge onto it requires it to be below layer 4.
+Note `sierpinski` reaches only euclid, so nothing forces it as high as layer 4 —
+a layer is a ceiling on what you may depend on, not a requirement to use it, and
+it is placed where it is for reasons the dependency graph does not record.
+
+This is a point-in-time check against sibling working copies, not something the
+test suite can enforce: layer 1 may depend on nothing in the fleet, so euclid
+cannot see the fleet in order to verify it. Re-check it when the shape changes.
+
+#### Three repositories above layer 4
+
+`cantor`, `weierstrass` and `dirichlet` are not in the table, and their existing
+edges force where they land:
+
+```
+dirichlet    -> euclid, sierpinski(4)                           >= layer 5
+weierstrass  -> galois(4)                                       >= layer 5
+cantor       -> hausdorff(2), sierpinski(4), galois(4), dirichlet(5)  >= layer 6
+```
+
+So the minimal consistent assignment is layer 5 for `dirichlet` and
+`weierstrass`, layer 6 for `cantor` — which incidentally resolves the one
+remaining same-layer edge, `cantor -> dirichlet`, by separating them. Those three
+are recorded as *derived* rather than decided; confirm or move them.
+
+**The deepest chain is therefore six layers**, and that number is the one that
+matters here: it is how many sequential repository migrations a breaking euclid
+release costs.
 
 Crate names are hyphenated; in Rust they are imported with underscores:
 
