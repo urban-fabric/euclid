@@ -442,6 +442,55 @@ that an upgrade starts at the bottom: a consumer pinned to `^0.3` blocks
 everything above it until it moves, and bumping the top alone fails resolution
 on the requirement underneath rather than quietly tracking a reshaped surface.
 
+### euclid is layer 1
+
+"The bottom" is not a figure of speech. The fleet's target architecture is
+**stratified**, and euclid is the floor of it:
+
+| layer | repositories | may depend on |
+|---|---|---|
+| **1** | **euclid** | nothing in the fleet |
+| 2 | `cayley`, `abel`, `bayes`, `hausdorff` | layer 1 |
+| 3 | `galois`, `sierpinski` | layers 1–2 |
+| 4 | `cantor`, `weierstrass`, `dirichlet` | layers 1–3 |
+
+A layer may depend on any layer *below* it, never on its own or above. That is
+what makes the graph acyclic by construction and an upgrade a finite chain: a
+euclid release propagates to layer 2, then 3, then 4, and each layer can move
+only once everything beneath it has.
+
+**What this obliges of euclid**, and the reason it is written here rather than
+somewhere upstream: layer 1 may depend on nothing in the fleet, so euclid stays
+dependency-free apart from `bytemuck` and `serde` in `euclid-quantity`. Any edge
+out of this repository into a sibling would make the floor depend on something
+built on it. There is none, and `cargo deny`'s `[bans]` section is what keeps it
+that way.
+
+It also sets euclid's release obligation. Being the floor means a breaking change
+here is the most expensive kind in the fleet — it is the only one every other
+repository must absorb — which is why [RELEASES](RELEASES.md) records breaking
+changes and nothing else, and why the minor number is the axis.
+
+#### Two edges currently contradict the layering
+
+Recorded rather than smoothed over, because a target architecture nobody has
+checked is a diagram. Verified against the ten manifests:
+
+- **`abel` depends on `bayes`, `cayley` and `hausdorff`** — all three are its
+  layer-2 peers. Those are plain, non-optional git dependencies, so `abel` sits
+  *above* them rather than beside them.
+- **`cantor` depends on `dirichlet`** — both are layer 4.
+
+Either reading resolves each: move the dependent crate up a layer (`abel` to 3,
+which pushes `galois` to 4 and layer 4 to 5; `cantor` to 5), or remove the edge.
+That is a fleet decision and not euclid's to make — but euclid is where the
+consequence lands, since the layer count is the length of the upgrade chain.
+
+One observation that is not a violation: `sierpinski` depends on nothing in the
+set, so nothing forces it to layer 3. It is permitted there — a layer is a
+ceiling on what you may depend on, not a requirement to use it — and only
+`dirichlet`'s edge onto it requires it to be below layer 4.
+
 Crate names are hyphenated; in Rust they are imported with underscores:
 
 ```rust

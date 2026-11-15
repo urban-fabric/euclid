@@ -217,6 +217,29 @@ A release is a **tag**, and consumers pin it. Three steps, in this order:
 Then update the version in the README's [Using It](README.md#using-it) block, so
 the documented pin is the one that exists.
 
+### What a release costs everyone else
+
+Worth holding in mind while deciding whether something is worth breaking, because
+euclid is **layer 1** of a stratified fleet — see
+[euclid is layer 1](README.md#euclid-is-layer-1) for the map.
+
+Being the floor means a breaking change here is the most expensive kind that
+exists in the fleet: it is the only one every other repository has to absorb, and
+they have to absorb it *in layer order*, because cargo resolves one version of a
+package per build graph. Layer 2 moves first, then 3, then 4. Nothing above can
+move until everything below it has.
+
+The current chain is not hypothetical. `galois` is pinned to euclid `0.3.0` and
+its own manifest records the migration as "blocked outside this repository":
+`hausdorff-base` requires `^0.3.0`, so bumping `galois` alone fails resolution on
+hausdorff's requirement rather than on its own. That is the layering working as
+intended — the failure is loud and at the bottom — but it means a euclid release
+is the start of a multi-repository sequence rather than an event.
+
+The practical consequence for this repository: **prefer additive change, and
+batch what must break.** Two breaking releases cost the fleet two full
+propagations; one release carrying both costs it one.
+
 ### No CHANGELOG — RELEASES is not one
 
 The distinction is deliberate rather than pedantic. A changelog lists what
