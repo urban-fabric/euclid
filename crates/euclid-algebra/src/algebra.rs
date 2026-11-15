@@ -16,7 +16,7 @@
 //!
 //! `f64`/`f32` climb the whole chain `Semiring → Ring → Field`; an idempotent
 //! carrier like min-plus stops at `Dioid` (no additive inverse). Analysis
-//! (`exp`/`ln`/`conj`) is a separate concern entirely — see [`crate::numeric`].
+//! (`exp`/`ln`/`conj`) is a separate concern entirely — see [`euclid_numeric`].
 
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 

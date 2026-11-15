@@ -3,10 +3,13 @@
 //!
 //! Const-generic residue types: the modulus is baked into the type, so `Zp<7>` and
 //! `Zp<2>` are distinct types with no per-value overhead. As a [`Field`], `Zp<P>`
-//! powers the exact linear algebra in [`crate::exact`] over a finite field — the
-//! setting of coding theory, cryptography, and combinatorics.
+//! is the carrier for exact linear algebra over a finite field — the setting of
+//! coding theory, cryptography, and combinatorics. (The solver tier that consumed
+//! it did not come over with the fold; euclid-matrix is the float/SPD surface, not an
+//! exact one.)
 //!
-//! [`Zn<N>`] is the **ring** ℤ/Nℤ for *any* `N` — only a [`CommutativeRing`] (no
+//! [`Zn<N>`] is the **ring** ℤ/Nℤ for *any* `N` — only a
+//! [`CommutativeRing`](crate::algebra::CommutativeRing) (no
 //! division), since for composite `N` it has zero divisors. It is exactly where the
 //! Howell normal form lives (the ℤ/Nℤ analog of Hermite form, since ℤ/Nℤ is not a PID).
 //!
@@ -191,7 +194,8 @@ impl<const P: u64> fmt::Display for Zp<P> {
 }
 
 /// An element of the ring **ℤ/Nℤ** for any modulus `N` — a residue in `[0, N)`. A
-/// [`CommutativeRing`] but **not** a field (composite `N` has zero divisors and
+/// [`CommutativeRing`](crate::algebra::CommutativeRing) but **not** a field
+/// (composite `N` has zero divisors and
 /// non-invertible elements), so it has no division. Use [`Zp`] when `N` is prime and
 /// you need a field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1,4 +1,4 @@
-# napier
+# euclid-algebra
 
 **The abstract-algebra tower, and the concrete `Copy` numeric tier where it
 meets euclid's analysis surface.**
@@ -6,12 +6,12 @@ meets euclid's analysis surface.**
 euclid's other crates are contracts that deliberately say nothing about what a
 number *is*: `euclid-numeric`'s `Real` is implemented by `f64`, but equally by
 an expression handle or a tensor element that is neither `Copy` nor one machine
-word. napier is the tier for code that genuinely needs the real number line —
+word. euclid-algebra is the tier for code that genuinely needs the real number line —
 eager geometry, matrix and physics kernels — plus the algebraic structures those
 kernels are written over.
 
 ```rust
-use napier::Real;
+use euclid_algebra::Real;
 
 // Written once against the concrete tier: constants and `Copy` are available,
 // so this is an ordinary scalar formula rather than a staged expression.
@@ -38,7 +38,7 @@ that tier, never depending on this crate.
 
 ## Why it lives in euclid
 
-napier was its own repository until it was folded here. Its only dependency was
+euclid-algebra was its own repository until it was folded here. Its only dependency was
 euclid, nothing released it independently, and it had gone stale: it still named
 the single `euclid` facade crate that euclid 0.3 removed in favour of per-tier
 crates, so it no longer resolved against euclid's own main branch.

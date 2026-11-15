@@ -1,4 +1,4 @@
-//! # frobenius — backend matrix-extension contracts
+//! # euclid-matrix — backend matrix-extension contracts
 //!
 //! The **matrix extension traits** beyond euclid's core [`Tensor`] rank contract:
 //! reusable SPD factors ([`SpdFactor`] / [`PreparedSpd`]), the Hermitian-positive-definite
@@ -11,7 +11,7 @@
 //!
 //! ```ignore
 //! use euclid_tensor::Tensor;
-//! use frobenius::least_squares;
+//! use euclid_matrix::least_squares;
 //!
 //! // One source — runs on any Tensor backend (e.g. the compiled maxwell::Tensor).
 //! let x = least_squares(a, b);
@@ -21,7 +21,7 @@
 //!
 //! euclid 0.2 replaced `LazyMatrix`/`LazyVector` with a single rank-n [`Tensor`]: "a vector
 //! is just a rank-1 tensor and a matrix a rank-2 tensor; there are no separate vector/matrix
-//! contracts". frobenius follows that. The consequences are deliberate and worth stating,
+//! contracts". euclid-matrix follows that. The consequences are deliberate and worth stating,
 //! because they are the whole shape of this API:
 //!
 //! - [`SpdFactor`] carries **one** associated tensor type rather than a `Vector`/`Matrix`

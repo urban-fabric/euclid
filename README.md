@@ -70,8 +70,8 @@ sampler contract without shipping a PRNG.
 | the array and sampler contracts | concrete tensors and a PRNG |
 
 **Three crates in this repository are the other side of that table.** `oresme`
-*is* the `Meters` struct. `napier` *is* the concrete `Copy` number line.
-`frobenius` is linear-algebra content over the tensor contract. They live here
+*is* the `Meters` struct. `euclid-algebra` *is* the concrete `Copy` number line.
+`euclid-matrix` is linear-algebra content over the tensor contract. They live here
 because each depends on nothing but euclid and nothing released them
 independently — but they are kept as separate crates precisely so the boundary
 above still holds: a consumer that takes `euclid-units` gets contracts only and
@@ -100,9 +100,9 @@ euclid-numeric            no dependencies
 ├── euclid-units          → euclid-numeric
 │   └── oresme            → euclid-units, euclid-numeric
 ├── euclid-tensor         → euclid-numeric
-│   └── frobenius         → euclid-tensor, euclid-numeric
+│   └── euclid-matrix     → euclid-tensor, euclid-numeric
 ├── euclid-random         → euclid-numeric
-└── napier                → euclid-numeric
+└── euclid-algebra        → euclid-numeric
 ```
 
 **Contracts** — write a formula against these and it runs on any carrier.
@@ -120,8 +120,8 @@ repositories because each depended on nothing but euclid.
 | crate | purpose |
 |-------|---------|
 | [`oresme`](crates/oresme) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
-| [`napier`](crates/napier) | the concrete `Copy` number line (`Real`, `Complex`) plus the algebra tower and exact carriers (`Rational`, `Zn`, `GaussianRational`) |
-| [`frobenius`](crates/frobenius) | matrix extensions beyond the rank contract — SPD, triangular solve, QR, eigen, SVD traits and the algorithms over them |
+| [`euclid-algebra`](crates/euclid-algebra) | the concrete `Copy` number line (`Real`, `Complex`) plus the algebra tower and exact carriers (`Rational`, `Zn`, `GaussianRational`) |
+| [`euclid-matrix`](crates/euclid-matrix) | matrix extensions beyond the rank contract — SPD, triangular solve, QR, eigen, SVD traits and the algorithms over them |
 
 Only `oresme` pulls a third-party dependency (`bytemuck` and `serde`), and that
 cost is per-crate: a consumer of the contract crates still gets none.
@@ -140,8 +140,8 @@ euclid-tensor = "0.3"
 euclid-random = "0.3"
 
 oresme = "0.3"           # concrete f64 quantities, if you need them
-napier = "0.3"           # the concrete Copy number line
-frobenius = "0.3"        # matrix extensions over the tensor contract
+euclid-algebra = "0.3"   # the concrete Copy number line
+euclid-matrix = "0.3"    # matrix extensions over the tensor contract
 ```
 
 Crate names are hyphenated; in Rust they are imported with underscores:
@@ -175,7 +175,7 @@ cargo test --doc --workspace
 
 Lints (`unsafe_code`, `unreachable_pub`, `unwrap_used`, `expect_used`, `panic`,
 `mod_module_files`) are declared once in `[workspace.lints]` at the root and
-inherited by each crate — including `napier` and `frobenius`, which arrived from
+inherited by each crate — including `euclid-algebra` and `euclid-matrix`, which arrived from
 their own repositories with a warn-level copy of the same table. Shared package
 metadata comes from `[workspace.package]`, so all eight crates version together.
 

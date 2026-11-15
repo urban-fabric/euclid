@@ -1,6 +1,6 @@
 [package]
-name = "frobenius"
-# frobenius predates the fold into euclid and carries its own licence rather
+name = "euclid-matrix"
+# euclid-matrix predates the fold into euclid and carries its own licence rather
 # than inheriting the workspace's Apache-2.0. A move should not relicense code.
 license = "Proprietary"
 version.workspace = true
@@ -14,7 +14,7 @@ description = "Backend-generic linear algebra traits and algorithms over euclid'
 path = "src/lib.rs"
 
 [dependencies]
-# frobenius is *content*: it names the matrix extensions beyond the rank
+# euclid-matrix is *content*: it names the matrix extensions beyond the rank
 # contract (`PreparedSpd`, `SpdFactor`, `TriangularSolve`, the decomposition
 # traits) and the algorithms written once over them, and never touches a
 # backend. A backend supplies the concrete tensor type these monomorphize on.
@@ -22,7 +22,7 @@ euclid-numeric.workspace = true
 euclid-tensor.workspace = true
 
 # Inherited, like every other member. The warn-level copy of this table that
-# came over with the fold named the same lints one severity down, and frobenius
+# came over with the fold named the same lints one severity down, and euclid-matrix
 # violates none of them, so inheriting costs nothing and stops the crate from
 # silently drifting out of the workspace's standard.
 [lints]
