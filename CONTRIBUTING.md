@@ -184,7 +184,7 @@ README's [data-structure section][ds].
   awkward: `euclid-matrix`.** Its twelve traits are backend primitives — a
   Cholesky, a QR, an eigendecomposition — so the only thing that could satisfy
   them is a concrete tensor, and euclid deliberately ships none. The matrix
-  kernels it used to carry were deleted in 0.3 rather than given a reference
+  kernels it used to carry were deleted in 0.4 rather than given a reference
   carrier here, because that would have meant implementing Cholesky, LU and QR
   for a tensor *inside* euclid.
 

@@ -40,6 +40,16 @@
 //! | [`representation`] | `frexp`, `ldexp`, `next_after`, `ulp`, `signbit` — the format itself |
 //! | [`constants`] | are the lifted constants right, on both carriers? |
 //!
+//! One is scoped to the **contract** rather than to any function:
+//!
+//! | suite | question it answers |
+//! |-------|--------------------|
+//! | [`conformance_suites`] | do the reference carriers satisfy the public [`conformance`](crate::conformance) laws? |
+//!
+//! That one runs the suites this crate *ships* — the same functions a carrier author in another
+//! repository calls — rather than testing anything only we can see. It is where a tolerance is
+//! declared per carrier, since `f64` and `f32` cannot share one.
+//!
 //! And two are scoped to a *carrier* rather than to a function:
 //!
 //! | suite | scope |

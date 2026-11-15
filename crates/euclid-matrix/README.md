@@ -60,7 +60,7 @@ No concrete tensor type, no backend, and no Hermitian-positive-definiteness
 check — HPD-ness of an argument is the caller's precondition and implementors
 need not verify it.
 
-**No algorithms either, as of 0.3.** `identity`, `adjoint`, `gram`,
+**No algorithms either, as of 0.4.** `identity`, `adjoint`, `gram`,
 `least_squares`, `spd_inverse`, `inverse`, `quadratic_form` and
 `dominant_eigenvector` used to live here, written once over the traits above.
 They were deleted rather than kept, because euclid holds only what the fleet

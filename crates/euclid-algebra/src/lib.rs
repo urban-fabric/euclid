@@ -36,7 +36,7 @@
 //!
 //! That three-way split is why this crate has **no dependencies at all**, not even
 //! `euclid-numeric`. Algebraic structure needs nothing from analysis; it is `euclid-scalar` that
-//! needs both. Until 0.3 this crate held the tower *and* the concrete tier, which forced it to
+//! needs both. Until 0.4 this crate held the tower *and* the concrete tier, which forced it to
 //! import euclid's `Real`/`Complex` under the aliases `LazyReal`/`LazyComplex` to dodge a name
 //! collision with its own. Splitting the two removed the collision and the aliases with it.
 
