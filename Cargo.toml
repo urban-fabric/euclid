@@ -90,7 +90,7 @@ members = [
 # euclid-scalar, euclid-algebra, euclid-matrix) do not take it.
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Raymond Mead"]
@@ -98,16 +98,16 @@ rust-version = "1.95"
 repository = "https://github.com/urban-fabric/euclid"
 
 [workspace.dependencies]
-euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
+euclid-numeric = { version = "0.4.0", path = "crates/euclid-numeric" }
 # The algebra tower that `euclid-scalar` fuses with the analysis surface above.
 # Declared here now that a member depends on it; it was deliberately absent while
 # nothing in the workspace did.
-euclid-algebra = { version = "0.3.0", path = "crates/euclid-algebra" }
+euclid-algebra = { version = "0.4.0", path = "crates/euclid-algebra" }
 # The dimension contracts `euclid-quantity` implements. Declared here now that a member
 # crate depends on it rather than only consumers outside the workspace.
-euclid-units = { version = "0.3.0", path = "crates/euclid-units" }
+euclid-units = { version = "0.4.0", path = "crates/euclid-units" }
 # The rank-n Tensor contract that `euclid-matrix` extends.
-euclid-tensor = { version = "0.3.0", path = "crates/euclid-tensor" }
+euclid-tensor = { version = "0.4.0", path = "crates/euclid-tensor" }
 # `euclid-quantity`, `euclid-scalar` and `euclid-matrix` are deliberately absent: an entry here is
 # for a dependency some *member* takes, and all three are leaves of the graph
 # above — they implement or extend the contract crates and nothing in the
@@ -115,7 +115,7 @@ euclid-tensor = { version = "0.3.0", path = "crates/euclid-tensor" }
 # reports as `unused_workspace_dependencies`. Re-add one only when a member
 # actually names it; a consumer outside the workspace does not need it here.
 # Dev-only shared helpers; never a runtime dependency of a published crate.
-euclid-utils = { version = "0.3.0", path = "crates/euclid-utils" }
+euclid-utils = { version = "0.4.0", path = "crates/euclid-utils" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

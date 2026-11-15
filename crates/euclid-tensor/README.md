@@ -2,11 +2,8 @@
 
 The rank-graded array contract. Part of [euclid](../..).
 
-```toml
-[dependencies]
-euclid-tensor = "0.3"
-euclid-numeric = "0.3"   # for the element trait bounds
-```
+These crates are not on crates.io. See [the root README](../../README.md#using-it)
+for the git dependency to add.
 
 The array surface is a single rank-graded trait, `Tensor`. A vector is a rank-1
 tensor and a matrix a rank-2 tensor; there are no separate `Vector`/`Matrix`

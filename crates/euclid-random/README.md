@@ -2,11 +2,8 @@
 
 Explicit-key random sampler contracts. Part of [euclid](../..).
 
-```toml
-[dependencies]
-euclid-random = "0.3"
-euclid-numeric = "0.3"   # for the Real/Integer/Boolean carrier bounds
-```
+These crates are not on crates.io. See [the root README](../../README.md#using-it)
+for the git dependency to add.
 
 Randomness is modeled with explicit immutable keys. A draw is a pure function of
 its key, distribution parameters, and result shape: using the same key twice
