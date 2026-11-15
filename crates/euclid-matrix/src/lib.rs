@@ -11,7 +11,7 @@
 //! # Vocabulary only
 //!
 //! This crate names the operations and stops. It held algorithms written over them —
-//! `least_squares`, `gram`, `inverse`, `dominant_eigenvector` and the rest — until 0.3 moved
+//! `least_squares`, `gram`, `inverse`, `dominant_eigenvector` and the rest — until 0.4 moved
 //! them out, because they are **matrix kernels** and euclid holds only what the fleet must
 //! agree on. A Cholesky or a QR has many valid implementations, and choosing between a blocked,
 //! packed or GPU path is exactly what a backend is for, so there was nothing here to agree on.

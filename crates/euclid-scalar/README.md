@@ -52,7 +52,7 @@ never depends on this crate.
 
 ## Why it is a separate crate
 
-Until 0.3 this tier lived inside `euclid-algebra`, which therefore owned two
+Until 0.4 this tier lived inside `euclid-algebra`, which therefore owned two
 goals at once: the abstract tower and the concrete number. The symptom was a name
 collision — it imported euclid's `Real`/`Complex` as `LazyReal`/`LazyComplex` to
 keep them apart from its own same-named traits, so the crate documented a

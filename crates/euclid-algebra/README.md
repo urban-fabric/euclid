@@ -67,7 +67,7 @@ concern, and lives in `euclid-numeric` as a contract over any carrier.
 this tower's `OrderedField`/`AlgebraicallyClosedField` fuse with that analysis
 surface into the `Copy` `Real` and `Complex` of `f64`/`f32`.
 
-Until 0.3 this crate held the tower *and* that concrete tier, which forced a
+Until 0.4 this crate held the tower *and* that concrete tier, which forced a
 dependency on `euclid-numeric` plus `LazyReal`/`LazyComplex` import aliases to
 dodge a name collision with its own `Real`/`Complex`. Splitting the tier out
 removed the dependency, the aliases, and the collision together.
