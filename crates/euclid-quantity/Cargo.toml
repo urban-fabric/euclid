@@ -24,6 +24,9 @@ serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 serde_json = "1"
+# euclid-units' conformance suites, so the real `f64` units are checked against the
+# contracts they implement rather than only against hand-written expectations.
+euclid-units = { workspace = true, features = ["conformance"] }
 
 [lints]
 workspace = true
