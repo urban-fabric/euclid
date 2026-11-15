@@ -102,3 +102,27 @@ fn scale_and_scaled_agree_on_a_host_literal() {
     assert_eq!(m(3.0).scale(2.0), m(6.0));
     assert_eq!(m(3.0).scaled(2.0), m(6.0));
 }
+
+// --- the public conformance suites ----------------------------------------------------------
+//
+// The laws are `crate::conformance`, public API a carrier author calls. Running them against
+// the toy carriers proves the suites are satisfiable and that the defaults above satisfy them.
+
+#[test]
+fn toy_carriers_satisfy_the_quantity_laws() {
+    let xs = [m(0.0), m(1.0), m(-2.5), m(4.0), m(0.5)];
+    crate::conformance::quantity_laws(&xs, &m(1e-9), "Len");
+}
+
+#[test]
+fn an_absolute_scalar_satisfies_everything_but_the_linear_laws() {
+    // Tmp withholds LinearQuantity, so it gets the measure and scalar laws only — which is the
+    // asymmetry the tier split exists to express.
+    let xs = [
+        Tmp::from_raw(0.0),
+        Tmp::from_raw(273.15),
+        Tmp::from_raw(-40.0),
+    ];
+    crate::conformance::measure_laws(&xs, "Tmp");
+    crate::conformance::scalar_laws(&xs, &Tmp::from_raw(1e-9), "Tmp");
+}

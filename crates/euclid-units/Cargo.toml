@@ -9,6 +9,12 @@ rust-version.workspace = true
 repository.workspace = true
 readme = "README.md"
 
+[features]
+# The quantity contracts, as functions a carrier author can check their impl against.
+# Off by default; always compiled under `cfg(test)` so our own suites exercise the same
+# code a consumer calls.
+conformance = []
+
 [dependencies]
 euclid-numeric.workspace = true
 

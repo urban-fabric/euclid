@@ -69,6 +69,9 @@
 //! [`Compare`](euclid_numeric::Compare), and host literals are lifted through
 //! [`Real::scalar`](euclid_numeric::Real::scalar)/[`scalar_like`](euclid_numeric::Real::scalar_like).
 
+#[cfg(any(feature = "conformance", test))]
+pub mod conformance;
+
 pub mod chemistry;
 pub mod electromagnetism;
 pub mod geometry;
