@@ -65,7 +65,8 @@ with no dependencies at all.
 
 ## License
 
-Apache-2.0, inherited from the workspace like every other member.
+Apache-2.0, inherited from the workspace like every other member — see
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 This crate was split out of `euclid-algebra`, which predates the fold into
 euclid, and carried that crate's `Proprietary` licence until 0.4 — on the

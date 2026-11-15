@@ -76,5 +76,5 @@ at which point some consumer would move it out of `[dev-dependencies]`.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](../../LICENSE).
+Licensed under the [Apache License, Version 2.0](LICENSE).
 Copyright 2026 Raymond Mead.

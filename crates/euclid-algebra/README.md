@@ -74,7 +74,8 @@ removed the dependency, the aliases, and the collision together.
 
 ## License
 
-Apache-2.0, inherited from the workspace like every other member.
+Apache-2.0, inherited from the workspace like every other member — see
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 This crate predates the fold into euclid and carried its own `Proprietary`
 licence until 0.4, on the reasoning that a move should not relicense code. That

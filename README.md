@@ -385,27 +385,62 @@ property engine, and both are `publish = false`, so neither reaches a consumer.
 ## Using It
 
 **These crates are not on crates.io.** This repository is private, so depend on
-it by git — the version numbers below describe the tier, not a registry release:
+it by git — and **pin a tag**, not a branch:
 
 ```toml
 [dependencies]
 # the contract tier — write formulas against these
-euclid-numeric = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
-euclid-units   = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
-euclid-tensor  = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
-euclid-random  = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
-euclid-algebra = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
+euclid-numeric = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
+euclid-units   = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
+euclid-tensor  = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
+euclid-random  = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
+euclid-algebra = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
 
 # the carrier tier — concrete f64, only if a kernel needs the number line
-euclid-quantity = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
-euclid-scalar   = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
+euclid-quantity = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
+euclid-scalar   = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
 
-# content — algorithms over the tensor contract
-euclid-matrix = { git = "ssh://git@github.com/urban-fabric/euclid.git", branch = "main" }
+# content — the matrix extension signatures a backend implements
+euclid-matrix = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
 ```
 
 Take only the crates you use; there is no umbrella crate to pull the rest in.
 Every member is Apache-2.0 — see [License](#license).
+
+### Why a tag and not `branch = "main"`
+
+This README told you to track `main` until 0.5, and that was the single thing
+standing between euclid and being depended on safely. A branch dependency has no
+version: cargo re-resolves it to whatever `main` points at, so **every consumer
+silently tracked HEAD**. A trait gaining a required method, a crate being
+renamed, a conformance law being corrected — each arrived unannounced in the
+next `cargo update`, and euclid's whole purpose is that independently-written
+parts of the fleet agree on definitions. Agreeing on a moving definition is not
+agreement.
+
+A tag is immutable, so the version you compiled against is the version you keep
+until you choose otherwise. The `version` field beside it is not redundant:
+cargo checks it against the manifest at that ref, so a tag pointing somewhere
+unexpected fails resolution instead of compiling something you did not ask for.
+
+**What breaks between versions is recorded in [RELEASES](RELEASES.md)** — only
+the breaking changes, because that is the only question a pinned consumer has.
+The minor number is the breaking axis: `0.5.x` is compatible, `0.6.0` may not
+be.
+
+### One ref per build graph
+
+Worth knowing before you bump, because it makes a euclid upgrade a *chain*
+rather than an independent edit. Cargo resolves one version of a package per
+build graph, so two crates in the same graph cannot pin different euclid tags —
+if your dependency also depends on euclid, you both move together.
+
+That is not a flaw to route around; it is the property that keeps the fleet
+honest, since two halves of one binary computing against two definitions of a
+length is precisely what euclid exists to prevent. The practical consequence is
+that an upgrade starts at the bottom: a consumer pinned to `^0.3` blocks
+everything above it until it moves, and bumping the top alone fails resolution
+on the requirement underneath rather than quietly tracking a reshaped surface.
 
 Crate names are hyphenated; in Rust they are imported with underscores:
 
@@ -439,7 +474,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-it
 cargo deny check
 ```
 
-All six, and [CONTRIBUTING](CONTRIBUTING.md#the-checks) says why each one is
+All six, and [CONTRIBUTING](CONTRIBUTING.md#checks-run-locally-not-in-ci) says why each one is
 there — in particular why `--all-features` is not padding (the `conformance`
 suites are feature-gated, so the default build never compiles them) and what
 `cargo deny check` is enforcing beyond vulnerabilities.

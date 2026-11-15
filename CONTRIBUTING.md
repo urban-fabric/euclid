@@ -1,8 +1,31 @@
 # Contributing to euclid
 
-euclid is the numerics, units, and mathematical base for Urban Fabric. It is a
-**beta** repository: the trait surfaces are still moving, and downstream projects
-are expected to track them rather than pin to a stable contract.
+euclid is the numerics, units, and mathematical base for Urban Fabric.
+
+**It is `0.x`, and consumers pin a tag.** That is a change of posture as of 0.5:
+this file used to say downstream projects "are expected to track them rather
+than pin to a stable contract", and the README told them to depend on
+`branch = "main"`. Together those meant every consumer silently tracked HEAD, so
+a renamed crate or a new required method arrived unannounced in the next
+`cargo update` — which is incoherent for a repository whose entire purpose is
+that independently-written parts of the fleet agree on definitions.
+
+So the surfaces are still allowed to move, but moving them is now a *release*
+rather than a push:
+
+- the **minor number is the breaking-change axis** — `0.5.x` is compatible,
+  `0.6.0` may not be, which is cargo's own reading of a `0.x` version
+- every breaking change is recorded in [RELEASES](RELEASES.md), which lists
+  nothing else, because a pinned consumer has exactly one question
+- a release is a tag, cut after the merge — see [Releasing](#releasing)
+
+**Not 1.0, and not soon.** 1.0 is a promise that the surface will not break
+without a major bump, and three things have to close first: `euclid-matrix`'s
+twelve traits have never been executed by any carrier (no tensor exists here to
+satisfy them, and the boundary forbids shipping one), `euclid-quantity` has 270
+undocumented public items, and the generated half of the conformance strategy is
+still internal to this repository. Pinning works today and is the point; 1.0 is
+a separate claim.
 
 ## Version Control: Jujutsu
 
@@ -165,27 +188,54 @@ crate, so `clippy -- -D warnings` is the same gate everywhere. `unsafe_code`,
 `unwrap_used`, `expect_used`, and `panic` are all denied; reference code in tests
 is held to the same bar.
 
-## No CHANGELOG
+## Releasing
 
-**There is no CHANGELOG, by choice.** While euclid is beta, the version number
-and the `jj log` are the record. Maintaining a hand-written changelog for a
-surface that is still being reshaped costs more than it informs, and a stale
-changelog is worse than none.
+A release is a **tag**, and consumers pin it. Three steps, in this order:
 
-Instead:
+1. **Bump** `version` in `[workspace.package]` at the root, in its own commit or
+   as part of the change that broke something. All ten crates share it, so they
+   version together. Minor for a breaking change, patch otherwise — see
+   [RELEASES](RELEASES.md#what-counts-as-breaking) for where that line is, and
+   note it is wider than "the signature changed".
+2. **Add the entry to [RELEASES](RELEASES.md)** in the same change, while you
+   still remember what breaks and what a consumer should do about it. An entry
+   written a week later is an entry written from the diff.
+3. **Merge, then tag.** The tag goes on `main` *after* the squash merge, not on
+   your local commit — the squash creates a new commit that does not exist until
+   the merge, so a tag cut beforehand points at something that never lands:
 
-- Put the explanation in the **pull request body**, which the squash merge turns
-  into the commit message on `main`. That is where a breaking rename or a changed
-  numeric convention gets described. Write it as the permanent record it becomes,
-  not as a note to the reviewer.
-- Bump the workspace version in the root `Cargo.toml` when the public surface
-  moves. All ten crates share `[workspace.package]`, so they version together.
-- Say so in the PR title when imports or semantics change, since downstream
-  projects read titles to decide whether they need to react — and since under a
-  squash merge the title is the one line that survives into `jj log`.
+   ```sh
+   jj git fetch
+   jj bookmark set v0.6.0 -r main@origin   # or: git tag v0.6.0 origin/main
+   jj git push --bookmark v0.6.0
+   ```
 
-This should be revisited if euclid ever reaches 1.0 and outside consumers depend
-on it, but that is not the situation today.
+   Getting this backwards is the one mistake the ordering exists to prevent, and
+   it is quiet: the tag resolves, the code compiles, and it is simply not the
+   code that is on `main`.
+
+Then update the version in the README's [Using It](README.md#using-it) block, so
+the documented pin is the one that exists.
+
+### No CHANGELOG — RELEASES is not one
+
+The distinction is deliberate rather than pedantic. A changelog lists what
+changed; `RELEASES.md` lists only what **breaks**, because the audience is a
+consumer pinned to an older tag and their question is "what do I have to fix".
+Everything additive, every fix and every speedup stays out of it, and lives
+where it already lived:
+
+- The **pull request body**, which the squash merge turns into the commit message
+  on `main`. Write it as the permanent record it becomes, not as a note to the
+  reviewer.
+- The **PR title**, which is the one line that survives into `jj log`. Say in it
+  when imports or semantics change, since downstream reads titles to decide
+  whether to react.
+
+Maintaining a full hand-written changelog beside those would duplicate them and
+go stale in the copy nobody reads, which is why this stops at the breaking
+changes — the one thing the PR body cannot serve, because a consumer should not
+have to read six months of commits to find the three that affect them.
 
 ## What a Change Should Come With
 
