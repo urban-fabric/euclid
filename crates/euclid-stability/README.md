@@ -160,26 +160,28 @@ Targeting never weakens a property: it changes which cases are tried, not which 
 — no criterion, because a benchmark dependency is still a dependency and `deny.toml` would need
 an exception for it.
 
-| benchmark | result |
+| result | kind |
 |---|---|
-| shrink, 20–40 entry tape | **378 distinct probes, 194 answered from the memo (33.9% avoided)** |
-| tape materialisation removed from every case | **7.5–8.2 ns/case**, interleaved A/B |
-| search, scalar generator, empty body | ~35M cases/s, for scale |
-| search, `Vec<f64>` generator | ~4.2M cases/s, dominated by the generator's own allocation |
+| shrink: **378 distinct probes, 194 answered from the memo — 33.9% avoided** | counted, exact |
+| `Source::consumed()` per case removed: **9.3–9.5 ns, 4.2× the draw it sat beside** | interleaved A/B |
+| per-case `Source` construction removed: **6.0–6.2 ns, 3.1×** | interleaved A/B |
+| per-probe `Source` construction removed: **4.4–8.1 ns, 1.1×** | interleaved A/B |
+| search floor ~59M cases/s; `Vec<f64>` generator ~5.4M cases/s | for scale only |
 
-The per-case floor is what decides how many cases a cheap property can afford, which is where
-searching harder is free. For an expensive property the engine disappears into the body and the
-number that matters is the probe count, because **shrinking a failure is routinely an order of
-magnitude more work than finding it** — each probe re-runs the generator *and* the property.
+The per-case floor decides how many cases a cheap property can afford, which is where searching
+harder is free. For an expensive property the engine disappears into the body, and the number
+that matters is the probe count — because **shrinking a failure is routinely an order of
+magnitude more work than finding it**, each probe re-running the generator *and* the property.
 
-Three things got it there: the search no longer materialises the tape on every case (it is taken
+Four things got it there. The search no longer materialises the tape on every case (it is taken
 only on a failure or a new best score, having previously been allocated, copied and discarded
-every time); the panic-hook guard is a relaxed load rather than a `SeqCst` read-modify-write per
-case; and the shrinker memoises its verdicts. That last one is a third of all probes — a fixpoint
-loop's final round exists to prove nothing more can be done, and it proves it by re-trying
-candidates earlier rounds rejected. A memo hit also **does not spend budget**, so the same
-`MAX_PROBES` cap explores strictly more distinct candidates: shrinking got better as well as
-faster.
+every time). One `Source` is reused across all cases, and another across all probes in a
+minimisation, rather than constructed per case and per probe. The panic-hook guard is a relaxed
+load rather than a `SeqCst` read-modify-write per case. And the shrinker memoises its verdicts —
+a third of all probes, because a fixpoint loop's final round exists to prove nothing more can be
+done and proves it by re-trying candidates earlier rounds rejected. A memo hit also **does not
+spend budget**, so the same `MAX_PROBES` cap explores strictly more distinct candidates:
+shrinking got better as well as faster.
 
 **Note which rows are counts and which are timings.** The probe count is exact and identical on
 any machine. The A/B row runs both arms in the same process microseconds apart, and reproduces to

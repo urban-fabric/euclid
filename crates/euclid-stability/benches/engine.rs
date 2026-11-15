@@ -60,11 +60,23 @@
 //!   probe count is the one that matters: **572 → 378 distinct probes, 33.9% avoided.** That is
 //!   not a timing, it is a count, and it is the same count everywhere.
 //! - **Interleaved A/B timings**, where both arms run in the same process a few microseconds
-//!   apart, so they see the same machine. `tape_materialisation_cost` below does this for the
-//!   change that removed the per-case allocation, and it lands at **7.5–8.2 ns per case across
-//!   runs — about 1.8–1.9× the cost of the draw it was attached to.** Two runs agreeing to
-//!   within 10% is what a trustworthy measurement looks like, against the 2× disagreement the
-//!   cross-run comparison produced.
+//!   apart, so they see the same machine. Over three consecutive runs:
+//!
+//!   | what was removed | per iteration | ratio |
+//!   |---|---|---|
+//!   | `Source::consumed()` on every case | 9.3–9.5 ns | 4.19–4.27× |
+//!   | constructing a `Source` per case | 6.0–6.2 ns | 3.06–3.13× |
+//!   | constructing a `Source` per shrink probe | 4.4–8.1 ns | 1.10–1.19× |
+//!
+//!   The first two reproduce to within 2%, which is what a trustworthy measurement looks like
+//!   against the 2× disagreement the cross-run comparison produced. The third is looser because
+//!   it is a small delta on a larger base — the probe's own `Vec` draw dominates it — so it is
+//!   quoted as a range rather than a figure.
+//!
+//!   Note the ratios are against the *draw loop*, not against a whole case: a bare
+//!   `int(0, 1_000_000)` draw is about 3 ns, so a 9.4 ns allocation beside it is 4.2× of very
+//!   little. That is the honest reading, and it is why these rows are expressed per iteration as
+//!   well as as a ratio.
 //!
 //!   Absolute throughput rows are reported for scale only — do not read a diff off them between
 //!   two runs.
@@ -132,74 +144,149 @@ fn main() {
     search_floor();
     search_with_allocation();
     tape_materialisation_cost();
+    probe_source_cost();
     shrink_cost();
     shrink_redundancy();
 }
 
-/// The one search-path optimisation measured as an **interleaved A/B**, so both arms see the same
-/// machine.
+/// Time two arms **alternately**, in one process, and report the difference per iteration.
 ///
-/// `Source::consumed` allocates a `Vec` and copies the tape into it. The search used to call it
-/// on every case and then use the result only on a failure or a new best score — so for the
-/// overwhelming majority of cases it allocated, copied, and dropped. The fix was to take the tape
-/// only when something is going to keep it.
+/// This is the only honest way to attribute a microsecond-scale change on this hardware. Running
+/// the cheap arm `REPEATS` times and then the expensive arm `REPEATS` times would let drift land
+/// on one of them; alternating puts any frequency or thermal excursion across both. The best of
+/// each is kept, for the same reason the rest of the file does: noise only ever adds.
 ///
-/// Both arms draw the same value from the same generator; one then materialises the tape and one
-/// does not. The difference is what was removed from every case. Alternating them repeatedly is
-/// what makes the comparison mean anything — a before/after across two separate runs of this
-/// benchmark measured a 2× that turned out to be the machine warming up.
+/// `cheap` must be the arm *without* the work being measured, so the reported delta is positive
+/// and reads as "what the optimisation removed".
+fn ab(
+    name: &str,
+    detail: &str,
+    iterations: usize,
+    mut cheap: impl FnMut(),
+    mut dear: impl FnMut(),
+) {
+    cheap();
+    dear();
+
+    let mut best_cheap = std::time::Duration::MAX;
+    let mut best_dear = std::time::Duration::MAX;
+    for _ in 0..REPEATS {
+        let start = Instant::now();
+        cheap();
+        best_cheap = best_cheap.min(start.elapsed());
+
+        let start = Instant::now();
+        dear();
+        best_dear = best_dear.min(start.elapsed());
+    }
+
+    let delta = best_dear.saturating_sub(best_cheap);
+    #[allow(clippy::cast_precision_loss)]
+    let per_iteration = delta.as_secs_f64() / iterations as f64;
+    let ratio = if best_cheap.is_zero() {
+        0.0
+    } else {
+        best_dear.as_secs_f64() / best_cheap.as_secs_f64()
+    };
+    println!(
+        "{name:<40} {:>7.2} ms {:>11.1} ns/each {:>5.2}x",
+        delta.as_secs_f64() * 1e3,
+        per_iteration * 1e9,
+        ratio
+    );
+    println!(
+        "{:<40} {:>10} {:>16}",
+        format!("  -> {detail}"),
+        format!("{:.2} ms", best_cheap.as_secs_f64() * 1e3),
+        format!("{:.2} ms", best_dear.as_secs_f64() * 1e3)
+    );
+}
+
+/// The search-path optimisations, each measured as an interleaved A/B.
+///
+/// Two separate changes, so two rows:
+///
+/// - **`Source::consumed` per case.** It allocates a `Vec` and copies the tape in, and the search
+///   used to call it on every case while using the result only on a failure or a new best score.
+///   For the overwhelming majority of cases it allocated, copied and dropped.
+/// - **Constructing a `Source` per case.** A tape grows from empty to a dozen-odd entries, so a
+///   fresh `Source` means an allocation plus several reallocations every case. `restart_generating`
+///   reuses the buffer, making it once per *property*.
 fn tape_materialisation_cost() {
     let generator = generate::int(0, 1_000_000);
     const DRAWS: usize = 200_000;
 
-    let draw_only = || {
-        for seed in 0..DRAWS {
-            let mut source = Source::generating(seed as u64, 4_096);
-            black_box(generator.draw(&mut source).ok());
-        }
-    };
-    let draw_and_materialise = || {
-        for seed in 0..DRAWS {
-            let mut source = Source::generating(seed as u64, 4_096);
-            black_box(generator.draw(&mut source).ok());
-            black_box(source.consumed());
-        }
-    };
-
-    // Alternate the arms so any drift affects both equally, and keep the best of each.
-    let mut best_without = std::time::Duration::MAX;
-    let mut best_with = std::time::Duration::MAX;
-    draw_only();
-    draw_and_materialise();
-    for _ in 0..REPEATS {
-        let start = Instant::now();
-        draw_only();
-        best_without = best_without.min(start.elapsed());
-
-        let start = Instant::now();
-        draw_and_materialise();
-        best_with = best_with.min(start.elapsed());
-    }
-
-    let per_case = best_with.saturating_sub(best_without).as_secs_f64() / DRAWS as f64;
-    #[allow(clippy::cast_precision_loss)]
-    let overhead = if best_without.is_zero() {
-        0.0
-    } else {
-        best_with.as_secs_f64() / best_without.as_secs_f64()
-    };
-    println!(
-        "{:<40} {:>7.2} ms {:>11.1} ns/case {:>5.2}x",
-        "tape materialisation, A/B interleaved",
-        best_with.saturating_sub(best_without).as_secs_f64() * 1e3,
-        per_case * 1e9,
-        overhead
+    ab(
+        "per-case consumed(), A/B interleaved",
+        "draw only / draw + consumed()",
+        DRAWS,
+        || {
+            let mut source = Source::generating(0, 4_096);
+            for seed in 0..DRAWS {
+                source.restart_generating(seed as u64, 4_096);
+                black_box(generator.draw(&mut source).ok());
+            }
+        },
+        || {
+            let mut source = Source::generating(0, 4_096);
+            for seed in 0..DRAWS {
+                source.restart_generating(seed as u64, 4_096);
+                black_box(generator.draw(&mut source).ok());
+                black_box(source.consumed());
+            }
+        },
     );
-    println!(
-        "{:<40} {:>10} {:>16}",
-        "  -> draw only / draw + consumed()",
-        format!("{:.2} ms", best_without.as_secs_f64() * 1e3),
-        format!("{:.2} ms", best_with.as_secs_f64() * 1e3)
+
+    ab(
+        "per-case Source, A/B interleaved",
+        "restart_generating / fresh Source",
+        DRAWS,
+        || {
+            let mut source = Source::generating(0, 4_096);
+            for seed in 0..DRAWS {
+                source.restart_generating(seed as u64, 4_096);
+                black_box(generator.draw(&mut source).ok());
+            }
+        },
+        || {
+            for seed in 0..DRAWS {
+                let mut source = Source::generating(seed as u64, 4_096);
+                black_box(generator.draw(&mut source).ok());
+            }
+        },
+    );
+}
+
+/// The shrink-path optimisation: a `Source` per probe, or one reused across all of them.
+///
+/// `replay` used to take the candidate tape by value, so every probe handed it a fresh `Vec` —
+/// one allocation and copy per probe, and a minimisation spends hundreds to thousands of them.
+/// This is the row that matters most of the three, because shrinking is where a failure's time
+/// actually goes.
+fn probe_source_cost() {
+    let generator = generate::vec(generate::int(0, 1_000_000), 8, 16);
+    let tape: Vec<u64> = (0..24)
+        .map(|i| 0x9E37_79B9_7F4A_7C15u64.wrapping_mul(i + 1))
+        .collect();
+    const PROBES: usize = 200_000;
+
+    ab(
+        "per-probe Source, A/B interleaved",
+        "restart_replaying / fresh Source",
+        PROBES,
+        || {
+            let mut source = Source::replaying(Vec::new());
+            for _ in 0..PROBES {
+                source.restart_replaying(&tape);
+                black_box(generator.draw(&mut source).ok());
+            }
+        },
+        || {
+            for _ in 0..PROBES {
+                let mut source = Source::replaying(tape.clone());
+                black_box(generator.draw(&mut source).ok());
+            }
+        },
     );
 }
 

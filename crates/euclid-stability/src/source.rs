@@ -87,6 +87,36 @@ impl Source {
         }
     }
 
+    /// Reuse this source for a fresh generating run, **keeping its tape allocation**.
+    ///
+    /// Equivalent to [`generating`](Self::generating) in every observable way — same seed, same
+    /// draws, same resulting tape — and it reuses the `Vec` instead of allocating a new one. The
+    /// search calls this once per case, so the engine allocates a tape once per *property*
+    /// rather than once per case, and the repeated growth from empty up to a dozen-odd entries
+    /// happens against capacity that is already there.
+    pub fn restart_generating(&mut self, seed: u64, max_len: usize) {
+        self.tape.clear();
+        self.position = 0;
+        self.rng = SplitMix64::new(seed);
+        self.mode = Mode::Grow;
+        self.max_len = max_len;
+    }
+
+    /// Reuse this source to replay `tape`, **keeping its allocation**.
+    ///
+    /// The shrink path's reason for existing. Every probe needs a source over a candidate tape,
+    /// and [`replaying`](Self::replaying) takes ownership — so the caller had to hand it a fresh
+    /// `Vec`, which meant one allocation and copy per probe, thousands of times per failure.
+    /// This copies into the buffer already held.
+    pub fn restart_replaying(&mut self, tape: &[u64]) {
+        self.tape.clear();
+        self.tape.extend_from_slice(tape);
+        self.position = 0;
+        self.rng = SplitMix64::new(0);
+        self.mode = Mode::Fixed;
+        self.max_len = tape.len();
+    }
+
     /// The tape as recorded — the reproducible identity of the value that was generated.
     #[must_use]
     pub fn tape(&self) -> &[u64] {

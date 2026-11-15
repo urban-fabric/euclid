@@ -176,7 +176,7 @@ pub fn check<T: 'static + core::fmt::Debug>(
     let mut current: Vec<(Vec<u64>, Option<String>)> = Vec::new();
 
     for entry in persisted {
-        let (verdict, rendering) = replay_rendered(generator, &mut property, entry.tape.clone());
+        let (verdict, rendering) = replay_rendered(generator, &mut property, &entry.tape);
         if let Verdict::Failed(failure) = verdict {
             report(
                 name,
@@ -225,6 +225,10 @@ pub fn check<T: 'static + core::fmt::Debug>(
     let mut rejects = 0usize;
     let mut reasons: Vec<&'static str> = Vec::new();
     let mut climber = Climber::new(config);
+    // One source for the whole search, restarted per case. A tape is a `Vec<u64>` that grows
+    // from empty to a dozen-odd entries, so constructing one per case meant an allocation and
+    // several reallocations every time; reusing the buffer makes that once per property.
+    let mut source = Source::generating(config.seed, config.max_tape);
 
     for case in 0..config.cases {
         let seed = config
@@ -234,10 +238,10 @@ pub fn check<T: 'static + core::fmt::Debug>(
 
         // Either a fresh draw, or a perturbation of the best-scoring tape found so far. The
         // climb only engages once the property has actually reported a score.
-        let mut source = match climber.propose(case, seed) {
-            Some(tape) => Source::replaying(tape),
-            None => Source::generating(seed, config.max_tape),
-        };
+        match climber.propose(case, seed) {
+            Some(tape) => source.restart_replaying(&tape),
+            None => source.restart_generating(seed, config.max_tape),
+        }
 
         match generator.draw(&mut source) {
             Err(DrawError::Overrun) => {
@@ -572,9 +576,9 @@ fn report_stale(name: &str, path: &str, stale: &[Stale], current: &[(Vec<u64>, O
 fn replay_rendered<T: 'static + core::fmt::Debug>(
     generator: &Gen<T>,
     property: &mut impl FnMut(T) -> Outcome,
-    tape: Vec<u64>,
+    tape: &[u64],
 ) -> (Verdict, Option<String>) {
-    let mut source = Source::replaying(tape);
+    let mut source = Source::replaying(tape.to_vec());
     match generator.draw(&mut source) {
         Err(DrawError::Overrun) => (Verdict::Overrun, None),
         Err(DrawError::Rejected(_)) => (Verdict::Rejected, None),
@@ -596,10 +600,11 @@ fn replay_rendered<T: 'static + core::fmt::Debug>(
 fn replay<T: 'static>(
     generator: &Gen<T>,
     property: &mut impl FnMut(T) -> Outcome,
-    tape: Vec<u64>,
+    source: &mut Source,
+    tape: &[u64],
 ) -> Verdict {
-    let mut source = Source::replaying(tape);
-    match generator.draw(&mut source) {
+    source.restart_replaying(tape);
+    match generator.draw(source) {
         Err(DrawError::Overrun) => Verdict::Overrun,
         Err(DrawError::Rejected(_)) => Verdict::Rejected,
         Ok(value) => match run_quietly(property, value) {
@@ -626,8 +631,12 @@ fn report<T: 'static + core::fmt::Debug>(
     property: &mut impl FnMut(T) -> Outcome,
     was_persisted: bool,
 ) -> ! {
+    // One source for every probe in this minimisation. `replay` used to take the tape by
+    // value, so each probe handed it a fresh `Vec` — one allocation and copy per probe, and a
+    // minimisation spends hundreds to thousands of them.
+    let mut scratch = Source::replaying(Vec::new());
     let (minimal, cost) = shrink::minimise(tape.to_vec(), |candidate| {
-        match replay(generator, property, candidate.to_vec()) {
+        match replay(generator, property, &mut scratch, candidate) {
             Verdict::Failed(_) => Probe::StillFails,
             _ => Probe::Discard,
         }
@@ -636,7 +645,7 @@ fn report<T: 'static + core::fmt::Debug>(
     // Re-run the minimal case so the message a reader sees describes the *small* input rather
     // than whatever the search happened to stumble on first, and render it while we have it —
     // the rendering goes on the saved line and into the report.
-    let (verdict, rendering) = replay_rendered(generator, property, minimal.clone());
+    let (verdict, rendering) = replay_rendered(generator, property, &minimal);
     let final_failure = match verdict {
         Verdict::Failed(failure) => failure,
         _ => original.clone(),
