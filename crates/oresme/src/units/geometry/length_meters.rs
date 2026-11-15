@@ -1,7 +1,7 @@
 use super::{M_PER_FOOT, M_PER_KM};
+use crate::Measure;
 use crate::conversion::dim;
 use crate::{AreaSquareMeters, LengthFeet, LengthKm, SpeedMs, TimeSeconds, VolumeCubicMeters};
-use crate::{Dimension, LinearQuantity, Quantity};
 use bytemuck::{Pod, Zeroable};
 use euclid_units::Length;
 
@@ -70,20 +70,6 @@ impl LengthMeters {
     }
 }
 
-impl Quantity for LengthMeters {
-    type Repr = f64;
-    const DIMENSION: Dimension = Dimension::Length;
-    const UNIT_NAME: &'static str = "m";
-    fn raw(self) -> f64 {
-        self.0
-    }
-    fn from_raw(v: f64) -> Self {
-        Self(v)
-    }
-}
-
-impl LinearQuantity for LengthMeters {}
-
 impl LengthMeters {
     pub fn to_km(self) -> LengthKm {
         LengthKm(self.0 / M_PER_KM)
@@ -100,7 +86,7 @@ impl crate::conversion::UnitOfMeasure for LengthMeters {
 }
 
 const _: () = assert!(
-    <LengthMeters as crate::Quantity>::DIMENSION
+    <LengthMeters as euclid_units::Measure>::DIMENSION
         .same(<dim::Length as euclid_units::Dimensioned>::DIMENSION),
     concat!("dimension mismatch for ", stringify!(LengthMeters)),
 );
@@ -113,95 +99,19 @@ impl core::fmt::Display for LengthMeters {
 
 impl euclid_units::Measure for LengthMeters {
     type Repr = f64;
-    const DIMENSION: euclid_units::Dimension = <LengthMeters as crate::Quantity>::DIMENSION;
-    const UNIT_NAME: &'static str = <LengthMeters as crate::Quantity>::UNIT_NAME;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Length;
+    const UNIT_NAME: &'static str = "m";
     fn raw(&self) -> f64 {
-        <Self as crate::Quantity>::raw(*self)
+        self.0
     }
-    fn from_raw(value: f64) -> Self {
-        <Self as crate::Quantity>::from_raw(value)
-    }
-}
-
-impl euclid_units::ScalarQuantity for LengthMeters {
-    fn min(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self).min(<Self as crate::Quantity>::raw(other)),
-        )
-    }
-    fn max(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self).max(<Self as crate::Quantity>::raw(other)),
-        )
-    }
-    fn clamp(self, lo: Self, hi: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).clamp(
-            <Self as crate::Quantity>::raw(lo),
-            <Self as crate::Quantity>::raw(hi),
-        ))
-    }
-    fn floor(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).floor())
-    }
-    fn ceil(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).ceil())
-    }
-    fn round(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).round())
-    }
-    fn trunc(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).trunc())
-    }
-    fn is_finite(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_finite()
-    }
-    fn is_nan(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_nan()
-    }
-    fn is_infinite(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_infinite()
-    }
-    fn approx_eq(&self, other: &Self, tolerance: &Self) -> bool {
-        (<Self as crate::Quantity>::raw(*self) - <Self as crate::Quantity>::raw(*other)).abs()
-            <= <Self as crate::Quantity>::raw(*tolerance).abs()
+    fn from_raw(v: f64) -> Self {
+        Self(v)
     }
 }
 
-impl euclid_units::LinearQuantity for LengthMeters {
-    fn add(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self) + <Self as crate::Quantity>::raw(other),
-        )
-    }
-    fn sub(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self) - <Self as crate::Quantity>::raw(other),
-        )
-    }
-    fn neg(self) -> Self {
-        <Self as crate::Quantity>::from_raw(-<Self as crate::Quantity>::raw(self))
-    }
-    fn abs(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).abs())
-    }
-    fn signum(self) -> f64 {
-        <Self as crate::Quantity>::raw(self).signum()
-    }
-    fn ratio(self, other: Self) -> f64 {
-        <Self as crate::Quantity>::raw(self) / <Self as crate::Quantity>::raw(other)
-    }
-    fn lerp(self, other: Self, t: f64) -> Self {
-        let lhs = <Self as crate::Quantity>::raw(self);
-        let rhs = <Self as crate::Quantity>::raw(other);
-        <Self as crate::Quantity>::from_raw(lhs * (1.0 - t) + rhs * t)
-    }
-    fn scale(self, factor: f64) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self) * factor)
-    }
-    fn scaled(self, k: f64) -> Self {
-        euclid_units::LinearQuantity::scale(self, k)
-    }
-}
+impl euclid_units::ScalarQuantity for LengthMeters {}
+
+impl euclid_units::LinearQuantity for LengthMeters {}
 
 impl Length for LengthMeters {
     type Area = AreaSquareMeters;

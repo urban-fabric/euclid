@@ -1,5 +1,4 @@
 use super::{NS_PER_S, NS_PER_US};
-use crate::{Dimension, Quantity};
 use crate::{TimeMicros, TimeMillis, TimeSeconds};
 use bytemuck::{Pod, Zeroable};
 
@@ -8,8 +7,8 @@ impl core::fmt::Display for TimeNanos {
         write!(
             f,
             "{} {}",
-            <TimeNanos as crate::Quantity>::raw(*self),
-            <TimeNanos as crate::Quantity>::UNIT_NAME,
+            <TimeNanos as euclid_units::Measure>::raw(self),
+            <TimeNanos as euclid_units::Measure>::UNIT_NAME,
         )
     }
 }
@@ -19,8 +18,8 @@ impl core::fmt::Display for TimeNanosDelta {
         write!(
             f,
             "{} {}",
-            <TimeNanosDelta as crate::Quantity>::raw(*self),
-            <TimeNanosDelta as crate::Quantity>::UNIT_NAME,
+            <TimeNanosDelta as euclid_units::Measure>::raw(self),
+            <TimeNanosDelta as euclid_units::Measure>::UNIT_NAME,
         )
     }
 }
@@ -63,6 +62,18 @@ pub struct TimeNanos(pub(crate) u64);
 #[serde(transparent)]
 pub struct TimeNanosDelta(pub(crate) i64);
 
+impl euclid_units::Measure for TimeNanos {
+    type Repr = u64;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Time;
+    const UNIT_NAME: &'static str = "ns";
+    fn raw(&self) -> u64 {
+        self.0
+    }
+    fn from_raw(v: u64) -> Self {
+        Self(v)
+    }
+}
+
 impl TimeNanos {
     pub const ZERO: Self = Self(0);
 
@@ -101,6 +112,18 @@ impl TimeNanos {
     }
 }
 
+impl euclid_units::Measure for TimeNanosDelta {
+    type Repr = i64;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Time;
+    const UNIT_NAME: &'static str = "ns (signed)";
+    fn raw(&self) -> i64 {
+        self.0
+    }
+    fn from_raw(v: i64) -> Self {
+        Self(v)
+    }
+}
+
 impl TimeNanosDelta {
     pub const ZERO: Self = Self(0);
 
@@ -115,30 +138,6 @@ impl TimeNanosDelta {
     #[allow(clippy::cast_possible_wrap)]
     pub fn between(before: TimeNanos, after: TimeNanos) -> Self {
         Self(after.as_nanos() as i64 - before.as_nanos() as i64)
-    }
-}
-
-impl Quantity for TimeNanos {
-    type Repr = u64;
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "ns";
-    fn raw(self) -> u64 {
-        self.0
-    }
-    fn from_raw(v: u64) -> Self {
-        Self(v)
-    }
-}
-
-impl Quantity for TimeNanosDelta {
-    type Repr = i64;
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "ns (signed)";
-    fn raw(self) -> i64 {
-        self.0
-    }
-    fn from_raw(v: i64) -> Self {
-        Self(v)
     }
 }
 

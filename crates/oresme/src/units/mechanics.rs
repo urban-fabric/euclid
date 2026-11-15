@@ -39,7 +39,7 @@ pub(crate) const KG_PER_MILLIGRAM: f64 = 0.000_001;
 
 #[cfg(test)]
 mod mass_tests {
-    use crate::{MassGrams, MassKilograms, MassMilligrams, Quantity};
+    use crate::{MassGrams, MassKilograms, MassMilligrams, Measure};
 
     #[test]
     fn mass_round_trips() {

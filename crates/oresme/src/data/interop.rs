@@ -25,7 +25,7 @@ impl TimeSeconds {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LengthMeters, Quantity, SpeedKph, TimeSeconds};
+    use crate::{LengthMeters, Measure, SpeedKph, TimeSeconds};
 
     #[test]
     fn travel_time_at_helper_uses_canonical_operand_order() {

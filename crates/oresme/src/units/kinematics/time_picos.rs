@@ -1,5 +1,4 @@
 use super::{PS_PER_NS, PS_PER_S};
-use crate::{Dimension, Quantity};
 use crate::{TimeMicros, TimeMillis, TimeNanos, TimeSeconds};
 use bytemuck::{Pod, Zeroable};
 
@@ -8,8 +7,8 @@ impl core::fmt::Display for TimePicos {
         write!(
             f,
             "{} {}",
-            <TimePicos as crate::Quantity>::raw(*self),
-            <TimePicos as crate::Quantity>::UNIT_NAME,
+            <TimePicos as euclid_units::Measure>::raw(self),
+            <TimePicos as euclid_units::Measure>::UNIT_NAME,
         )
     }
 }
@@ -19,8 +18,8 @@ impl core::fmt::Display for TimePicosDelta {
         write!(
             f,
             "{} {}",
-            <TimePicosDelta as crate::Quantity>::raw(*self),
-            <TimePicosDelta as crate::Quantity>::UNIT_NAME,
+            <TimePicosDelta as euclid_units::Measure>::raw(self),
+            <TimePicosDelta as euclid_units::Measure>::UNIT_NAME,
         )
     }
 }
@@ -62,6 +61,18 @@ pub struct TimePicos(pub(crate) u64);
 )]
 #[serde(transparent)]
 pub struct TimePicosDelta(pub(crate) i64);
+
+impl euclid_units::Measure for TimePicos {
+    type Repr = u64;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Time;
+    const UNIT_NAME: &'static str = "ps";
+    fn raw(&self) -> u64 {
+        self.0
+    }
+    fn from_raw(v: u64) -> Self {
+        Self(v)
+    }
+}
 
 impl TimePicos {
     pub const ZERO: Self = Self(0);
@@ -106,6 +117,18 @@ impl TimePicos {
     }
 }
 
+impl euclid_units::Measure for TimePicosDelta {
+    type Repr = i64;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Time;
+    const UNIT_NAME: &'static str = "ps (signed)";
+    fn raw(&self) -> i64 {
+        self.0
+    }
+    fn from_raw(v: i64) -> Self {
+        Self(v)
+    }
+}
+
 impl TimePicosDelta {
     pub const ZERO: Self = Self(0);
 
@@ -120,30 +143,6 @@ impl TimePicosDelta {
     #[allow(clippy::cast_possible_wrap)]
     pub fn between(before: TimePicos, after: TimePicos) -> Self {
         Self(after.as_picos() as i64 - before.as_picos() as i64)
-    }
-}
-
-impl Quantity for TimePicos {
-    type Repr = u64;
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "ps";
-    fn raw(self) -> u64 {
-        self.0
-    }
-    fn from_raw(v: u64) -> Self {
-        Self(v)
-    }
-}
-
-impl Quantity for TimePicosDelta {
-    type Repr = i64;
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "ps (signed)";
-    fn raw(self) -> i64 {
-        self.0
-    }
-    fn from_raw(v: i64) -> Self {
-        Self(v)
     }
 }
 

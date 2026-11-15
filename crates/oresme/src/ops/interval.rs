@@ -33,13 +33,24 @@ use euclid_numeric::interval as kernels;
 use crate::{LengthMeters, LinearQuantity, SpeedMs, TimeSeconds};
 
 /// A closed interval `[lo, hi]` of a scalar quantity `Q`.
+///
+/// `Q` must be a [`LinearQuantity`], which is what keeps absolute scalars out. An interval of
+/// temperatures *in Celsius* is not an interval in the vector-space sense — its arithmetic would
+/// claim that 20 °C + 20 °C is meaningful — so `TemperatureCelsius` declines
+/// `LinearQuantity` and this does not compile:
+///
+/// ```compile_fail
+/// use oresme::{Interval, TemperatureCelsius};
+///
+/// let _ = Interval::point(TemperatureCelsius::new(20.0));
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Interval<Q: LinearQuantity> {
+pub struct Interval<Q: LinearQuantity<Repr = f64> + Copy> {
     lo: Q,
     hi: Q,
 }
 
-impl<Q: LinearQuantity> Interval<Q> {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Interval<Q> {
     /// Build an interval from two bounds in any order.
     pub fn new(a: Q, b: Q) -> Self {
         let (lo, hi) = kernels::from_point_pair(a.raw(), b.raw());
@@ -185,28 +196,28 @@ fn div_bounds(num: (f64, f64), den: (f64, f64)) -> (f64, f64) {
     corner_bounds(num, den, |a, b| a / b)
 }
 
-impl<Q: LinearQuantity> Add for Interval<Q> {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Add for Interval<Q> {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
         Self::from_raw_bounds(self.lo.raw() + rhs.lo.raw(), self.hi.raw() + rhs.hi.raw())
     }
 }
 
-impl<Q: LinearQuantity> Sub for Interval<Q> {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Sub for Interval<Q> {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
         Self::from_raw_bounds(self.lo.raw() - rhs.hi.raw(), self.hi.raw() - rhs.lo.raw())
     }
 }
 
-impl<Q: LinearQuantity> Neg for Interval<Q> {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Neg for Interval<Q> {
     type Output = Self;
     fn neg(self) -> Self {
         Self::from_raw_bounds(-self.hi.raw(), -self.lo.raw())
     }
 }
 
-impl<Q: LinearQuantity> Mul<f64> for Interval<Q> {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Mul<f64> for Interval<Q> {
     type Output = Self;
     fn mul(self, k: f64) -> Self {
         // A negative `k` swaps the endpoints, so the bounds are re-ordered rather
@@ -216,14 +227,14 @@ impl<Q: LinearQuantity> Mul<f64> for Interval<Q> {
     }
 }
 
-impl<Q: LinearQuantity> Mul<Interval<Q>> for f64 {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Mul<Interval<Q>> for f64 {
     type Output = Interval<Q>;
     fn mul(self, x: Interval<Q>) -> Interval<Q> {
         x * self
     }
 }
 
-impl<Q: LinearQuantity> Div<f64> for Interval<Q> {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Div<f64> for Interval<Q> {
     type Output = Self;
     fn div(self, k: f64) -> Self {
         let (lo, hi) = kernels::from_point_pair(self.lo.raw() / k, self.hi.raw() / k);
@@ -265,7 +276,7 @@ impl Mul<Interval<SpeedMs>> for Interval<TimeSeconds> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Interval, LengthMeters, Quantity, SpeedMs, TimeSeconds};
+    use crate::{Interval, LengthMeters, Measure, SpeedMs, TimeSeconds};
 
     fn meters(lo: f64, hi: f64) -> Interval<LengthMeters> {
         Interval::new(LengthMeters::new(lo), LengthMeters::new(hi))

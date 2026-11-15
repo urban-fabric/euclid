@@ -21,7 +21,7 @@ pub(crate) const KELVIN_OFFSET_FAHRENHEIT: f64 = 255.372_222_222_222_2;
 #[cfg(test)]
 mod temperature_tests {
     use crate::{
-        Quantity, ScalarQuantity, TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin,
+        Measure, ScalarQuantity, TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin,
     };
 
     #[test]
@@ -36,12 +36,12 @@ mod temperature_tests {
     fn fahrenheit_conversions_use_offset_and_scale() {
         let freezing = TemperatureCelsius::new(0.0);
         assert!(freezing.to_fahrenheit().approx_eq(
-            TemperatureFahrenheit::new(32.0),
-            TemperatureFahrenheit::new(1e-12)
+            &TemperatureFahrenheit::new(32.0),
+            &TemperatureFahrenheit::new(1e-12)
         ));
         assert!(TemperatureFahrenheit::new(212.0).to_celsius().approx_eq(
-            TemperatureCelsius::new(100.0),
-            TemperatureCelsius::new(1e-12)
+            &TemperatureCelsius::new(100.0),
+            &TemperatureCelsius::new(1e-12)
         ));
     }
 

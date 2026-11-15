@@ -15,9 +15,9 @@ use euclid_units::{
 use crate::{
     AccelerationMetersPerSecondSquared, AmountMoles, AngleRadians, AreaSquareMeters,
     ChargeCoulombs, ConductanceSiemens, CurrentAmperes, DensityKilogramsPerCubicMeter,
-    EnergyJoules, ForceNewtons, FrequencyHertz, LengthMeters, MassKilograms,
-    MolarMassKilogramsPerMole, PowerWatts, Quantity, ResistanceOhms, SpeedMs, TimeSeconds,
-    UnitOfMeasure, VoltageVolts, VolumeCubicMeters,
+    EnergyJoules, ForceNewtons, FrequencyHertz, LengthMeters, MassKilograms, Measure,
+    MolarMassKilogramsPerMole, PowerWatts, ResistanceOhms, SpeedMs, TimeSeconds, UnitOfMeasure,
+    VoltageVolts, VolumeCubicMeters,
 };
 
 const EPS: f64 = 1e-12;
@@ -146,7 +146,7 @@ fn new_carriers_carry_unit_of_measure_and_serde() {
 
     // Runtime dimension tags line up with euclid's.
     assert_eq!(
-        <ForceNewtons as Quantity>::DIMENSION,
+        <ForceNewtons as Measure>::DIMENSION,
         euclid_units::Dimension::Force
     );
 }

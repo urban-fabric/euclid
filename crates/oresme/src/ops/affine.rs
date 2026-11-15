@@ -50,17 +50,17 @@ use crate::LinearQuantity;
 #[repr(transparent)]
 #[derive(Debug, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub struct Point<Q: LinearQuantity, Space = ()>(Q, PhantomData<fn() -> Space>);
+pub struct Point<Q: LinearQuantity<Repr = f64> + Copy, Space = ()>(Q, PhantomData<fn() -> Space>);
 
-impl<Q: LinearQuantity, Space> Copy for Point<Q, Space> {}
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> Copy for Point<Q, Space> {}
 
-impl<Q: LinearQuantity, Space> Clone for Point<Q, Space> {
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> Clone for Point<Q, Space> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<Q: LinearQuantity> Point<Q> {
+impl<Q: LinearQuantity<Repr = f64> + Copy> Point<Q> {
     /// A position at displacement `value` from the origin.
     pub fn new(value: Q) -> Self {
         Self::new_in_space(value)
@@ -72,7 +72,7 @@ impl<Q: LinearQuantity> Point<Q> {
     }
 }
 
-impl<Q: LinearQuantity, Space> Point<Q, Space> {
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> Point<Q, Space> {
     /// A position at displacement `value` from the origin in `Space`.
     pub fn new_in_space(value: Q) -> Self {
         Self(value, PhantomData)
@@ -106,7 +106,7 @@ impl<Q: LinearQuantity, Space> Point<Q, Space> {
     }
 }
 
-impl<Q: LinearQuantity, Space> Sub for Point<Q, Space> {
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> Sub for Point<Q, Space> {
     type Output = Q;
     /// The displacement between two positions.
     fn sub(self, rhs: Self) -> Q {
@@ -114,7 +114,7 @@ impl<Q: LinearQuantity, Space> Sub for Point<Q, Space> {
     }
 }
 
-impl<Q: LinearQuantity, Space> Add<Q> for Point<Q, Space> {
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> Add<Q> for Point<Q, Space> {
     type Output = Self;
     /// Translate a position by a displacement.
     fn add(self, rhs: Q) -> Self {
@@ -122,7 +122,7 @@ impl<Q: LinearQuantity, Space> Add<Q> for Point<Q, Space> {
     }
 }
 
-impl<Q: LinearQuantity, Space> Sub<Q> for Point<Q, Space> {
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> Sub<Q> for Point<Q, Space> {
     type Output = Self;
     /// Translate a position back by a displacement.
     fn sub(self, rhs: Q) -> Self {
@@ -130,13 +130,13 @@ impl<Q: LinearQuantity, Space> Sub<Q> for Point<Q, Space> {
     }
 }
 
-impl<Q: LinearQuantity, Space> AddAssign<Q> for Point<Q, Space> {
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> AddAssign<Q> for Point<Q, Space> {
     fn add_assign(&mut self, rhs: Q) {
         *self = *self + rhs;
     }
 }
 
-impl<Q: LinearQuantity, Space> SubAssign<Q> for Point<Q, Space> {
+impl<Q: LinearQuantity<Repr = f64> + Copy, Space> SubAssign<Q> for Point<Q, Space> {
     fn sub_assign(&mut self, rhs: Q) {
         *self = *self - rhs;
     }
