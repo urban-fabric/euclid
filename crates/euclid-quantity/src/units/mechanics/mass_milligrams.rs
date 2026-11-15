@@ -1,0 +1,134 @@
+use super::KG_PER_MILLIGRAM;
+use crate::conversion::dim;
+use crate::{MassGrams, MassKilograms};
+use bytemuck::{Pod, Zeroable};
+
+#[repr(transparent)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    PartialOrd,
+    Pod,
+    Zeroable,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct MassMilligrams(pub(crate) f64);
+
+impl MassMilligrams {
+    pub const ZERO: Self = Self(0.0);
+
+    pub const fn new(v: f64) -> Self {
+        debug_assert!(!v.is_nan());
+        Self(v)
+    }
+
+    pub const fn as_milligrams(self) -> f64 {
+        self.0
+    }
+
+    pub fn to_kilograms(self) -> MassKilograms {
+        MassKilograms(self.0 * KG_PER_MILLIGRAM)
+    }
+
+    pub fn to_grams(self) -> MassGrams {
+        MassGrams(self.0 / 1_000.0)
+    }
+}
+
+impl crate::conversion::UnitOfMeasure for MassMilligrams {
+    type Dim = dim::Mass;
+    const TO_PRIMARY: f64 = KG_PER_MILLIGRAM;
+}
+
+const _: () = assert!(
+    <MassMilligrams as euclid_units::Measure>::DIMENSION
+        .same(<dim::Mass as euclid_units::Dimensioned>::DIMENSION),
+    concat!("dimension mismatch for ", stringify!(MassMilligrams)),
+);
+
+impl core::fmt::Display for MassMilligrams {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        crate::conversion::fmt_quantity(*self, f)
+    }
+}
+
+impl euclid_units::Measure for MassMilligrams {
+    type Repr = f64;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Mass;
+    const UNIT_NAME: &'static str = "mg";
+    fn raw(&self) -> f64 {
+        self.0
+    }
+    fn from_raw(v: f64) -> Self {
+        Self(v)
+    }
+}
+
+impl euclid_units::ScalarQuantity for MassMilligrams {}
+
+impl euclid_units::LinearQuantity for MassMilligrams {}
+
+impl ::core::ops::Add for MassMilligrams {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        crate::quantity::scalar_add(self, rhs)
+    }
+}
+
+impl ::core::ops::Sub for MassMilligrams {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self {
+        crate::quantity::scalar_sub(self, rhs)
+    }
+}
+
+impl ::core::ops::AddAssign for MassMilligrams {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = crate::quantity::scalar_add(*self, rhs);
+    }
+}
+
+impl ::core::ops::SubAssign for MassMilligrams {
+    fn sub_assign(&mut self, rhs: Self) {
+        *self = crate::quantity::scalar_sub(*self, rhs);
+    }
+}
+
+impl ::core::ops::Neg for MassMilligrams {
+    type Output = Self;
+    fn neg(self) -> Self {
+        crate::quantity::scalar_neg(self)
+    }
+}
+
+impl ::core::ops::Mul<f64> for MassMilligrams {
+    type Output = Self;
+    fn mul(self, k: f64) -> Self {
+        crate::quantity::scalar_mul(self, k)
+    }
+}
+
+impl ::core::ops::Mul<MassMilligrams> for f64 {
+    type Output = MassMilligrams;
+    fn mul(self, x: MassMilligrams) -> MassMilligrams {
+        crate::quantity::scalar_mul(x, self)
+    }
+}
+
+impl ::core::ops::Div<f64> for MassMilligrams {
+    type Output = Self;
+    fn div(self, k: f64) -> Self {
+        crate::quantity::scalar_div(self, k)
+    }
+}
+
+impl ::core::iter::Sum for MassMilligrams {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        crate::quantity::scalar_sum(iter)
+    }
+}

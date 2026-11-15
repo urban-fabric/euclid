@@ -4,12 +4,12 @@ members = [
     "crates/euclid-algebra",
     "crates/euclid-matrix",
     "crates/euclid-numeric",
+    "crates/euclid-quantity",
     "crates/euclid-random",
     "crates/euclid-scalar",
     "crates/euclid-tensor",
     "crates/euclid-units",
     "crates/euclid-utils",
-    "crates/oresme",
 ]
 
 # The euclid *contract* crates are dependency-free: trait surfaces, f64/f32
@@ -19,7 +19,7 @@ members = [
 #
 #     euclid-numeric  (no dependencies)
 #       ├── euclid-units
-#       │     └── oresme
+#       │     └── euclid-quantity
 #       ├── euclid-tensor
 #       │     └── euclid-matrix
 #       ├── euclid-random
@@ -34,11 +34,11 @@ members = [
 # Four members are not plain contract crates: two are *carrier* tiers —
 # concrete types implementing the contracts above — and two are *content*:
 #
-#   `oresme` is the concrete f64 unit carrier. It is the one member that is not
+#   `euclid-quantity` is the concrete f64 unit carrier. It is the one member that is not
 #   dependency-free: it carries `bytemuck` (Pod/Zeroable storage wrappers) and
 #   `serde`. That property is per-crate, not per-workspace — a consumer taking
 #   `euclid-numeric` or `euclid-units` still gets no third-party edges. Only a
-#   consumer that asks for `oresme` pays for them.
+#   consumer that asks for `euclid-quantity` pays for them.
 #
 #   `euclid-scalar` is the concrete Copy scalar carrier: the `Real` and
 #   `Complex` numbers where the algebra tower and the numeric analysis surface
@@ -72,16 +72,22 @@ members = [
 # facade crate that 0.3 removed, so neither resolved against euclid's own main
 # branch at all.
 #
-# They were folded in under their original repository names (`napier`,
-# `frobenius`) to keep the fold itself near-zero-risk, then renamed into the
-# `euclid-*` scheme once it had settled. `oresme` is the last one still carrying
-# its repository name; it is the heaviest consumed of the three (~550 call sites
-# across the fleet), so it is renamed to `euclid-quantity` as its own pass.
+# All three were folded in under their original repository names (`napier`,
+# `frobenius`, `oresme`) to keep each fold itself near-zero-risk, then renamed
+# into the `euclid-*` scheme once it had settled: napier -> euclid-algebra and
+# frobenius -> euclid-matrix together, then oresme -> euclid-quantity on its own
+# because it is by far the heaviest consumed (~550 call sites across the fleet)
+# and a rename that size is worth isolating.
+#
+# Every member now follows the scheme. The fleet convention is that a
+# mathematician's name earns a *repository*, never a crate inside one — a crate
+# is `<repo>-<role>` — so a `euclid-*` member carrying a mathematician's name
+# was always a leftover from its own repository rather than a naming choice.
 #
 # euclid-utils is a dev-only member: the four contract crates use it under
 # [dev-dependencies] for shared test helpers, and it is publish = false, so it never
-# reaches a consumer. The carrier and content crates (oresme, euclid-scalar,
-# euclid-algebra, euclid-matrix) do not take it.
+# reaches a consumer. The carrier and content crates (euclid-quantity,
+# euclid-scalar, euclid-algebra, euclid-matrix) do not take it.
 
 [workspace.package]
 version = "0.3.0"
@@ -97,12 +103,12 @@ euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
 # Declared here now that a member depends on it; it was deliberately absent while
 # nothing in the workspace did.
 euclid-algebra = { version = "0.3.0", path = "crates/euclid-algebra" }
-# The dimension contracts `oresme` implements. Declared here now that a member
+# The dimension contracts `euclid-quantity` implements. Declared here now that a member
 # crate depends on it rather than only consumers outside the workspace.
 euclid-units = { version = "0.3.0", path = "crates/euclid-units" }
 # The rank-n Tensor contract that `euclid-matrix` extends.
 euclid-tensor = { version = "0.3.0", path = "crates/euclid-tensor" }
-# `oresme`, `euclid-scalar` and `euclid-matrix` are deliberately absent: an entry here is
+# `euclid-quantity`, `euclid-scalar` and `euclid-matrix` are deliberately absent: an entry here is
 # for a dependency some *member* takes, and all three are leaves of the graph
 # above — they implement or extend the contract crates and nothing in the
 # workspace depends on them back. The folds left entries behind, which cargo

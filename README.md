@@ -69,13 +69,14 @@ sampler contract without shipping a PRNG.
 | physical dimensions and their cross-dimensional algebra | your own unit carriers |
 | the array and sampler contracts | concrete tensors and a PRNG |
 
-**Four crates in this repository are the other side of that table.** `oresme`
-*is* the `Meters` struct. `euclid-scalar` *is* the concrete `Copy` number line.
-`euclid-algebra` is the abstract-algebra tower and `euclid-matrix` is
-linear-algebra content over the tensor contract. They live here because each
-depends on nothing but euclid and nothing released them independently — but they
-are kept as separate crates precisely so the boundary above still holds: a
-consumer that takes `euclid-units` gets contracts only and never sees `oresme`.
+**Four crates in this repository are the other side of that table.**
+`euclid-quantity` *is* the `Meters` struct. `euclid-scalar` *is* the concrete
+`Copy` number line. `euclid-algebra` is the abstract-algebra tower and
+`euclid-matrix` is linear-algebra content over the tensor contract. They live
+here because each depends on nothing but euclid and nothing released them
+independently — but they are kept as separate crates precisely so the boundary
+above still holds: a consumer that takes `euclid-units` gets contracts only and
+never sees `euclid-quantity`.
 
 That distinction is the whole reason the crate list below is grouped rather
 than flat.
@@ -98,7 +99,7 @@ it uses. **There is no umbrella crate** — depend on the specific crates you ne
 ```
 euclid-numeric            no dependencies
 ├── euclid-units          → euclid-numeric
-│   └── oresme            → euclid-units, euclid-numeric
+│   └── euclid-quantity            → euclid-units, euclid-numeric
 ├── euclid-tensor         → euclid-numeric
 │   └── euclid-matrix     → euclid-tensor, euclid-numeric
 ├── euclid-random         → euclid-numeric
@@ -127,12 +128,12 @@ repositories because each depended on nothing but euclid.
 
 | crate | purpose |
 |-------|---------|
-| [`oresme`](crates/oresme) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
+| [`euclid-quantity`](crates/euclid-quantity) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
 | [`euclid-scalar`](crates/euclid-scalar) | the concrete `Copy` number line — `Real` and `Complex`, where the algebra tower and the analysis surface fuse |
 | [`euclid-algebra`](crates/euclid-algebra) | the abstract-algebra tower — the semiring/dioid trunk, the ring/field branch, and the exact carriers (`Rational`, `Zn`/`Zp`, `GaussianRational`) |
 | [`euclid-matrix`](crates/euclid-matrix) | matrix extensions beyond the rank contract — SPD, triangular solve, QR, eigen, SVD traits and the algorithms over them |
 
-Only `oresme` pulls a third-party dependency (`bytemuck` and `serde`), and that
+Only `euclid-quantity` pulls a third-party dependency (`bytemuck` and `serde`), and that
 cost is per-crate: a consumer of the contract crates still gets none.
 
 `euclid-utils` is a dev-only member — the four contract crates take it under
@@ -148,7 +149,7 @@ euclid-units = "0.3"     # add only what you use
 euclid-tensor = "0.3"
 euclid-random = "0.3"
 
-oresme = "0.3"           # concrete f64 quantities, if you need them
+euclid-quantity = "0.3"  # concrete f64 quantities, if you need them
 euclid-scalar = "0.3"    # the concrete Copy number line
 euclid-algebra = "0.3"   # the abstract-algebra tower
 euclid-matrix = "0.3"    # matrix extensions over the tensor contract
@@ -161,7 +162,8 @@ use euclid_numeric::Real;
 use euclid_units::Length;
 ```
 
-Each crate's README covers its own trait surface. Beyond the three rules above,
+Every published crate's README covers its own trait surface (`euclid-utils` is
+the dev-only member and has none). Beyond the three rules above,
 one habit matters: **choose the narrowest trait bound that contains the
 operations your formula needs** — `Ring` for `+ - *`, `Real` for
 transcendentals, `Compare` only when you need masks or `select`. The bound is
@@ -198,7 +200,16 @@ lint and demands `mod.rs`.
 Licensed under the [Apache License, Version 2.0](LICENSE).
 Copyright 2026 Raymond Mead.
 
+**Three crates are excepted.** `euclid-algebra`, `euclid-scalar` and
+`euclid-matrix` each declare `license = "Proprietary"` rather than inheriting
+the workspace's Apache-2.0. `euclid-algebra` and `euclid-matrix` arrived here
+from their own repositories, and `euclid-scalar` was split out of
+`euclid-algebra` — a move should not relicense code, and neither should a split.
+Everything else — the four contract crates, `euclid-quantity`, and the dev-only
+`euclid-utils` — takes `license.workspace = true` and is Apache-2.0.
+
 Apache-2.0 governs what a recipient may do with the code; it does not oblige
 anyone to publish it. Keeping this repository private is a separate, purely
 practical matter. Note the corollary: anyone who *does* receive it under
-Apache-2.0 holds an irrevocable right to redistribute it, publicly included.
+Apache-2.0 holds an irrevocable right to redistribute it, publicly included —
+which is exactly why the two proprietary crates are tracked separately above.

@@ -12,8 +12,9 @@ pub type Mask<Q> = <<Q as Measure>::Repr as Compare>::Mask;
 /// without requiring real-number algebra. That admits integer-backed quantities — byte sizes,
 /// counts, centisecond/decimeter storage, epoch timestamps — whose carrier is a [`Natural`] or
 /// [`Integer`] rather than a [`Real`], so they cannot be a [`Quantity`]. Every `Real`-backed
-/// `Measure` *is* a [`Quantity`] (and gains the scalar/linear/dimension contracts) through the
-/// blanket impl below.
+/// `Measure` *is* a [`Quantity`] through the blanket impl below, which is what makes it eligible
+/// for the scalar, linear, and dimension contracts — those stay opt-in per unit, each an empty
+/// impl block over defaults, so a unit claims only the behaviour it actually has.
 ///
 /// [`Natural`]: euclid_numeric::Natural
 /// [`Integer`]: euclid_numeric::Integer

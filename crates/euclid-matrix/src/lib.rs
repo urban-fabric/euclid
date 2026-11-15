@@ -7,7 +7,7 @@
 //! [`SingularValueDecomposition`] / [`GeneralSolve`] / [`Determinant`]). A backend
 //! (ramanujan eagerly, `maxwell`/XLA compiled) implements these for its concrete tensor
 //! type; this crate names the vocabulary plus the algorithms written once over it.
-//! Depends on **only `euclid`**.
+//! Depends on **only `euclid-tensor` and `euclid-numeric`**, and on nothing third-party.
 //!
 //! ```ignore
 //! use euclid_tensor::Tensor;
