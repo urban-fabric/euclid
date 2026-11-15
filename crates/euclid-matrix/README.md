@@ -1,6 +1,7 @@
 # euclid-matrix
 
-**The matrix extensions beyond euclid's rank contract.** Part of [euclid](../..).
+**The matrix extensions beyond euclid's rank contract — the vocabulary, not the
+algorithms.** Part of [euclid](../..).
 
 ```toml
 [dependencies]
@@ -11,19 +12,11 @@ euclid-numeric = "0.3"   # for the element trait bounds
 
 euclid 0.2 deliberately shed linear-algebra *content* from the tensor contract:
 `euclid-tensor` defines what a rank-n array **is** and stops there. This crate is
-the other half — the factorization and solve vocabulary a backend implements, plus
-the algorithms written once over that vocabulary.
+the other half — the factorization and solve vocabulary a backend implements.
 
 It names no backend. A backend supplies the concrete tensor type these
 monomorphize on — eagerly in `ramanujan`, compiled via XLA in `maxwell` — and
 this crate never depends on either.
-
-```rust,ignore
-use euclid_matrix::least_squares;
-
-// One source — runs on any Tensor backend, eager or compiled.
-let x = least_squares(a, b);
-```
 
 ## Rank, Not Separate Matrix and Vector Types
 
@@ -58,32 +51,30 @@ rather than being derivable from the rank contract:
 | `HermitianEigendecomposition` | `eigh` — `A = V diag(λ) Vᴴ`, eigenvalues ascending |
 | `SingularValueDecomposition` | `svd` — `A = U diag(σ) Vᴴ`, singular values descending |
 
-`MatrixTensor` (`Tensor + NormedDivisionAlgebra`) is the carrier bound the
-algorithms are generic over; it exists to keep the `where` clauses readable, not
+`MatrixTensor` (`Tensor + NormedDivisionAlgebra`) is the carrier bound these
+signatures are written over; it exists to keep the `where` clauses readable, not
 to add a requirement. `MatrixRealSpectrum` names the rank-1 eigenvalue/singular-value
 tensor, which is real by construction even for a complex matrix.
 `LazyDecompositions` is the blanket bundle of the five heavyweight traits, so a
 portable kernel needing only the SPD spine can stay on `SpdSolve`.
-
-## Algorithms
-
-Written once over the traits above — a backend gets these for free:
-
-| function | notes |
-|----------|-------|
-| `identity` | derived from the rank contract by one-hot-encoding `iota`, not asked of the backend, so every backend is correct by construction |
-| `adjoint` | `Aᴴ` — elementwise conjugation composed with an axis swap; the plain transpose for a real carrier |
-| `gram` | `AᴴA`. Forming it squares the condition number; prefer a QR path when available |
-| `least_squares` | `A·x ≈ B` via the normal equations through the SPD path — same condition-number caveat |
-| `spd_inverse` / `inverse` | `Σ \ I` and `A \ I`. Prefer *applying* an inverse via the solve traits to forming one |
-| `quadratic_form` | `xᴴAx`, real for Hermitian `A`. The real part is taken, not asserted — that is the documented contract |
-| `dominant_eigenvector` | power iteration for a **fixed** step count: a compiled backend cannot branch on a device value without a host sync this contract has no room for. Callers needing a tolerance iterate themselves |
 
 ## Not Here
 
 No concrete tensor type, no backend, and no Hermitian-positive-definiteness
 check — HPD-ness of an argument is the caller's precondition and implementors
 need not verify it.
+
+**No algorithms either, as of 0.3.** `identity`, `adjoint`, `gram`,
+`least_squares`, `spd_inverse`, `inverse`, `quadratic_form` and
+`dominant_eigenvector` used to live here, written once over the traits above.
+They were deleted rather than kept, because euclid holds only what the fleet
+must *agree* on: a Cholesky or a QR has many valid implementations, and choosing
+between a blocked, packed or GPU path is exactly what a backend is for. What must
+be agreed is the signature, which is what remains.
+
+The cost is real and accepted — two backends wanting `least_squares` now write it
+twice. The alternative was a shared algorithm that could not be tested without
+euclid shipping a tensor, and two tested implementations beat one untested one.
 
 ## License
 

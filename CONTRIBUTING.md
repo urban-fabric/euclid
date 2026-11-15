@@ -167,18 +167,18 @@ euclid ships contracts, so the usual question is not "does the code work" but
   (`euclid-tensor`), and the toy unit carriers in `euclid-units` exist so that
   every contract has at least one implementation proving it can be honored.
 
-  **One contract currently has none: `euclid-matrix`.** Its twelve traits and the
-  algorithms written over them have no reference carrier and no tests.
+  **One contract has none, for a reason that is now principled rather than
+  awkward: `euclid-matrix`.** Its twelve traits are backend primitives — a
+  Cholesky, a QR, an eigendecomposition — so the only thing that could satisfy
+  them is a concrete tensor, and euclid deliberately ships none. The matrix
+  kernels it used to carry were deleted in 0.3 rather than given a reference
+  carrier here, because that would have meant implementing Cholesky, LU and QR
+  for a tensor *inside* euclid.
 
-  Note what that does *not* argue for. The crate is roughly half trait surface
-  (~156 lines) and half matrix kernels (~126 lines: `least_squares`, `gram`,
-  `inverse`, `dominant_eigenvector`, …), and giving the kernels a reference
-  carrier here would mean implementing Cholesky, LU and QR for a tensor inside
-  euclid — pulling the repository *further* from being a skeleton of traits.
-  euclid holds **scalar** kernels on purpose, because a special function has one
-  right answer and needs a canonical home; matrix and tensor kernels belong with
-  a backend, where a concrete tensor already exists. The open question is where
-  these go, not how to test them in place.
+  The laws for those traits are still worth writing — `solve_spd(Σ, Σ·X)` must
+  recover `X` — but they can only be *run* by a backend. If they are added, they
+  belong in a `conformance` module like the others, shipped for a backend to
+  execute, with the understanding that euclid cannot exercise them itself.
 - **A law the trait implies** — add it to that crate's `conformance` module, not
   only to a test. A tier is a *claim*: `impl Semiring for MyThing {}` asserts
   that `⊗` distributes over `⊕`, and nothing in the type system checks it. The

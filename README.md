@@ -206,10 +206,10 @@ four rows are the four kinds of value from the top of this page:
 | arrays | [`euclid-tensor`](crates/euclid-tensor) | — *a backend supplies one* |
 | randomness | [`euclid-random`](crates/euclid-random) | — *a consumer supplies a PRNG* |
 | algebraic structure | [`euclid-algebra`](crates/euclid-algebra) | — |
-| linear-algebra content | — | [`euclid-matrix`](crates/euclid-matrix) |
+| matrix extensions | [`euclid-matrix`](crates/euclid-matrix) | — *a backend supplies one* |
 
 **Contracts** — write a formula against these and it runs on any carrier. All
-five are dependency-free in the sense that matters: nothing third-party.
+six are dependency-free in the sense that matters: nothing third-party.
 
 A contract crate is also where you find out whether your carrier *honors* it. A
 tier is a claim — `impl Semiring for MyThing {}` asserts that `⊗` distributes
@@ -231,6 +231,7 @@ crates are expected to follow.
 | [`euclid-units`](crates/euclid-units) | physical-dimension contracts over any `Real` carrier — SI base and derived quantities |
 | [`euclid-tensor`](crates/euclid-tensor) | the rank-graded `Tensor` contract, its capability extensions, and dtype/spec metadata |
 | [`euclid-random`](crates/euclid-random) | explicit-key random sampler contracts |
+| [`euclid-matrix`](crates/euclid-matrix) | matrix extensions beyond the rank contract — the SPD, triangular-solve, QR, eigen and SVD signatures a backend implements |
 | [`euclid-algebra`](crates/euclid-algebra) | the abstract-algebra tower — the semiring/dioid trunk, the ring/field branch, the semimodule action, the witnessed path algebras (min-plus, max-plus, widest-path), and the exact carriers (`Rational`, `Zn`/`Zp`, `GaussianRational`) |
 
 **Carriers** — the concrete side, which breaks the three rules on purpose.
@@ -239,15 +240,6 @@ crates are expected to follow.
 |-------|---------|
 | [`euclid-quantity`](crates/euclid-quantity) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
 | [`euclid-scalar`](crates/euclid-scalar) | the concrete `Copy` number line — `Real` and `Complex`, where the algebra tower and the analysis surface fuse |
-
-**Content** — algorithms written once over a contract, naming no backend.
-
-| crate | purpose |
-|-------|---------|
-| [`euclid-matrix`](crates/euclid-matrix) | matrix extensions beyond the rank contract — SPD, triangular solve, QR, eigen, SVD traits and the algorithms over them |
-
-This row is the one standing exception to the rule below, and is expected to
-shrink to its trait half.
 
 ### Which kernels euclid holds
 
@@ -270,9 +262,13 @@ gives the right one:
 Both are implementation. Only one requires agreement, which is why the rule is
 about agreement and not about traits.
 
-`euclid-matrix` sits across that line today: ~156 lines of traits, which belong
-here, and ~126 lines of matrix kernels (`least_squares`, `gram`, `inverse`,
-`dominant_eigenvector`, …), which belong with a backend.
+`euclid-matrix` used to sit across that line, holding ~126 lines of matrix
+kernels (`least_squares`, `gram`, `inverse`, `dominant_eigenvector`, …) beside
+its signatures. Those are gone; it is now vocabulary only, and a contract crate
+like the rest. An algorithm over those traits lives with a backend, so two
+backends wanting the same one write it twice — that is the cost of the boundary,
+and the right trade, since a shared algorithm that cannot be tested without
+euclid shipping a tensor is worse than two tested ones.
 
 Only `euclid-quantity` pulls a third-party dependency (`bytemuck` and `serde`),
 and that cost is per-crate: a consumer of the contract crates still gets none.
