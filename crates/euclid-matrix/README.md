@@ -3,12 +3,8 @@
 **The matrix extensions beyond euclid's rank contract — the vocabulary, not the
 algorithms.** Part of [euclid](../..).
 
-```toml
-[dependencies]
-euclid-matrix = "0.3"
-euclid-tensor = "0.3"    # the Tensor contract these extend
-euclid-numeric = "0.3"   # for the element trait bounds
-```
+These crates are not on crates.io. See [the root README](../../README.md#using-it)
+for the git dependency to add.
 
 euclid 0.2 deliberately shed linear-algebra *content* from the tensor contract:
 `euclid-tensor` defines what a rank-n array **is** and stops there. This crate is

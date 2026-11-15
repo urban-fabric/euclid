@@ -3,10 +3,8 @@
 **The concrete `Copy` number line, where euclid's algebra tower and analysis
 surface fuse.** Part of [euclid](../..).
 
-```toml
-[dependencies]
-euclid-scalar = "0.3"
-```
+These crates are not on crates.io. See [the root README](../../README.md#using-it)
+for the git dependency to add.
 
 euclid's contract crates deliberately say nothing about what a number *is*:
 `euclid-numeric`'s `Real` is implemented by `f64`, but equally by an expression

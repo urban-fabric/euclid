@@ -3,10 +3,8 @@
 Scalar numeric contracts — the foundation of [euclid](../..) and of the Urban
 Fabric numeric vocabulary. No dependencies.
 
-```toml
-[dependencies]
-euclid-numeric = "0.3"
-```
+These crates are not on crates.io. See [the root README](../../README.md#using-it)
+for the git dependency to add.
 
 ```rust
 use euclid_numeric::Real;

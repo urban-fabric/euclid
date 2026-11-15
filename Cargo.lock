@@ -24,11 +24,11 @@ dependencies = [
 
 [[package]]
 name = "euclid-algebra"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "euclid-matrix"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "euclid-numeric",
  "euclid-tensor",
@@ -36,14 +36,14 @@ dependencies = [
 
 [[package]]
 name = "euclid-numeric"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "euclid-utils",
 ]
 
 [[package]]
 name = "euclid-quantity"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bytemuck",
  "euclid-numeric",
@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-random"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "euclid-numeric",
  "euclid-utils",
@@ -62,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-scalar"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "euclid-algebra",
  "euclid-numeric",
@@ -70,7 +70,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-tensor"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "euclid-numeric",
  "euclid-utils",
@@ -78,14 +78,14 @@ dependencies = [
 
 [[package]]
 name = "euclid-units"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "euclid-numeric",
 ]
 
 [[package]]
 name = "euclid-utils"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "itoa"

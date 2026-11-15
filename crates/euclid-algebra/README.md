@@ -3,10 +3,8 @@
 **The abstract-algebra tower: which structure a carrier's `⊕` and `⊗` actually
 satisfy.** Part of [euclid](../..).
 
-```toml
-[dependencies]
-euclid-algebra = "0.3"
-```
+These crates are not on crates.io. See [the root README](../../README.md#using-it)
+for the git dependency to add.
 
 This crate has **no dependencies at all**. Algebraic structure needs nothing
 from analysis — it says which tier a carrier reaches, not what a formula may

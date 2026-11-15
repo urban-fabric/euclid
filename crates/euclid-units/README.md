@@ -3,11 +3,8 @@
 Physical-dimension contracts over any `Real` carrier — the units foundation for
 the Urban Fabric projects. Part of [euclid](../..).
 
-```toml
-[dependencies]
-euclid-units = "0.3"
-euclid-numeric = "0.3"   # for the Real carrier bound
-```
+These crates are not on crates.io. See [the root README](../../README.md#using-it)
+for the git dependency to add.
 
 This crate ships dimension *contracts*, not concrete unit types. It does not
 define a `Meters` or `Seconds` struct; a consumer defines its own unit carriers
