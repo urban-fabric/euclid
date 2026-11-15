@@ -13,6 +13,13 @@ description = "Backend-generic linear algebra traits and algorithms over euclid'
 [lib]
 path = "src/lib.rs"
 
+[features]
+# The laws for the primitives below, shipped for a *backend* to run. Unlike every other
+# conformance module in euclid this crate cannot execute them itself: the traits are
+# backend primitives, so only a concrete tensor can satisfy them, and euclid ships none.
+# Hence `feature` alone rather than `any(feature, test)` — there is no test here to serve.
+conformance = []
+
 [dependencies]
 # euclid-matrix is *content*: it names the matrix extensions beyond the rank
 # contract (`PreparedSpd`, `SpdFactor`, `TriangularSolve`, the decomposition

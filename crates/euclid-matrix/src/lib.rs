@@ -46,6 +46,9 @@
 //! Every square-matrix argument below is rank-2 and every vector argument rank-1 unless an
 //! item says otherwise; the bound cannot express that, so it is documented per item.
 
+#[cfg(feature = "conformance")]
+pub mod conformance;
+
 use euclid_numeric::{NormedDivisionAlgebra, Real};
 use euclid_tensor::Tensor;
 
