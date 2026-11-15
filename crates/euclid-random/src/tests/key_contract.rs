@@ -97,3 +97,20 @@ fn fold_in_over_a_loop_index_gives_distinct_keys() {
     let keys: HashSet<_> = (0..64).map(|i| S::fold_in(&root, i)).collect();
     assert_eq!(keys.len(), 64);
 }
+
+// --- the public conformance suites ----------------------------------------------------------
+//
+// The laws themselves are `crate::conformance`, which is public API a backend calls. Running
+// them here proves the suites are satisfiable, and that the reference backend satisfies them.
+// The tests above remain because they check properties of *this* key type — it happens to be
+// `Eq + Hash`, which the contract does not require and the generic suites cannot assume.
+
+#[test]
+fn toy_sampler_satisfies_the_key_laws() {
+    crate::conformance::key_laws::<ToySampler>(&[0, 1, 7, 42, 0xDEAD_BEEF], "ToySampler");
+}
+
+#[test]
+fn toy_sampler_satisfies_the_sampler_bound_laws() {
+    crate::conformance::sampler_bound_laws::<ToySampler>(&[0, 1, 7, 42], "ToySampler");
+}

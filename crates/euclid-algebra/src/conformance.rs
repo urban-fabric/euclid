@@ -19,6 +19,17 @@
 //! of having a shared vocabulary at all. The contract is not really complete until an
 //! implementor can ask whether they honored it.
 //!
+//! # Availability
+//!
+//! Gated behind the `conformance` feature, so a consumer that only writes formulas pays
+//! nothing for it, and always compiled under `cfg(test)` so this crate's own suites exercise
+//! the same code a carrier author calls.
+//!
+//! Note that these docs are the module's own (`//!`), with no outer `///` on the `mod`
+//! declaration. The two forms are concatenated, and an outer comment resolves its intra-doc
+//! links in the *parent's* scope — so a link to a function in here would silently fail to
+//! resolve from there. Keep the documentation inside the module.
+//!
 //! # How to use them
 //!
 //! Each function takes a **sample** of your carrier and a label for failure messages. The laws
@@ -35,7 +46,7 @@
 //! # What the laws cannot check
 //!
 //! A tier a carrier must *not* reach is enforced by the absent impl, not by these functions.
-//! `Zn<6>` has zero divisors so it must not be an [`IntegralDomain`];
+//! `Zn<6>` has zero divisors so it must not be an [`IntegralDomain`](crate::IntegralDomain);
 //! the type system is what guarantees that, and the closest a running check comes is
 //! demonstrating the witness pair yourself.
 //!

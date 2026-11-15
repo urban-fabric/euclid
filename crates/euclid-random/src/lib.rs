@@ -11,6 +11,9 @@
 //! a host-known `shape`. Scalar backends use `&[]`; array/dataframe backends can interpret
 //! non-empty shapes in their native way.
 
+#[cfg(any(feature = "conformance", test))]
+pub mod conformance;
+
 mod key;
 mod sampler;
 
