@@ -69,10 +69,11 @@ sampler contract without shipping a PRNG.
 | physical dimensions and their cross-dimensional algebra | your own unit carriers |
 | the array and sampler contracts | concrete tensors and a PRNG |
 
-**Three crates in this repository are the other side of that table.** `euclid-quantity`
-*is* the `Meters` struct. `euclid-algebra` *is* the concrete `Copy` number line.
-`euclid-matrix` is linear-algebra content over the tensor contract. They live here
-because each depends on nothing but euclid and nothing released them
+**Four crates in this repository are the other side of that table.**
+`euclid-quantity` *is* the `Meters` struct. `euclid-scalar` *is* the concrete
+`Copy` number line. `euclid-algebra` is the abstract-algebra tower and
+`euclid-matrix` is linear-algebra content over the tensor contract. They live
+here because each depends on nothing but euclid and nothing released them
 independently — but they are kept as separate crates precisely so the boundary
 above still holds: a consumer that takes `euclid-units` gets contracts only and
 never sees `euclid-quantity`.
@@ -102,8 +103,16 @@ euclid-numeric            no dependencies
 ├── euclid-tensor         → euclid-numeric
 │   └── euclid-matrix     → euclid-tensor, euclid-numeric
 ├── euclid-random         → euclid-numeric
-└── euclid-algebra        → euclid-numeric
+└── euclid-scalar         → euclid-numeric, euclid-algebra
+                                             ↑
+euclid-algebra            no dependencies ───┘
 ```
+
+There are **two roots**, not one. `euclid-algebra` is not a leaf of
+`euclid-numeric`: algebraic structure (which tier a carrier reaches) needs
+nothing from analysis (what operations a formula may use). The two foundations
+sit side by side and meet only in `euclid-scalar`, the one crate with two
+parents — which is exactly what that crate is for.
 
 **Contracts** — write a formula against these and it runs on any carrier.
 
@@ -120,15 +129,16 @@ repositories because each depended on nothing but euclid.
 | crate | purpose |
 |-------|---------|
 | [`euclid-quantity`](crates/euclid-quantity) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
-| [`euclid-algebra`](crates/euclid-algebra) | the concrete `Copy` number line (`Real`, `Complex`) plus the algebra tower and exact carriers (`Rational`, `Zn`, `GaussianRational`) |
+| [`euclid-scalar`](crates/euclid-scalar) | the concrete `Copy` number line — `Real` and `Complex`, where the algebra tower and the analysis surface fuse |
+| [`euclid-algebra`](crates/euclid-algebra) | the abstract-algebra tower — the semiring/dioid trunk, the ring/field branch, and the exact carriers (`Rational`, `Zn`/`Zp`, `GaussianRational`) |
 | [`euclid-matrix`](crates/euclid-matrix) | matrix extensions beyond the rank contract — SPD, triangular solve, QR, eigen, SVD traits and the algorithms over them |
 
 Only `euclid-quantity` pulls a third-party dependency (`bytemuck` and `serde`), and that
 cost is per-crate: a consumer of the contract crates still gets none.
 
-`euclid-utils` is a dev-only member — every crate takes it under
+`euclid-utils` is a dev-only member — the four contract crates take it under
 `[dev-dependencies]` for shared test helpers, and it is `publish = false`, so it
-never reaches a consumer.
+never reaches a consumer. The carrier and content crates do not use it.
 
 ## Using It
 
@@ -139,8 +149,9 @@ euclid-units = "0.3"     # add only what you use
 euclid-tensor = "0.3"
 euclid-random = "0.3"
 
-euclid-quantity = "0.3"           # concrete f64 quantities, if you need them
-euclid-algebra = "0.3"   # the concrete Copy number line
+euclid-quantity = "0.3"  # concrete f64 quantities, if you need them
+euclid-scalar = "0.3"    # the concrete Copy number line
+euclid-algebra = "0.3"   # the abstract-algebra tower
 euclid-matrix = "0.3"    # matrix extensions over the tensor contract
 ```
 
@@ -176,9 +187,9 @@ cargo test --doc --workspace
 
 Lints (`unsafe_code`, `unreachable_pub`, `unwrap_used`, `expect_used`, `panic`,
 `mod_module_files`) are declared once in `[workspace.lints]` at the root and
-inherited by each crate — including `euclid-algebra` and `euclid-matrix`, which arrived from
+inherited by each crate — including `euclid-algebra`, `euclid-scalar` and `euclid-matrix`, which arrived from
 their own repositories with a warn-level copy of the same table. Shared package
-metadata comes from `[workspace.package]`, so all eight crates version together.
+metadata comes from `[workspace.package]`, so all nine crates version together.
 
 `mod_module_files` means a module with children is `foo.rs` beside `foo/`, never
 `foo/mod.rs`. Note the near-miss: `self_named_module_files` is the *opposite*
@@ -189,10 +200,12 @@ lint and demands `mod.rs`.
 Licensed under the [Apache License, Version 2.0](LICENSE).
 Copyright 2026 Raymond Mead.
 
-**Two crates are excepted.** `euclid-algebra` and `euclid-matrix` each declare
-`license = "Proprietary"` rather than inheriting the workspace's Apache-2.0.
-Both arrived here from their own repositories, and a move should not relicense
-code. Everything else — the four contract crates, `oresme`, and the dev-only
+**Three crates are excepted.** `euclid-algebra`, `euclid-scalar` and
+`euclid-matrix` each declare `license = "Proprietary"` rather than inheriting
+the workspace's Apache-2.0. `euclid-algebra` and `euclid-matrix` arrived here
+from their own repositories, and `euclid-scalar` was split out of
+`euclid-algebra` — a move should not relicense code, and neither should a split.
+Everything else — the four contract crates, `euclid-quantity`, and the dev-only
 `euclid-utils` — takes `license.workspace = true` and is Apache-2.0.
 
 Apache-2.0 governs what a recipient may do with the code; it does not oblige

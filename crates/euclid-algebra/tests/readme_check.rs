@@ -1,13 +1,14 @@
-use euclid_algebra::Real;
+use euclid_algebra::Semiring;
 
-fn circle_area<T: Real>(r: T) -> T {
-    T::PI * r * r
+/// One routine, any semiring: ordinary arithmetic, min-plus, or boolean.
+fn fold<T: Semiring>(xs: &[T]) -> T {
+    xs.iter().copied().fold(T::ZERO, |acc, x| acc.add(x))
 }
 
 #[test]
 fn readme_example_compiles() {
-    let a = circle_area(2.0_f64);
-    let b = circle_area(2.0_f32);
-    assert!((a - 12.566370614359172).abs() < 1e-12);
-    assert!((b - 12.566371_f32).abs() < 1e-4);
+    // Ordinary arithmetic: `add` is `+`, `ZERO` is `0.0`.
+    assert_eq!(fold(&[1.0_f64, 2.0, 3.0]), 6.0);
+    assert_eq!(fold::<f64>(&[]), 0.0);
+    assert_eq!(fold(&[1.0_f32, 2.0, 3.0]), 6.0);
 }

@@ -1,19 +1,20 @@
-//! The concrete real number [`Real`] — euclid's `OrderedField` algebra fused with
-//! its analysis surface (euclid's own `Real`, imported as `LazyReal` here) into a
-//! `Copy` number on the real line, plus the
-//! `f64`/`f32` implementations.
+//! The concrete real number [`Real`] — [`euclid_algebra::OrderedField`] structure fused with
+//! [`euclid_numeric::Real`] analysis into a `Copy` number on the real line, plus the `f64`/`f32`
+//! implementations.
+//!
+//! Both supertraits are named by full path rather than imported. `euclid_numeric::Real` and this
+//! module's `Real` are different traits with the same name, and the path keeps them apart
+//! without the `LazyReal` alias the single-crate layout needed.
 
-use euclid_numeric::Real as LazyReal;
-
-/// A **concrete real number** — [`LazyReal`](euclid_numeric::Real) (the whole
+/// A **concrete real number** — [`euclid_numeric::Real`] (the whole
 /// elementwise analysis surface) plus the few things that only a concrete number on
 /// the real line can offer: the associated constants (`PI`, `TAU`, `EPSILON`,
 /// `INFINITY`, …) and the `bool`-returning predicates
 /// (`is_finite`/`is_nan`/`is_sign_negative`).
 ///
-/// This is **distinct from [`LazyReal`](euclid_numeric::Real)**, deliberately.
-/// `LazyReal` is the cross-backend analysis surface a *write-once* formula needs, so
-/// it lives in `euclid` and is implemented by `f64`/`f32` **and** non-`Copy`
+/// This is **distinct from [`euclid_numeric::Real`]**, deliberately.
+/// `euclid_numeric::Real` is the cross-backend analysis surface a *write-once* formula needs, so
+/// it lives in `euclid-numeric` and is implemented by `f64`/`f32` **and** non-`Copy`
 /// backends like a differentiable `Tensor`. The transcendentals, rounding, and
 /// `min`/`max`/`clamp` selectors all live there, because a tensor compiler can lower
 /// every one of them. `Real` keeps only what a tensor *cannot* produce — a single
@@ -24,14 +25,14 @@ use euclid_numeric::Real as LazyReal;
 ///
 /// It **fuses the two foundations** for the concrete reals: the algebraic structure
 /// (`+ - * /`, `ZERO`/`ONE`, `÷`, `conjugate`, the total order) comes from
-/// [`crate::algebra::OrderedField`]; the analysis
+/// [`euclid_algebra::OrderedField`]; the analysis
 /// (`scalar`/`exp`/`ln`/`sqrt`/trig/rounding/`min`/`max`/`clamp`) from
-/// [`LazyReal`](euclid_numeric::Real); this trait adds only the constants and
-/// predicates. `Real: LazyReal`, so a concrete `f64` also satisfies any write-once
-/// formula bounded on the lazy base.
+/// [`euclid_numeric::Real`]; this trait adds only the constants and
+/// predicates. `Real: euclid_numeric::Real`, so a concrete `f64` also satisfies any write-once
+/// formula bounded on the contract tier.
 pub trait Real:
-    crate::algebra::OrderedField
-    + LazyReal
+    euclid_algebra::OrderedField
+    + euclid_numeric::Real
     + Copy
     + core::ops::AddAssign
     + core::ops::SubAssign
@@ -42,7 +43,7 @@ pub trait Real:
 {
     /// Lift a real literal into the type (`f64` identity, `x as f32` for `f32`, the
     /// nearest representable for a decimal) — the concrete-tier spelling for
-    /// [`LazyReal::scalar`](euclid_numeric::Real::scalar).
+    /// [`euclid_numeric::Real::scalar`].
     #[inline]
     fn from_f64(x: f64) -> Self {
         Self::scalar(x)
@@ -82,11 +83,11 @@ pub trait Real:
     const MIN_POSITIVE: Self;
 
     // --- predicates ---
-    // The only methods that stay concrete-only: they return `bool`, which the lazy
+    // The only methods that stay concrete-only: they return `bool`, which the contract
     // tier cannot produce (a tensor comparison yields a mask, not a scalar bool).
     // The elementwise analysis (trig, rounding, `min`/`max`/`clamp`, …) lives on
-    // [`LazyReal`](euclid_numeric::Real) and is inherited here through
-    // `Real: LazyReal`.
+    // [`euclid_numeric::Real`] and is inherited here through
+    // `Real: euclid_numeric::Real`.
     fn is_finite(self) -> bool;
     fn is_nan(self) -> bool;
     fn is_sign_negative(self) -> bool;
@@ -159,10 +160,9 @@ impl Real for f32 {
 #[cfg(test)]
 mod tests {
     use super::Real;
-    use euclid_numeric::Real as LazyReal;
 
     /// A point on the unit circle — written once over the fused [`Real`] trait,
-    /// which carries the algebra (operators, `ONE`), the analysis (`LazyReal`), and
+    /// which carries the algebra (operators, `ONE`), the analysis (`euclid_numeric::Real`), and
     /// the concrete real API (`sin_cos`/`PI`) through a single bound.
     fn unit_circle_point<T: Real>(theta: T) -> (T, T) {
         let (s, c) = theta.sin_cos();
@@ -174,11 +174,13 @@ mod tests {
         // The fused trait at f64: trig + the `PI` constant.
         let (x, y) = unit_circle_point(f64::PI);
         assert!((x + 1.0).abs() < 1e-12 && y.abs() < 1e-12);
-        // ...and at f32, mixing analysis (`hypot`, inherited from `LazyReal`) with
+        // ...and at f32, mixing analysis (`hypot`, inherited from `euclid_numeric::Real`) with
         // the algebra identity `ONE` and the concrete `Real` constants.
         assert!((3.0_f32.hypot(4.0) - 5.0).abs() < 1e-5);
-        assert_eq!(<f32 as crate::algebra::HasOne>::ONE, 1.0);
-        assert_eq!(f64::e(), <f64 as Real>::E);
+        assert_eq!(<f32 as euclid_algebra::HasOne>::ONE, 1.0);
+        // Both `Real`s at once: the analysis `e()` and this crate's constant `E`. Naming
+        // euclid-numeric's by path is what lets the two coexist without an import alias.
+        assert_eq!(<f64 as euclid_numeric::Real>::e(), <f64 as Real>::E);
         assert_eq!(<f32 as Real>::TWO, 2.0);
     }
 
@@ -188,7 +190,7 @@ mod tests {
         assert!(<f64 as Real>::NAN.is_nan());
         assert!((-1.0_f64).is_sign_negative());
         assert!((<f64 as Real>::PI - core::f64::consts::PI).abs() < 1e-15);
-        // `from_f64` is the concrete-tier spelling of `LazyReal::scalar`.
+        // `from_f64` is the concrete-tier spelling of `euclid_numeric::Real::scalar`.
         assert_eq!(<f64 as Real>::from_f64(2.5), 2.5);
         assert_eq!(<f32 as Real>::from_f64(2.5), 2.5_f32);
     }

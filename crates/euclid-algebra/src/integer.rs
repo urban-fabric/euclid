@@ -9,7 +9,7 @@
 //! crate that owns that trait. Integers are rings, not fields (no conjugate, no field
 //! division).
 
-use crate::algebra::EuclideanDomain;
+use crate::EuclideanDomain;
 
 /// A ring of integers: a totally-ordered [`EuclideanDomain`] with gcd and the *exact*
 /// division the fraction-free algorithms rely on. Implemented for `i64` and `i128`.

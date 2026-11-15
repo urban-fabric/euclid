@@ -6,6 +6,7 @@ members = [
     "crates/euclid-numeric",
     "crates/euclid-quantity",
     "crates/euclid-random",
+    "crates/euclid-scalar",
     "crates/euclid-tensor",
     "crates/euclid-units",
     "crates/euclid-utils",
@@ -22,10 +23,16 @@ members = [
 #       ├── euclid-tensor
 #       │     └── euclid-matrix
 #       ├── euclid-random
-#       └── euclid-algebra
+#       └── euclid-scalar ──┐
+#                           │
+#     euclid-algebra  (no dependencies, and the other half of euclid-scalar)
 #
-# Three members are not plain contract crates. Two are *carrier* tiers —
-# concrete types implementing the contracts above — and one is *content*:
+# Note that euclid-algebra is a *second root*, not a leaf of euclid-numeric.
+# Algebraic structure needs nothing from analysis, so the two foundations sit
+# side by side and meet only in euclid-scalar — the one member with two parents.
+#
+# Four members are not plain contract crates: two are *carrier* tiers —
+# concrete types implementing the contracts above — and two are *content*:
 #
 #   `euclid-quantity` is the concrete f64 unit carrier. It is the one member that is not
 #   dependency-free: it carries `bytemuck` (Pod/Zeroable storage wrappers) and
@@ -33,9 +40,18 @@ members = [
 #   `euclid-numeric` or `euclid-units` still gets no third-party edges. Only a
 #   consumer that asks for `euclid-quantity` pays for them.
 #
-#   `euclid-algebra` is the concrete Copy scalar carrier: the `Real` and
+#   `euclid-scalar` is the concrete Copy scalar carrier: the `Real` and
 #   `Complex` numbers where the algebra tower and the numeric analysis surface
-#   fuse. It depends on euclid-numeric alone and adds nothing third-party.
+#   fuse. It adds nothing third-party.
+#
+#   `euclid-algebra` is the abstract-algebra tower itself — the semiring/dioid
+#   trunk, the ring/field numeric branch, and the exact carriers (Rational,
+#   Zn/Zp, GaussianRational). Content rather than contract, and dependency-free.
+#   Through 0.3 it held the tower *and* the concrete tier above, which is why it
+#   used to depend on euclid-numeric and to import `Real`/`Complex` under
+#   `LazyReal`/`LazyComplex` aliases, dodging a collision with its own
+#   same-named traits. Splitting euclid-scalar out removed the dependency, the
+#   aliases and the collision together, and left the two goals in two crates.
 #
 #   `euclid-matrix` is the matrix extensions beyond the rank contract — the SPD,
 #   triangular-solve, QR, eigen and SVD traits plus the algorithms written once
@@ -45,7 +61,9 @@ members = [
 #   separate crate, not something merged back into euclid-tensor. What changed
 #   is only the repository boundary, not the crate boundary.
 #
-# All three lived in their own repositories until they were folded back here,
+# oresme, euclid-algebra and euclid-matrix lived in their own repositories
+# until they were folded back here (euclid-scalar was carved out of
+# euclid-algebra later, and was never its own repository),
 # and in every case the split was historical rather than architectural: each
 # exists to implement or extend euclid's contracts, each depended on nothing but
 # euclid crates, and each cost git dependency edges plus a second merge to
@@ -66,8 +84,10 @@ members = [
 # is `<repo>-<role>` — so a `euclid-*` member carrying a mathematician's name
 # was always a leftover from its own repository rather than a naming choice.
 #
-# euclid-utils is a dev-only member: every crate uses it under [dev-dependencies] for
-# shared test helpers, and it is publish = false, so it never reaches a consumer.
+# euclid-utils is a dev-only member: the four contract crates use it under
+# [dev-dependencies] for shared test helpers, and it is publish = false, so it never
+# reaches a consumer. The carrier and content crates (euclid-quantity,
+# euclid-scalar, euclid-algebra, euclid-matrix) do not take it.
 
 [workspace.package]
 version = "0.3.0"
@@ -79,12 +99,16 @@ repository = "https://github.com/urban-fabric/euclid"
 
 [workspace.dependencies]
 euclid-numeric = { version = "0.3.0", path = "crates/euclid-numeric" }
+# The algebra tower that `euclid-scalar` fuses with the analysis surface above.
+# Declared here now that a member depends on it; it was deliberately absent while
+# nothing in the workspace did.
+euclid-algebra = { version = "0.3.0", path = "crates/euclid-algebra" }
 # The dimension contracts `euclid-quantity` implements. Declared here now that a member
 # crate depends on it rather than only consumers outside the workspace.
 euclid-units = { version = "0.3.0", path = "crates/euclid-units" }
 # The rank-n Tensor contract that `euclid-matrix` extends.
 euclid-tensor = { version = "0.3.0", path = "crates/euclid-tensor" }
-# `euclid-quantity`, `euclid-algebra` and `euclid-matrix` are deliberately absent: an entry here is
+# `euclid-quantity`, `euclid-scalar` and `euclid-matrix` are deliberately absent: an entry here is
 # for a dependency some *member* takes, and all three are leaves of the graph
 # above — they implement or extend the contract crates and nothing in the
 # workspace depends on them back. The folds left entries behind, which cargo

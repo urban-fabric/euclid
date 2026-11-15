@@ -25,9 +25,6 @@ dependencies = [
 [[package]]
 name = "euclid-algebra"
 version = "0.3.0"
-dependencies = [
- "euclid-numeric",
-]
 
 [[package]]
 name = "euclid-matrix"
@@ -61,6 +58,14 @@ version = "0.3.0"
 dependencies = [
  "euclid-numeric",
  "euclid-utils",
+]
+
+[[package]]
+name = "euclid-scalar"
+version = "0.3.0"
+dependencies = [
+ "euclid-algebra",
+ "euclid-numeric",
 ]
 
 [[package]]
