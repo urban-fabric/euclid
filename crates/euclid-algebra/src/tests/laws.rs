@@ -216,6 +216,10 @@ impl AssociativeMultiplication for Reach {}
 impl CommutativeMultiplication for Reach {}
 impl Distributive for Reach {}
 impl ZeroAnnihilatesMultiplication for Reach {}
+// `∧` is monotone for the canonical order: `a ⪯ b` means `b → a`, and `b ∧ c → a ∧ c`
+// follows, so conjunction cannot reorder two ordered values. That makes Reach an
+// `OrderedSemiring` as well as a `Dioid`.
+impl MonotoneMultiplication for Reach {}
 impl Absorptive for Reach {}
 
 #[test]
@@ -230,4 +234,24 @@ fn boolean_dioid_satisfies_the_dioid_star_and_order_laws() {
     // Canonical order: reachable (true) precedes unreachable (false).
     assert!(Reach(true).precedes(Reach(false)));
     assert!(!Reach(false).precedes(Reach(true)));
+}
+
+#[test]
+fn every_semiring_is_a_semimodule_over_itself() {
+    // The blanket impl, checked on three carriers with different `⊕`: ordinary addition, the
+    // boolean `∨`, and modular addition. `scale` is `⊗` in each case.
+    laws::left_semimodule_laws(&I64S, &I64S, "i64 over itself");
+
+    let bs = [Reach(false), Reach(true)];
+    laws::left_semimodule_laws(&bs, &bs, "Reach over itself");
+
+    let zs = [Zn::<6>::new(0), Zn::<6>::new(1), Zn::<6>::new(5)];
+    laws::left_semimodule_laws(&zs, &zs, "Zn<6> over itself");
+}
+
+#[test]
+fn the_boolean_dioid_is_an_ordered_semiring() {
+    // Monotonicity is what makes a relaxation step sound: extending two ordered partial results
+    // by the same factor must not reorder them.
+    laws::ordered_semiring_laws(&[Reach(false), Reach(true)], "Reach");
 }

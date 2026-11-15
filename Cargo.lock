@@ -81,7 +81,6 @@ name = "euclid-units"
 version = "0.3.0"
 dependencies = [
  "euclid-numeric",
- "euclid-utils",
 ]
 
 [[package]]
