@@ -14,11 +14,14 @@
 //!
 //! - [`toy_units`] — the toy carrier family and its dimension-trait implementations.
 //! - [`algebra`] — value-level tests of the cross-dimensional algebra over those carriers.
+//! - [`defaults`] — the [`ScalarQuantity`](crate::ScalarQuantity) /
+//!   [`LinearQuantity`](crate::LinearQuantity) default bodies, which every carrier now shares.
 //! - [`dim`] — the type-level `dim` markers and the [`Dimensioned`](crate::Dimensioned)
 //!   bridge. The *compile-time* half of that contract is covered by `compile_fail` doctests
 //!   on [`Dimensioned`](crate::Dimensioned) itself, since a test that must not compile cannot
 //!   be expressed as a running test.
 
 mod algebra;
+mod defaults;
 mod dim;
 mod toy_units;
