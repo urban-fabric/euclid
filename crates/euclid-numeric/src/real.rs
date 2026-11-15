@@ -254,15 +254,47 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     // --- trigonometry ---
     // Elementwise transcendentals; taken by value so carrier handles can move cheaply while
     // `Clone` remains available when a formula needs to keep the input.
+    /// Sine of an angle in **radians**. For degrees use [`sin_cos_degrees`](Self::sin_cos_degrees),
+    /// which is exact on the quadrant boundaries where converting first is not.
     fn sin(self) -> Self;
+    /// Cosine of an angle in radians.
     fn cos(self) -> Self;
+    /// Tangent of an angle in radians.
+    ///
+    /// Unbounded near odd multiples of `π/2` and **not** required to return a non-finite value
+    /// there: `π/2` is not representable, so the argument is never exactly the pole and the
+    /// result is merely large. A kernel that needs the asymptote must test for it itself.
     fn tan(self) -> Self;
+    /// Arcsine, returning `[−π/2, π/2]`. Outside the domain `[−1, 1]` the result is `NaN`.
+    ///
+    /// The domain check matters more than it looks: a value that *should* be in range can leave
+    /// it by a rounding step — a normalised dot product computing to `1.0000000000000002` — and
+    /// then this returns `NaN` rather than `π/2`. Clamp before calling if the input is computed.
     fn asin(self) -> Self;
+    /// Arccosine, returning `[0, π]`. `NaN` outside `[−1, 1]`; see [`asin`](Self::asin) on why a
+    /// computed argument should be clamped first.
     fn acos(self) -> Self;
+    /// Arctangent, returning `(−π/2, π/2)`. Single-argument, so it cannot recover the quadrant —
+    /// use [`atan2`](Self::atan2) when both components are available.
     fn atan(self) -> Self;
+    /// Four-quadrant arctangent of `self / x`, returning `(−π, π]`.
+    ///
+    /// **`self` is the numerator** — the `y` of `atan2(y, x)` — so `y.atan2(x)` is the call, and
+    /// reading it as `x.atan2(y)` is the mistake this sentence exists to prevent. It is not
+    /// symmetric and the error is a reflection about the diagonal, which looks plausible.
+    ///
+    /// The signed-zero conventions are IEEE-754's and a carrier is expected to follow them,
+    /// because a bearing computed near an axis depends on them: `atan2(+0, −1)` is `+π` while
+    /// `atan2(−0, −1)` is `−π`.
     fn atan2(self, x: Self) -> Self;
+    /// Hyperbolic sine. Overflows to `±∞` for arguments past about `±710` at `f64`.
     fn sinh(self) -> Self;
+    /// Hyperbolic cosine. Even, and overflows to `+∞` on the same scale as
+    /// [`sinh`](Self::sinh).
     fn cosh(self) -> Self;
+    /// Hyperbolic tangent, saturating to `±1`. Reaches exactly `±1` well before overflow would
+    /// matter, so a formula dividing by `1 − tanh(x)²` must guard rather than rely on it being
+    /// nonzero.
     fn tanh(self) -> Self;
     /// Inverse hyperbolic sine.
     fn asinh(self) -> Self;
@@ -324,6 +356,8 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     // --- powers / roots ---
     /// `√(self² + other²)` without intermediate overflow.
     fn hypot(self, other: Self) -> Self;
+    /// Cube root, **defined for negative arguments** — unlike `powf(1.0/3.0)`, which is `NaN`
+    /// there because a fractional power of a negative base is not real.
     fn cbrt(self) -> Self;
     /// Integer power, `self^n` — exact repeated multiplication, defined for negative bases
     /// (unlike [`powf`](Self::powf)). The exponent is a value of the [`Integer`](Self::Integer)
@@ -332,29 +366,73 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     fn powi(self, n: Self::Integer) -> Self;
     /// `self * a + b` (fused where the target supports it).
     fn mul_add(self, a: Self, b: Self) -> Self;
+    /// `1 / self`. `±∞` at `±0` rather than an error, per IEEE-754.
+    ///
+    /// One rounding, where `ONE / x` is also one rounding but through the division path; the two
+    /// agree on a host float and a carrier is not required to make them bit-identical.
     fn recip(self) -> Self;
+    /// Base-2 logarithm. Exact at powers of two, which is why it is worth having beside
+    /// `ln(x) / ln(2)` — that form is not.
     fn log2(self) -> Self;
 
     // --- rounding / sign ---
+    /// Largest integer `≤ self`. Towards `−∞`, so `(-2.5).floor()` is `-3`.
     fn floor(self) -> Self;
+    /// Smallest integer `≥ self`. Towards `+∞`, so `(-2.5).ceil()` is `-2`.
     fn ceil(self) -> Self;
+    /// Nearest integer, **halfway cases away from zero**: `2.5` rounds to `3` and `-2.5` to
+    /// `-3`.
+    ///
+    /// Stated because it is the one rounding convention backends genuinely differ on. This is
+    /// Rust's and C's `round`; IEEE-754's default mode and NumPy's `rint` instead round half to
+    /// *even*, giving `2` for `2.5`. A histogram or a quantile boundary built on the wrong
+    /// assumption is off by one bucket on exactly the inputs that land on a boundary, which is
+    /// the set a test fixture is most likely to use.
     fn round(self) -> Self;
+    /// Integer part, discarding the fraction — towards **zero**, so `(-2.7).trunc()` is `-2`
+    /// where [`floor`](Self::floor) gives `-3`. The two agree only on non-negative input.
     fn trunc(self) -> Self;
+    /// `self − self.trunc()`, so the sign follows `self`: `(-2.7).fract()` is `-0.7`.
+    ///
+    /// Not the least non-negative residue — for that use [`rem_euclid`](Self::rem_euclid), which
+    /// is what a periodic reduction wants.
     fn fract(self) -> Self;
+    /// `1` for a positive value, `-1` for a negative one, `NaN` for `NaN`.
+    ///
+    /// Note what it does **not** return: zero at zero. Both signed zeroes carry a sign, so
+    /// `(0.0).signum()` is `1` and `(-0.0).signum()` is `-1`, and a branch written as
+    /// `if x.signum() == 0.0` is dead code.
     fn signum(self) -> Self;
+    /// `self` with the sign bit of `sign`. Transfers the sign of a zero or a `NaN` too, which is
+    /// what makes it the right tool for reconstructing a sign through an even computation.
     fn copysign(self, sign: Self) -> Self;
     /// Least non-negative residue of `self mod m`.
     fn rem_euclid(self, m: Self) -> Self;
 
     // --- angles ---
+    /// Degrees to radians, `self · π/180`.
+    ///
+    /// Lossy at the quadrant boundaries and unavoidably so: `90f64.to_radians()` is the nearest
+    /// `f64` to `π/2`, not `π/2`, so its cosine is `6.1e-17` rather than zero. Where that
+    /// matters, reduce in degrees instead — [`sin_cos_degrees`](Self::sin_cos_degrees) exists
+    /// for exactly this.
     fn to_radians(self) -> Self;
+    /// Radians to degrees, `self · 180/π`.
     fn to_degrees(self) -> Self;
 
     // --- elementwise select (NaN-aware on the concrete reals) ---
     // Comparison-free selectors for min/max/clamp-shaped piecewise kernels. NaN-awareness
     // here is about the *value* `self`: the concrete `f64`/`f32` `min`/`max` return the
     // non-NaN operand, and `clamp` preserves a NaN value — not about the `clamp` bounds.
+    /// The smaller of the two, **ignoring a `NaN` operand**: `NaN.min(3)` and `3f64.min(NaN)`
+    /// are both `3`.
+    ///
+    /// That is IEEE-754's `minNum` and the opposite of a comparison-based `if a < b`, which
+    /// propagates the `NaN`. The behaviour is the reason to reach for this rather than a
+    /// comparison — a reduction over a column with one missing value still produces an answer —
+    /// and also the reason not to, if a `NaN` should poison the result instead.
     fn min(self, other: Self) -> Self;
+    /// The larger of the two, ignoring a `NaN` operand. See [`min`](Self::min).
     fn max(self, other: Self) -> Self;
     /// Clamp `self` into `[lo, hi]`.
     ///

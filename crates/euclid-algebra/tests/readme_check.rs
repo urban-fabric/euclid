@@ -1,3 +1,10 @@
+//! The README's example, compiled.
+//!
+//! A crate whose deliverable is its trait surface has a README whose example *is* part of that
+//! surface, and a README example that no longer compiles is worse than none — it documents a
+//! signature the crate no longer has. Keeping it here as a test means a rename breaks the build
+//! rather than quietly invalidating the front page.
+
 use euclid_algebra::Semiring;
 
 /// One routine, any semiring: ordinary arithmetic, min-plus, or boolean.

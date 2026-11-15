@@ -1,3 +1,6 @@
+//! The README's example, compiled. See `euclid-algebra`'s peer of this file for why a README
+//! example is kept as a test rather than trusted.
+
 use euclid_scalar::Real;
 
 fn circle_area<T: Real>(r: T) -> T {

@@ -20,6 +20,10 @@ pub trait Tensor: Clone {
     /// The axis lengths, returned owned — a tensor's shape may be dynamic metadata an implementation
     /// computes, not necessarily a stored slice.
     fn shape(&self) -> Vec<usize>;
+    /// Number of axes, i.e. `shape().len()`.
+    ///
+    /// Defaulted through [`shape`](Self::shape); override it if the carrier knows its rank
+    /// without computing a shape, which a statically-ranked backend does.
     fn rank(&self) -> usize {
         self.shape().len()
     }
@@ -178,6 +182,12 @@ pub trait Tensor: Clone {
         Self: Ring;
 
     // --- reductions over the given axes ---
+    /// Sum over `axes`, which are **removed** from the result.
+    ///
+    /// An empty `axes` reduces over *every* axis to a rank-0 tensor — the only way this
+    /// signature can express a full reduction, and the convention the rest of the reduction
+    /// family follows. Summation order is unspecified, so a backend may reassociate and the
+    /// result is not bit-reproducible across backends for a float carrier.
     fn sum(self, axes: &[usize]) -> Self
     where
         Self: Ring;
