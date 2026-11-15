@@ -16,33 +16,101 @@
 //! zero-divisor pair which is why `Zn` must not reach `IntegralDomain`.
 
 use super::*;
-use crate::conformance as laws;
+use crate::conformance::{self as laws, ConformanceSample};
 
-/// `0`, `1`, a negative, and values that are not round numbers — enough to catch a dropped
-/// sign or a mis-ordered operand.
-const I64S: [i64; 6] = [0, 1, -1, 7, -3, 12];
+// Each carrier declares the values that stress *it*, once, and every suite draws from here.
+// Adding a suite to `conformance` then covers all of these without touching this file.
+
+impl ConformanceSample for i64 {
+    /// `0`, `1`, a negative, and values that are not round numbers — enough to catch a dropped
+    /// sign or a mis-ordered operand.
+    fn sample() -> Vec<Self> {
+        vec![0, 1, -1, 7, -3, 12]
+    }
+}
+
+impl ConformanceSample for Rational64 {
+    fn sample() -> Vec<Self> {
+        vec![
+            Self::integer(0),
+            Self::integer(1),
+            Self::new(-1, 2),
+            Self::new(3, 4),
+            Self::new(-7, 3),
+            Self::new(5, 1),
+        ]
+    }
+}
+
+impl ConformanceSample for Zp<7> {
+    /// Residues around the modulus: `0`, `1`, the largest, a middling one, and two that need
+    /// reducing on the way in — from both directions.
+    fn sample() -> Vec<Self> {
+        vec![
+            Self::new(0),
+            Self::new(1),
+            Self::new(3),
+            Self::new(6),
+            Self::from_i64(-1),
+            Self::new(9),
+        ]
+    }
+}
+
+impl ConformanceSample for Zn<6> {
+    fn sample() -> Vec<Self> {
+        vec![
+            Self::new(0),
+            Self::new(1),
+            Self::new(2),
+            Self::new(3),
+            Self::new(5),
+            Self::from_i64(-1),
+        ]
+    }
+}
+
+impl ConformanceSample for GaussianRational {
+    fn sample() -> Vec<Self> {
+        let q = Rational128::new;
+        vec![
+            Self::integer(0),
+            Self::integer(1),
+            Self::new(q(1, 2), q(1, 2)),
+            Self::new(q(-3, 4), q(5, 4)),
+            Self::new(q(0, 1), q(1, 1)), // i
+            Self::new(q(2, 1), q(-1, 1)),
+        ]
+    }
+}
+
+impl ConformanceSample for f64 {
+    /// Dyadic rationals only: exactly representable, so the field laws hold without a
+    /// tolerance. `f64`'s inexactness is euclid-numeric's subject, not the tower's.
+    fn sample() -> Vec<Self> {
+        vec![0.0, 1.0, -1.0, 0.5, -2.5, 4.0]
+    }
+}
+
+impl ConformanceSample for f32 {
+    fn sample() -> Vec<Self> {
+        vec![0.0, 1.0, -1.0, 0.5, -2.5, 4.0]
+    }
+}
 
 #[test]
 fn integers_satisfy_semiring_ring_and_euclidean_laws() {
-    laws::commutative_semiring_laws(&I64S, "i64");
-    laws::ring_laws(&I64S, "i64");
-    laws::euclidean_laws(&I64S, "i64");
+    laws::commutative_semiring_laws_for::<i64>("i64");
+    laws::ring_laws_for::<i64>("i64");
+    laws::euclidean_laws_for::<i64>("i64");
 }
 
 #[test]
 fn rationals_satisfy_the_field_laws() {
-    let xs = [
-        Rational64::integer(0),
-        Rational64::integer(1),
-        Rational64::new(-1, 2),
-        Rational64::new(3, 4),
-        Rational64::new(-7, 3),
-        Rational64::new(5, 1),
-    ];
-    laws::commutative_semiring_laws(&xs, "Rational64");
-    laws::ring_laws(&xs, "Rational64");
-    laws::field_laws(&xs, "Rational64");
-    laws::euclidean_laws(&xs, "Rational64");
+    laws::commutative_semiring_laws_for::<Rational64>("Rational64");
+    laws::ring_laws_for::<Rational64>("Rational64");
+    laws::field_laws_for::<Rational64>("Rational64");
+    laws::euclidean_laws_for::<Rational64>("Rational64");
 }
 
 #[test]
@@ -84,24 +152,16 @@ fn rationals_are_always_in_lowest_terms() {
 fn zp_is_a_field_for_a_prime_modulus() {
     // Residues around the modulus: 0, 1, the largest residue, and a middling one. 7 is prime,
     // so every nonzero residue must invert.
-    let xs = [
-        Zp::<7>::new(0),
-        Zp::<7>::new(1),
-        Zp::<7>::new(3),
-        Zp::<7>::new(6),
-        Zp::<7>::from_i64(-1),
-        Zp::<7>::new(9),
-    ];
-    laws::commutative_semiring_laws(&xs, "Zp<7>");
-    laws::ring_laws(&xs, "Zp<7>");
-    laws::field_laws(&xs, "Zp<7>");
+    laws::commutative_semiring_laws_for::<Zp<7>>("Zp<7>");
+    laws::ring_laws_for::<Zp<7>>("Zp<7>");
+    laws::field_laws_for::<Zp<7>>("Zp<7>");
 
     // Reduction happens on construction, from both directions.
     assert_eq!(Zp::<7>::new(9).value(), 2);
     assert_eq!(Zp::<7>::from_i64(-1).value(), 6);
 
     // The dedicated Fermat `inverse` must agree with the general `ONE / a`.
-    for &a in &xs {
+    for a in <Zp<7> as ConformanceSample>::sample() {
         if a != Zp::<7>::ZERO {
             assert_eq!(a.inverse(), Zp::<7>::ONE / a, "inverse agrees with 1/a");
             assert_eq!(a * a.inverse(), Zp::<7>::ONE);
@@ -111,16 +171,8 @@ fn zp_is_a_field_for_a_prime_modulus() {
 
 #[test]
 fn zn_satisfies_the_ring_laws_for_a_composite_modulus() {
-    let xs = [
-        Zn::<6>::new(0),
-        Zn::<6>::new(1),
-        Zn::<6>::new(2),
-        Zn::<6>::new(3),
-        Zn::<6>::new(5),
-        Zn::<6>::from_i64(-1),
-    ];
-    laws::commutative_semiring_laws(&xs, "Zn<6>");
-    laws::ring_laws(&xs, "Zn<6>");
+    laws::commutative_semiring_laws_for::<Zn<6>>("Zn<6>");
+    laws::ring_laws_for::<Zn<6>>("Zn<6>");
     assert_eq!(Zn::<6>::from_i64(-1).value(), 5);
 }
 
@@ -142,18 +194,9 @@ fn zn_composite_has_zero_divisors() {
 
 #[test]
 fn gaussian_rationals_satisfy_the_field_laws() {
-    let q = Rational128::new;
-    let xs = [
-        GaussianRational::integer(0),
-        GaussianRational::integer(1),
-        GaussianRational::new(q(1, 2), q(1, 2)),
-        GaussianRational::new(q(-3, 4), q(5, 4)),
-        GaussianRational::new(q(0, 1), q(1, 1)), // i
-        GaussianRational::new(q(2, 1), q(-1, 1)),
-    ];
-    laws::commutative_semiring_laws(&xs, "GaussianRational");
-    laws::ring_laws(&xs, "GaussianRational");
-    laws::field_laws(&xs, "GaussianRational");
+    laws::commutative_semiring_laws_for::<GaussianRational>("GaussianRational");
+    laws::ring_laws_for::<GaussianRational>("GaussianRational");
+    laws::field_laws_for::<GaussianRational>("GaussianRational");
 }
 
 #[test]
@@ -177,15 +220,13 @@ fn floats_satisfy_the_field_laws_on_exact_binary_values() {
     // Dyadic rationals only: these are represented exactly, so the field laws hold without a
     // tolerance. The inexact behaviour of `f64` is euclid-numeric's subject, not this crate's —
     // here the question is only whether the tower's axioms are wired up correctly.
-    let xs = [0.0_f64, 1.0, -1.0, 0.5, -2.5, 4.0];
-    laws::commutative_semiring_laws(&xs, "f64");
-    laws::ring_laws(&xs, "f64");
-    laws::field_laws(&xs, "f64");
+    laws::commutative_semiring_laws_for::<f64>("f64");
+    laws::ring_laws_for::<f64>("f64");
+    laws::field_laws_for::<f64>("f64");
 
-    let xs32 = [0.0_f32, 1.0, -1.0, 0.5, -2.5, 4.0];
-    laws::commutative_semiring_laws(&xs32, "f32");
-    laws::ring_laws(&xs32, "f32");
-    laws::field_laws(&xs32, "f32");
+    laws::commutative_semiring_laws_for::<f32>("f32");
+    laws::ring_laws_for::<f32>("f32");
+    laws::field_laws_for::<f32>("f32");
 }
 
 /// A minimal idempotent dioid (boolean reachability), exercising the dioid, star and canonical
@@ -240,7 +281,11 @@ fn boolean_dioid_satisfies_the_dioid_star_and_order_laws() {
 fn every_semiring_is_a_semimodule_over_itself() {
     // The blanket impl, checked on three carriers with different `⊕`: ordinary addition, the
     // boolean `∨`, and modular addition. `scale` is `⊗` in each case.
-    laws::left_semimodule_laws(&I64S, &I64S, "i64 over itself");
+    laws::left_semimodule_laws(
+        &<i64 as ConformanceSample>::sample(),
+        &<i64 as ConformanceSample>::sample(),
+        "i64 over itself",
+    );
 
     let bs = [Reach(false), Reach(true)];
     laws::left_semimodule_laws(&bs, &bs, "Reach over itself");
