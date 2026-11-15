@@ -1,9 +1,9 @@
-//! Cross-quantity bridges between distinct oresme quantity types (e.g. length to
+//! Cross-quantity bridges between distinct euclid-quantity quantity types (e.g. length to
 //! travel time at a speed). Separate from the same-dimension
 //! [`UnitOfMeasure::convert`](crate::UnitOfMeasure::convert) protocol.
 //!
 //! Route-weight bridges (length/time → `TimeWeight`/`DistanceWeight`) live with
-//! the weight types in the graph crate, not here — oresme owns only fundamental
+//! the weight types in the graph crate, not here — euclid-quantity owns only fundamental
 //! units.
 
 use crate::{LengthMeters, SpeedKph, TimeSeconds};

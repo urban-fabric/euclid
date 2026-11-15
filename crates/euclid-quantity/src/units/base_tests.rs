@@ -1,4 +1,4 @@
-//! Conformance of oresme's `f64` units to euclid's base contracts (`Quantity`,
+//! Conformance of euclid-quantity's `f64` units to euclid's base contracts (`Quantity`,
 //! `ScalarQuantity`, `LinearQuantity`, `Dimensionless`, `Temperature`).
 
 use crate::{

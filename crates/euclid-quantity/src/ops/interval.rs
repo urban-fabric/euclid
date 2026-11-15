@@ -16,7 +16,7 @@
 //!
 //! The predicates and set operations are **not** implemented here: they delegate to
 //! [`euclid_numeric::interval`], the carrier-generic kernels, so `[lo, hi]` means the
-//! same thing in oresme as it does everywhere else in euclid. This type's job is the
+//! same thing in euclid-quantity as it does everywhere else in euclid. This type's job is the
 //! part the kernels deliberately leave out — holding the bounds as typed quantities
 //! rather than a loose `(lo, hi)` pair, and carrying the dimensional cross-products.
 //! Note that the kernels treat `lo > hi` as the empty interval, a state [`new`]
@@ -40,7 +40,7 @@ use crate::{LengthMeters, LinearQuantity, SpeedMs, TimeSeconds};
 /// `LinearQuantity` and this does not compile:
 ///
 /// ```compile_fail
-/// use oresme::{Interval, TemperatureCelsius};
+/// use euclid_quantity::{Interval, TemperatureCelsius};
 ///
 /// let _ = Interval::point(TemperatureCelsius::new(20.0));
 /// ```

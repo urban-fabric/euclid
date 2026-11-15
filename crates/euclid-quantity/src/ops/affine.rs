@@ -26,7 +26,7 @@
 //! need positions that must not be added together.
 //!
 //! ```compile_fail
-//! use oresme::{LengthMeters, Point};
+//! use euclid_quantity::{LengthMeters, Point};
 //!
 //! struct RoadSpace;
 //! struct ScreenSpace;

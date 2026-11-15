@@ -1,26 +1,28 @@
-# oresme
+# euclid-quantity
 
-`oresme` provides small, domain-neutral **physical-unit primitives**: typed
-quantities, unit conversions, compact storage wrappers, and basic dimensional
-arithmetic.
+`euclid-quantity` provides small, domain-neutral **physical-unit primitives**:
+typed quantities, unit conversions, compact storage wrappers, and basic
+dimensional arithmetic.
 
 It is the **carrier** tier of euclid: the other euclid crates own the
-carrier-generic numeric, tensor, and unit *contracts*, and oresme supplies the
-concrete `f64` unit/storage types that implement them. It names the two tiers it
-builds on directly — `euclid-units` for the dimension contracts and the
-`Dimension`/`dim` vocabulary these units implement, and `euclid-numeric` for the
-interval kernels `oresme::ops::Interval` delegates its arithmetic to.
+carrier-generic numeric, tensor, and unit *contracts*, and euclid-quantity
+supplies the concrete `f64` unit/storage types that implement them. It names the
+two tiers it builds on directly — `euclid-units` for the dimension contracts and
+the `Dimension`/`dim` vocabulary these units implement, and `euclid-numeric` for
+the interval kernels `euclid_quantity::ops::Interval` delegates its arithmetic
+to.
 
-oresme is also the one euclid crate that is not dependency-free: it carries
-`bytemuck` for the `Pod`/`Zeroable` storage wrappers and `serde`. That cost is
-per-crate — depending on `euclid-units` alone still pulls nothing third-party.
+euclid-quantity is also the one euclid crate that is not dependency-free: it
+carries `bytemuck` for the `Pod`/`Zeroable` storage wrappers and `serde`. That
+cost is per-crate — depending on `euclid-units` alone still pulls nothing
+third-party.
 
 ## Public API
 
 Common quantity types and traits are re-exported from the crate root:
 
 ```rust
-use oresme::{Length, LengthMeters, SpeedMs, TimeSeconds};
+use euclid_quantity::{Length, LengthMeters, SpeedMs, TimeSeconds};
 
 let distance = LengthMeters::new(100.0);
 let elapsed = TimeSeconds::new(10.0);
@@ -32,35 +34,35 @@ assert_eq!(speed.as_ms(), 10.0);
 Use structured module paths when you want the implementation layout:
 
 ```rust
-use oresme::conversion::{UnitOfMeasure, dim};
-use oresme::ops::Interval;
-use oresme::units::geometry::LengthMeters;
+use euclid_quantity::conversion::{UnitOfMeasure, dim};
+use euclid_quantity::ops::Interval;
+use euclid_quantity::units::geometry::LengthMeters;
 ```
 
 The crate is organized by responsibility:
 
-- `oresme::quantity` re-exports euclid's quantity contracts — `Dimension`,
-  `Measure`, `Quantity`, `ScalarQuantity`, `LinearQuantity`, `DiscreteQuantity` —
-  and adds the two things they cannot express: `HostQuantity` and
-  `QuantityError`. It does **not** define traits of its own; `oresme::Quantity`
-  and `euclid_units::Quantity` are the same trait.
-- `oresme::conversion` defines `UnitOfMeasure` and re-exports euclid's type-level
-  `dim` markers, so a dimension has one definition rather than two.
-- `oresme::units` holds the physical units, grouped by euclid dimension family —
-  `geometry` (length, area, volume, angle), `kinematics` (time, speed,
+- `euclid_quantity::quantity` re-exports euclid's quantity contracts —
+  `Dimension`, `Measure`, `Quantity`, `ScalarQuantity`, `LinearQuantity`,
+  `DiscreteQuantity` — and adds the two things they cannot express:
+  `HostQuantity` and `QuantityError`. It does **not** define traits of its own;
+  `euclid_quantity::Quantity` and `euclid_units::Quantity` are the same trait.
+- `euclid_quantity::conversion` defines `UnitOfMeasure` and re-exports euclid's
+  type-level `dim` markers, so a dimension has one definition rather than two.
+- `euclid_quantity::units` holds the physical units, grouped by euclid dimension
+  family — `geometry` (length, area, volume, angle), `kinematics` (time, speed,
   acceleration, frequency, …), `mechanics` (mass, force, energy, power, …),
   `thermal`, `electromagnetism`, `chemistry`, and `dimensionless` (factor,
   percentage). Each family co-locates its unit newtypes with their
   `UnitOfMeasure` conversions and their implementations of euclid's base and
   dimension-specific contracts.
-- `oresme::ops` contains quantity operations: affine points and uncertainty
-  intervals.
-- `oresme::data` contains boundary/storage wrappers: bytes, counts, epoch
-  timestamps, centiseconds, and decimeters.
+- `euclid_quantity::ops` contains quantity operations: affine points and
+  uncertainty intervals.
+- `euclid_quantity::data` contains boundary/storage wrappers: bytes, counts,
+  epoch timestamps, centiseconds, and decimeters.
 
 euclid's dimension traits are re-exported from the crate root, so the algebra in
 the [dimensional algebra](#dimensional-algebra) example works with just
-`use oresme::Length;` — no direct dependency on `euclid-units` needed.
+`use euclid_quantity::Length;` — no direct dependency on `euclid-units` needed.
 
 ## Conversion
 
@@ -69,7 +71,7 @@ dimension's primary unit. `UnitOfMeasure::convert` works only between units with
 the same type-level dimension.
 
 ```rust
-use oresme::{LengthFeet, LengthKm, LengthMeters, UnitOfMeasure};
+use euclid_quantity::{LengthFeet, LengthKm, LengthMeters, UnitOfMeasure};
 
 let distance = LengthKm::new(1.0);
 let meters: LengthMeters = distance.convert();
@@ -105,13 +107,13 @@ that might be an expression handle can do neither. Every unit here is a concrete
 ## Dimensional algebra
 
 Cross-dimensional products and quotients come from euclid's dimension contracts,
-which oresme's primary units implement: a length over a time is a speed, a mass
-times an acceleration is a force, and so on across the SI web. The algebra is
-exposed as methods on euclid's traits (`Length::per_time`, `Mass::times_acceleration`,
-...) rather than as `/` and `*` operators:
+which euclid-quantity's primary units implement: a length over a time is a
+speed, a mass times an acceleration is a force, and so on across the SI web. The
+algebra is exposed as methods on euclid's traits (`Length::per_time`,
+`Mass::times_acceleration`, ...) rather than as `/` and `*` operators:
 
 ```rust
-use oresme::{Length, LengthKm, LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
+use euclid_quantity::{Length, LengthKm, LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
 
 let distance: LengthMeters = LengthKm::new(5.0).convert();
 let elapsed = TimeSeconds::new(1800.0);
@@ -127,8 +129,8 @@ of combinatorial in the number of units.
 
 ## Boundary Types
 
-`oresme::data` contains compact, integer-backed wrappers for values that cross
-storage, wire, or system boundaries:
+`euclid_quantity::data` contains compact, integer-backed wrappers for values
+that cross storage, wire, or system boundaries:
 
 - `Bytes` and `ByteRange` (information)
 - `Count` and `ThreadCount` (dimensionless counts)
@@ -139,8 +141,8 @@ Because their carriers are integers (`u64`/`u32`/`i64`) rather than `f64`, they
 cannot be a euclid `Quantity` (which requires a `Real` carrier), but they still
 join the same contract system through euclid's carrier-generic base trait:
 
-- every one implements `euclid_units::Measure` — a runtime `Dimension` tag,
-  unit symbol, and `raw`/`from_raw`, over any numeric carrier;
+- every one implements `euclid_units::Measure` — a runtime `Dimension` tag, unit
+  symbol, and `raw`/`from_raw`, over any numeric carrier;
 - the counts and sizes (`Count`, `ThreadCount`, `Bytes`) implement
   `euclid_units::DiscreteQuantity` for semiring `add` / saturating subtraction;
 - the epoch timestamps (`UnixSeconds`, `UnixMillis`) implement
@@ -149,32 +151,34 @@ join the same contract system through euclid's carrier-generic base trait:
 
 These types name raw values and serialization contracts. Route-cost sentinels,
 workflow state, graph-specific ordering, and application control-flow types
-belong in the crates that use `oresme`.
+belong in the crates that use `euclid-quantity`.
 
 ## Adding Units
 
-Each unit lives in its own file under `src/units/<family>/` (one file per unit, e.g.
-`units/mechanics/force.rs`); shared constants and the family's tests live in
-`units/<family>.rs` beside the directory — the workspace denies `mod_module_files`,
-so there is no `mod.rs`. The crate is deliberately macro-free, so each unit spells
-out its impls explicitly; the quickest path is to copy the nearest existing unit's
-file and adjust it:
+Each unit lives in its own file under `src/units/<family>/` (one file per unit,
+e.g. `units/mechanics/force.rs`); shared constants and the family's tests live
+in `units/<family>.rs` beside the directory — the workspace denies
+`mod_module_files`, so there is no `mod.rs`. The crate is deliberately
+macro-free, so each unit spells out its impls explicitly; the quickest path is
+to copy the nearest existing unit's file and adjust it:
 
 1. Create `src/units/<family>/<unit>.rs` with the transparent `f64` newtype
-   (`pub(crate)` field, standard derives), a `new` constructor, a raw accessor, and
-   any helpers.
-2. Implement `euclid_units::Measure` — the carrier type, runtime `Dimension`, unit
-   symbol, and `raw`/`from_raw`. This is the only one with a body to write.
-3. Opt into the contracts the unit actually satisfies with **empty impl blocks**:
-   `euclid_units::ScalarQuantity` always, and `euclid_units::LinearQuantity` only
-   for displacement-like quantities, never an absolute scalar like temperature.
-   Both are defaulted over the carrier's `Real` surface, so there is no body —
-   the empty block is just the claim. `Quantity` needs no impl at all; it is
-   blanket-implemented for every `Real`-backed `Measure`.
-4. Implement `conversion::UnitOfMeasure` (scale/offset to the dimension's primary
-   unit) and `core::fmt::Display` (delegating to `conversion::fmt_quantity`).
-5. If it is a new dimension's primary unit, implement euclid's dimension contract
-   for it and wire its associated types to the other primaries.
+   (`pub(crate)` field, standard derives), a `new` constructor, a raw accessor,
+   and any helpers.
+2. Implement `euclid_units::Measure` — the carrier type, runtime `Dimension`,
+   unit symbol, and `raw`/`from_raw`. This is the only one with a body to write.
+3. Opt into the contracts the unit actually satisfies with **empty impl
+   blocks**: `euclid_units::ScalarQuantity` always, and
+   `euclid_units::LinearQuantity` only for displacement-like quantities, never
+   an absolute scalar like temperature. Both are defaulted over the carrier's
+   `Real` surface, so there is no body — the empty block is just the claim.
+   `Quantity` needs no impl at all; it is blanket-implemented for every
+   `Real`-backed `Measure`.
+4. Implement `conversion::UnitOfMeasure` (scale/offset to the dimension's
+   primary unit) and `core::fmt::Display` (delegating to
+   `conversion::fmt_quantity`).
+5. If it is a new dimension's primary unit, implement euclid's dimension
+   contract for it and wire its associated types to the other primaries.
 6. Implement the `+`/`-`/scaling/`Sum` operators (delegating to the
    `crate::quantity::scalar_*` helpers) if it is linear.
 7. Declare the file in `units/<family>.rs` (`mod <unit>; pub use <unit>::*;`);

@@ -1,6 +1,6 @@
 //! A uniform unit-of-measure protocol: dimension-checked conversions and symbols.
 //!
-//! oresme models each unit as its own newtype (`LengthMeters`, `LengthKm`,
+//! euclid-quantity models each unit as its own newtype (`LengthMeters`, `LengthKm`,
 //! `LengthFeet`, ...). That keeps the unit of a value visible in its type, but
 //! without a shared protocol every conversion is a bespoke method and nothing
 //! stops a `LengthMeters` from being handed where a `TimeSeconds` was meant.
@@ -17,7 +17,7 @@
 //! quantity always states what unit it is in.
 //!
 //! ```
-//! use oresme::{LengthKm, LengthFeet, UnitOfMeasure};
+//! use euclid_quantity::{LengthKm, LengthFeet, UnitOfMeasure};
 //!
 //! let one_km = LengthKm::new(1.0);
 //! let feet: LengthFeet = one_km.convert();
@@ -28,7 +28,7 @@
 //! Cross-dimension conversions do not compile:
 //!
 //! ```compile_fail
-//! use oresme::{LengthMeters, TimeSeconds, UnitOfMeasure};
+//! use euclid_quantity::{LengthMeters, TimeSeconds, UnitOfMeasure};
 //! // error[E0271]: type mismatch — `Length` is not `Time`
 //! let _: TimeSeconds = LengthMeters::new(1.0).convert();
 //! ```
