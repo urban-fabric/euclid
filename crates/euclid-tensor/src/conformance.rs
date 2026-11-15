@@ -40,6 +40,31 @@
 
 use crate::Tensor;
 
+/// A carrier's own curated sample, declared once.
+///
+/// euclid's answer to proptest's `Arbitrary`, with the generator replaced by a fixed list. A
+/// carrier says which values stress *it*, and every suite in this module then draws from the
+/// same place rather than each call site inventing a sample and getting it slightly wrong.
+///
+/// Fixed rather than generated on purpose: a generator buys input breadth at the cost of
+/// reproducibility, turning a failure into a seed to recover rather than a value in the source.
+/// Keep samples small — the multi-operand laws run over every pair or triple, so `n` values
+/// cost `n²` or `n³` cases per law.
+pub trait ConformanceSample: Sized {
+    /// Tensors to check. Include one of **rank 2 or more** so the transpose laws are
+    /// exercised, and one of rank 3 or more so the 3-cycle law is — a swap cannot distinguish
+    /// a permutation from its inverse.
+    fn sample() -> Vec<Self>;
+}
+
+/// [`tensor_laws`] over a carrier's own [`ConformanceSample`].
+pub fn tensor_laws_for<T>(what: &str)
+where
+    T: Tensor + ConformanceSample + PartialEq + core::fmt::Debug,
+{
+    tensor_laws(&T::sample(), what);
+}
+
 /// The shape algebra: `rank`, `reshape`, and the shape of each constructor.
 ///
 /// - `rank() == shape().len()`

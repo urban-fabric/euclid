@@ -40,6 +40,66 @@ use euclid_numeric::{Element, Real};
 
 use crate::{DiscreteQuantity, LinearQuantity, Mask, Measure, Quantity, ScalarQuantity};
 
+/// A carrier's own curated sample, declared once.
+///
+/// euclid's answer to proptest's `Arbitrary`, with the generator replaced by a fixed list. A
+/// carrier says which values stress *it*, and every suite in this module then draws from the
+/// same place rather than each call site inventing a sample and getting it slightly wrong.
+///
+/// Fixed rather than generated on purpose: a generator buys input breadth at the cost of
+/// reproducibility, turning a failure into a seed to recover rather than a value in the source.
+/// Keep samples small — the multi-operand laws run over every pair or triple, so `n` values
+/// cost `n²` or `n³` cases per law.
+pub trait ConformanceSample: Sized {
+    /// The values this carrier should be checked over. Must be **finite** — the predicate laws
+    /// assert finiteness holds.
+    fn sample() -> Vec<Self>;
+
+    /// The tolerance for the two inexact linear laws, as a quantity in this unit.
+    ///
+    /// The add/sub inverse and associativity are not exact when `Repr` is not — subtracting
+    /// `100.0` from `-9.8 + 100.0` gives `-9.799999999999997`, not `-9.8`. An exact carrier can
+    /// return its zero to recover the strict reading.
+    fn tolerance() -> Self;
+}
+
+/// [`measure_laws`] over a carrier's own [`ConformanceSample`].
+pub fn measure_laws_for<Q>(what: &str)
+where
+    Q: Measure + ConformanceSample + PartialEq + core::fmt::Debug,
+    Q::Repr: PartialEq + core::fmt::Debug,
+{
+    measure_laws(&Q::sample(), what);
+}
+
+/// [`scalar_laws`] over a carrier's own [`ConformanceSample`].
+pub fn scalar_laws_for<Q>(what: &str)
+where
+    Q: ScalarQuantity + ConformanceSample + PartialEq + core::fmt::Debug,
+    Mask<Q>: PartialEq + core::fmt::Debug,
+{
+    scalar_laws(&Q::sample(), &Q::tolerance(), what);
+}
+
+/// [`quantity_laws`] over a carrier's own [`ConformanceSample`].
+pub fn quantity_laws_for<Q>(what: &str)
+where
+    Q: Quantity + LinearQuantity + ConformanceSample + PartialEq + core::fmt::Debug,
+    Q::Repr: PartialEq + core::fmt::Debug + Real,
+    Mask<Q>: PartialEq + core::fmt::Debug,
+{
+    quantity_laws(&Q::sample(), &Q::tolerance(), what);
+}
+
+/// [`discrete_laws`] over a carrier's own [`ConformanceSample`].
+pub fn discrete_laws_for<Q>(what: &str)
+where
+    Q: DiscreteQuantity + ConformanceSample + PartialEq + core::fmt::Debug + Clone,
+    Q::Repr: euclid_numeric::Semiring,
+{
+    discrete_laws(&Q::sample(), what);
+}
+
 /// The raw round-trip: `from_raw` and `raw` must be inverses.
 ///
 /// The most basic thing a unit carrier can get wrong, and the one a mistaken field index or a

@@ -105,9 +105,17 @@ fn fold_in_over_a_loop_index_gives_distinct_keys() {
 // The tests above remain because they check properties of *this* key type — it happens to be
 // `Eq + Hash`, which the contract does not require and the generic suites cannot assume.
 
+impl crate::conformance::ConformanceSample for ToySampler {
+    /// `0` first, because a multiplicative mixing function that forgets to handle it
+    /// degenerates there and every derivation law would then pass vacuously.
+    fn seeds() -> Vec<u64> {
+        vec![0, 1, 7, 42, 0xDEAD_BEEF]
+    }
+}
+
 #[test]
 fn toy_sampler_satisfies_the_key_laws() {
-    crate::conformance::key_laws::<ToySampler>(&[0, 1, 7, 42, 0xDEAD_BEEF], "ToySampler");
+    crate::conformance::key_laws_for::<ToySampler>("ToySampler");
 }
 
 #[test]
