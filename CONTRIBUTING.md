@@ -297,13 +297,31 @@ README's [data-structure section][ds].
   carrier here, because that would have meant implementing Cholesky, LU and QR
   for a tensor *inside* euclid.
 
-  The laws for those traits *are* written, in `euclid-matrix`'s `conformance`
-  module — `solve_spd(Σ, Σ·X)` must recover `X`, `Q·R` must reconstruct `A`, and
-  so on. They can only be **run** by a backend, so unlike the other five modules
-  this one is gated on `feature` alone rather than `any(feature, test)`: there is
-  no test here for the second arm to serve. `--all-features` type-checks them,
+  The laws for *most* of those traits are written, in `euclid-matrix`'s
+  `conformance` module — `solve_spd(Σ, Σ·X)` must recover `X`, `Q·R` must
+  reconstruct `A`, a cached SPD factor must solve what the direct path solves.
+  They can only be **run** by a backend, so unlike the other five modules this
+  one is gated on `feature` alone rather than `any(feature, test)`: there is no
+  test here for the second arm to serve. `--all-features` type-checks them,
   which for a generic trait surface is a real check, but no law body executes in
   this repository and none can.
+
+  **Two traits have no law**, and the reason is a gap in the contract rather
+  than in the suite: `HermitianEigendecomposition` and
+  `SingularValueDecomposition` both return a `RealSpectrum` alongside a `Self`,
+  and `MatrixRealSpectrum` offers no conversion between the two — so the law
+  everyone wants, `A·V = V·diag(λ)`, cannot be formed generically. Closing it
+  needs an additive method on `MatrixRealSpectrum` to lift a spectrum into the
+  carrier, which is a new required method and therefore a breaking release. It
+  is listed in [RELEASES](RELEASES.md) as pending for that reason.
+
+  Reviewing an unexecuted law is the only check it will ever get, so read the
+  body against the doc comment rather than trusting either. That is not
+  theoretical: three of these laws were wrong in exactly that way until 0.5 —
+  `triangular_solve_laws` claimed to exercise `TransposeMode` and performed a
+  single forward solve, `assert_close` documented a max-norm criterion while
+  computing a Frobenius one, and the module header advertised the two laws above
+  as though they existed.
 - **A law the trait implies** — add it to that crate's `conformance` module, not
   only to a test. A tier is a *claim*: `impl Semiring for MyThing {}` asserts
   that `⊗` distributes over `⊕`, and nothing in the type system checks it. The

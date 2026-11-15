@@ -28,6 +28,19 @@ than it sounds and the second half is the part worth watching:
 A relicence is listed too. It changes nothing at compile time and everything about what a
 recipient may do.
 
+## Pending, for the next breaking release
+
+Not released, listed so the next minor bump can carry them together — a breaking euclid release
+costs the fleet six sequential waves of migration, so one release carrying several breaks is much
+cheaper than several carrying one each.
+
+- **`MatrixRealSpectrum` needs a way to lift a spectrum into the carrier**, of the shape
+  `fn from_spectrum(s: Self::RealSpectrum) -> Self`. Without it the eigen and SVD laws
+  (`A·V = V·diag(λ)`, `U·diag(σ)·Vᴴ = A`) cannot be written generically, because combining a
+  `RealSpectrum` with a `Self` is not expressible — so `HermitianEigendecomposition` and
+  `SingularValueDecomposition` are the only part of euclid's contract surface with no law at all.
+  A new required method breaks every implementor, which is why it waits.
+
 ## 0.5.0
 
 **`euclid-property` is now `euclid-stability`.** Rename the dependency and the import
