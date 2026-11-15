@@ -59,6 +59,92 @@ use crate::{
     LeftSemimodule, MultiplicativeMagma, OrderedSemiring, Ring, Semiring, StarSemiring,
 };
 
+/// A carrier's own curated sample, declared once.
+///
+/// This is euclid's answer to proptest's `Arbitrary`, with the generator replaced by a fixed
+/// list. A carrier says which values stress *it* — `ZERO` and `ONE`, a negative, the residues
+/// either side of a modulus — and every suite in this crate then draws from the same place,
+/// rather than each call site inventing a sample and getting it slightly wrong.
+///
+/// ```ignore
+/// impl ConformanceSample for MyCarrier {
+///     fn sample() -> Vec<Self> {
+///         vec![Self::ZERO, Self::ONE, Self::from(-3), Self::from(7)]
+///     }
+/// }
+///
+/// // every suite now needs no sample argument
+/// ring_laws_for::<MyCarrier>("MyCarrier");
+/// ```
+///
+/// # Why fixed rather than generated
+///
+/// A generator buys input breadth at the cost of reproducibility: a failure becomes a seed to
+/// recover rather than a value in the source. The laws here are algebraic, so breadth adds
+/// little — `(a ⊕ b) ⊕ c = a ⊕ (b ⊕ c)` either holds structurally or fails on the first
+/// awkward triple — while reproducibility is what makes a failure diagnosable.
+///
+/// The trade would be different for a property over a large state space, which is where
+/// proptest earns its shrinking machinery. It is not where these laws live.
+///
+/// # Keep it small
+///
+/// The three-operand laws run over every triple, so a sample of `n` values costs `n³` cases per
+/// law. Six is comfortable; twenty is 8,000 triples per law and buys nothing a well-chosen six
+/// did not already catch.
+pub trait ConformanceSample: Sized {
+    /// The values this carrier should be checked over.
+    fn sample() -> Vec<Self>;
+}
+
+/// [`semiring_laws`] over a carrier's own [`ConformanceSample`].
+pub fn semiring_laws_for<T>(what: &str)
+where
+    T: Semiring + ConformanceSample + core::fmt::Debug + Copy,
+{
+    semiring_laws(&T::sample(), what);
+}
+
+/// [`commutative_semiring_laws`] over a carrier's own [`ConformanceSample`].
+pub fn commutative_semiring_laws_for<T>(what: &str)
+where
+    T: CommutativeSemiring + ConformanceSample + core::fmt::Debug + Copy,
+{
+    commutative_semiring_laws(&T::sample(), what);
+}
+
+/// [`ring_laws`] over a carrier's own [`ConformanceSample`].
+pub fn ring_laws_for<T>(what: &str)
+where
+    T: Ring + ConformanceSample + core::fmt::Debug + Copy,
+{
+    ring_laws(&T::sample(), what);
+}
+
+/// [`field_laws`] over a carrier's own [`ConformanceSample`].
+pub fn field_laws_for<T>(what: &str)
+where
+    T: Field + ConformanceSample + core::fmt::Debug + Copy,
+{
+    field_laws(&T::sample(), what);
+}
+
+/// [`euclidean_laws`] over a carrier's own [`ConformanceSample`].
+pub fn euclidean_laws_for<T>(what: &str)
+where
+    T: EuclideanDomain + ConformanceSample + core::fmt::Debug + Copy,
+{
+    euclidean_laws(&T::sample(), what);
+}
+
+/// [`dioid_laws`] over a carrier's own [`ConformanceSample`].
+pub fn dioid_laws_for<T>(what: &str)
+where
+    T: Dioid + ConformanceSample + core::fmt::Debug + Copy,
+{
+    dioid_laws(&T::sample(), what);
+}
+
 /// The eight semiring axioms, over the method-based `⊕`/`⊗` trunk.
 ///
 /// Two identities each (left and right) for the additive and multiplicative identity, zero
