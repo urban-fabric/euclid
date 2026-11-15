@@ -162,11 +162,18 @@ euclid ships contracts, so the usual question is not "does the code work" but
   (`euclid-tensor`), and the toy unit carriers in `euclid-units` exist so that
   every contract has at least one implementation proving it can be honored.
 
-  **One contract currently has none: `euclid-matrix`.** Its nine traits and the
-  algorithms over them have no reference carrier and no tests, because `Dense` —
-  the one tensor in this repository that could serve — lives inside
-  `euclid-tensor`'s private `#[cfg(test)]` tree and is unreachable from another
-  crate. That is a known gap, not a standard being waived.
+  **One contract currently has none: `euclid-matrix`.** Its twelve traits and the
+  algorithms written over them have no reference carrier and no tests.
+
+  Note what that does *not* argue for. The crate is roughly half trait surface
+  (~156 lines) and half matrix kernels (~126 lines: `least_squares`, `gram`,
+  `inverse`, `dominant_eigenvector`, …), and giving the kernels a reference
+  carrier here would mean implementing Cholesky, LU and QR for a tensor inside
+  euclid — pulling the repository *further* from being a skeleton of traits.
+  euclid holds **scalar** kernels on purpose, because a special function has one
+  right answer and needs a canonical home; matrix and tensor kernels belong with
+  a backend, where a concrete tensor already exists. The open question is where
+  these go, not how to test them in place.
 - **Anything the contract leaves open** — pick a convention and *write it down*
   in the trait docs, not only in an implementation. Two backends reading the same
   signature differently is the one failure mode that defeats the point of the

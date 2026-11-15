@@ -147,8 +147,8 @@ extends, so the edge is the point rather than a shortcut. A consumer still takes
 on only the surface it uses: nothing depends *downward* from a root onto a
 carrier, so taking `euclid-units` never pulls `euclid-quantity`.
 
-The eight published members fall out of two questions: **which concern** is this,
-and **contract or concrete**. Drawn as a grid, the crate list stops looking
+The eight published members fall out of two questions: **which concern** is
+this, and **contract or concrete**. Drawn as a grid, the crate list stops looking
 arbitrary — and the empty cells are as deliberate as the full ones. The first
 four rows are the four kinds of value from the top of this page:
 
@@ -184,6 +184,30 @@ five are dependency-free in the sense that matters: nothing third-party.
 | crate | purpose |
 |-------|---------|
 | [`euclid-matrix`](crates/euclid-matrix) | matrix extensions beyond the rank contract — SPD, triangular solve, QR, eigen, SVD traits and the algorithms over them |
+
+This row is the one standing exception to the rule below, and is expected to
+shrink to its trait half.
+
+### Which kernels euclid holds
+
+euclid is the **skeleton** the rest of Urban Fabric is built on, so the default
+is trait surface rather than implementation. One kind of implementation is
+nonetheless kept here deliberately, and one kind is not:
+
+- **Scalar kernels belong in euclid.** `erf`, `lgamma`, the Bessel and Airy
+  functions and the rest of `euclid-numeric/src/kernels/` are ~8.4k lines of
+  concrete `f64`/`f32` code, and they stay. A scalar special function has one
+  right answer, every carrier needs it, and a second implementation of `erf` in
+  a consumer is a second chance to get it wrong. It is also what makes
+  `f64: Real` satisfiable at all — the reference carrier has to work.
+- **Matrix and tensor kernels do not.** They need a concrete tensor to run on,
+  and the moment euclid ships one it stops being a skeleton. `euclid-tensor`
+  and `euclid-random` therefore define their contracts and ship no carrier; a
+  backend supplies the tensor and the PRNG.
+
+`euclid-matrix` sits across that line today: ~156 lines of traits, which belong
+here, and ~126 lines of matrix kernels (`least_squares`, `gram`, `inverse`,
+`dominant_eigenvector`, …), which belong with a backend.
 
 Only `euclid-quantity` pulls a third-party dependency (`bytemuck` and `serde`),
 and that cost is per-crate: a consumer of the contract crates still gets none.
