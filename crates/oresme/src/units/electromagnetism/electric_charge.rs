@@ -1,4 +1,4 @@
-use crate::Quantity;
+use crate::Measure;
 use crate::conversion::dim;
 use crate::{
     CapacitanceFarads, CurrentAmperes, ElectricFieldVoltsPerMeter, EnergyJoules, ForceNewtons,
@@ -64,27 +64,13 @@ impl ChargeCoulombs {
     }
 }
 
-impl crate::Quantity for ChargeCoulombs {
-    type Repr = f64;
-    const DIMENSION: crate::Dimension = crate::Dimension::ElectricCharge;
-    const UNIT_NAME: &'static str = "C";
-    fn raw(self) -> f64 {
-        self.0
-    }
-    fn from_raw(v: f64) -> Self {
-        Self(v)
-    }
-}
-
-impl crate::LinearQuantity for ChargeCoulombs {}
-
 impl crate::conversion::UnitOfMeasure for ChargeCoulombs {
     type Dim = dim::ElectricCharge;
     const TO_PRIMARY: f64 = 1.0;
 }
 
 const _: () = assert!(
-    <ChargeCoulombs as crate::Quantity>::DIMENSION
+    <ChargeCoulombs as euclid_units::Measure>::DIMENSION
         .same(<dim::ElectricCharge as euclid_units::Dimensioned>::DIMENSION),
     concat!("dimension mismatch for ", stringify!(ChargeCoulombs)),
 );
@@ -97,95 +83,19 @@ impl core::fmt::Display for ChargeCoulombs {
 
 impl euclid_units::Measure for ChargeCoulombs {
     type Repr = f64;
-    const DIMENSION: euclid_units::Dimension = <ChargeCoulombs as crate::Quantity>::DIMENSION;
-    const UNIT_NAME: &'static str = <ChargeCoulombs as crate::Quantity>::UNIT_NAME;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::ElectricCharge;
+    const UNIT_NAME: &'static str = "C";
     fn raw(&self) -> f64 {
-        <Self as crate::Quantity>::raw(*self)
+        self.0
     }
-    fn from_raw(value: f64) -> Self {
-        <Self as crate::Quantity>::from_raw(value)
-    }
-}
-
-impl euclid_units::ScalarQuantity for ChargeCoulombs {
-    fn min(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self).min(<Self as crate::Quantity>::raw(other)),
-        )
-    }
-    fn max(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self).max(<Self as crate::Quantity>::raw(other)),
-        )
-    }
-    fn clamp(self, lo: Self, hi: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).clamp(
-            <Self as crate::Quantity>::raw(lo),
-            <Self as crate::Quantity>::raw(hi),
-        ))
-    }
-    fn floor(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).floor())
-    }
-    fn ceil(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).ceil())
-    }
-    fn round(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).round())
-    }
-    fn trunc(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).trunc())
-    }
-    fn is_finite(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_finite()
-    }
-    fn is_nan(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_nan()
-    }
-    fn is_infinite(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_infinite()
-    }
-    fn approx_eq(&self, other: &Self, tolerance: &Self) -> bool {
-        (<Self as crate::Quantity>::raw(*self) - <Self as crate::Quantity>::raw(*other)).abs()
-            <= <Self as crate::Quantity>::raw(*tolerance).abs()
+    fn from_raw(v: f64) -> Self {
+        Self(v)
     }
 }
 
-impl euclid_units::LinearQuantity for ChargeCoulombs {
-    fn add(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self) + <Self as crate::Quantity>::raw(other),
-        )
-    }
-    fn sub(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self) - <Self as crate::Quantity>::raw(other),
-        )
-    }
-    fn neg(self) -> Self {
-        <Self as crate::Quantity>::from_raw(-<Self as crate::Quantity>::raw(self))
-    }
-    fn abs(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).abs())
-    }
-    fn signum(self) -> f64 {
-        <Self as crate::Quantity>::raw(self).signum()
-    }
-    fn ratio(self, other: Self) -> f64 {
-        <Self as crate::Quantity>::raw(self) / <Self as crate::Quantity>::raw(other)
-    }
-    fn lerp(self, other: Self, t: f64) -> Self {
-        let lhs = <Self as crate::Quantity>::raw(self);
-        let rhs = <Self as crate::Quantity>::raw(other);
-        <Self as crate::Quantity>::from_raw(lhs * (1.0 - t) + rhs * t)
-    }
-    fn scale(self, factor: f64) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self) * factor)
-    }
-    fn scaled(self, k: f64) -> Self {
-        euclid_units::LinearQuantity::scale(self, k)
-    }
-}
+impl euclid_units::ScalarQuantity for ChargeCoulombs {}
+
+impl euclid_units::LinearQuantity for ChargeCoulombs {}
 
 impl ElectricCharge for ChargeCoulombs {
     type Time = TimeSeconds;

@@ -1,6 +1,5 @@
 use super::{KELVIN_OFFSET_CELSIUS, KELVIN_OFFSET_FAHRENHEIT, KELVIN_PER_FAHRENHEIT_DEGREE};
 use crate::conversion::dim;
-use crate::{Dimension, Quantity};
 use crate::{TemperatureCelsius, TemperatureFahrenheit};
 use bytemuck::{Pod, Zeroable};
 
@@ -41,25 +40,13 @@ impl TemperatureKelvin {
     }
 }
 
-impl Quantity for TemperatureKelvin {
-    type Repr = f64;
-    const DIMENSION: Dimension = Dimension::Temperature;
-    const UNIT_NAME: &'static str = "K";
-    fn raw(self) -> f64 {
-        self.0
-    }
-    fn from_raw(v: f64) -> Self {
-        Self(v)
-    }
-}
-
 impl crate::conversion::UnitOfMeasure for TemperatureKelvin {
     type Dim = dim::Temperature;
     const TO_PRIMARY: f64 = 1.0;
 }
 
 const _: () = assert!(
-    <TemperatureKelvin as crate::Quantity>::DIMENSION
+    <TemperatureKelvin as euclid_units::Measure>::DIMENSION
         .same(<dim::Temperature as euclid_units::Dimensioned>::DIMENSION),
     concat!("dimension mismatch for ", stringify!(TemperatureKelvin)),
 );
@@ -72,59 +59,17 @@ impl core::fmt::Display for TemperatureKelvin {
 
 impl euclid_units::Measure for TemperatureKelvin {
     type Repr = f64;
-    const DIMENSION: euclid_units::Dimension = <TemperatureKelvin as crate::Quantity>::DIMENSION;
-    const UNIT_NAME: &'static str = <TemperatureKelvin as crate::Quantity>::UNIT_NAME;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Temperature;
+    const UNIT_NAME: &'static str = "K";
     fn raw(&self) -> f64 {
-        <Self as crate::Quantity>::raw(*self)
+        self.0
     }
-    fn from_raw(value: f64) -> Self {
-        <Self as crate::Quantity>::from_raw(value)
+    fn from_raw(v: f64) -> Self {
+        Self(v)
     }
 }
 
-impl euclid_units::ScalarQuantity for TemperatureKelvin {
-    fn min(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self).min(<Self as crate::Quantity>::raw(other)),
-        )
-    }
-    fn max(self, other: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(
-            <Self as crate::Quantity>::raw(self).max(<Self as crate::Quantity>::raw(other)),
-        )
-    }
-    fn clamp(self, lo: Self, hi: Self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).clamp(
-            <Self as crate::Quantity>::raw(lo),
-            <Self as crate::Quantity>::raw(hi),
-        ))
-    }
-    fn floor(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).floor())
-    }
-    fn ceil(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).ceil())
-    }
-    fn round(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).round())
-    }
-    fn trunc(self) -> Self {
-        <Self as crate::Quantity>::from_raw(<Self as crate::Quantity>::raw(self).trunc())
-    }
-    fn is_finite(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_finite()
-    }
-    fn is_nan(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_nan()
-    }
-    fn is_infinite(&self) -> bool {
-        <Self as crate::Quantity>::raw(*self).is_infinite()
-    }
-    fn approx_eq(&self, other: &Self, tolerance: &Self) -> bool {
-        (<Self as crate::Quantity>::raw(*self) - <Self as crate::Quantity>::raw(*other)).abs()
-            <= <Self as crate::Quantity>::raw(*tolerance).abs()
-    }
-}
+impl euclid_units::ScalarQuantity for TemperatureKelvin {}
 
 impl euclid_units::Temperature for TemperatureKelvin {
     fn from_kelvin(kelvin: f64) -> Self {

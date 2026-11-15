@@ -35,7 +35,7 @@
 
 use core::fmt;
 
-use crate::{Quantity, ScalarQuantity};
+use crate::{Measure, ScalarQuantity};
 
 /// Type-level markers identifying a physical dimension, re-exported from
 /// [`euclid_units::dim`].
@@ -53,7 +53,12 @@ pub use euclid_units::dim;
 /// Implemented for every `f64`-backed unit newtype. The provided methods give a
 /// single, dimension-checked conversion path that replaces ad-hoc `to_*` methods
 /// with one uniform protocol.
-pub trait UnitOfMeasure: ScalarQuantity {
+///
+/// The `Repr = f64` bound is spelled out because euclid-units' [`ScalarQuantity`] is generic
+/// over any `Real` carrier, where this crate's old local trait pinned `f64` in its own
+/// definition. The provided methods below multiply by host `f64` constants, so the pin has to
+/// be stated here — and it matches what this trait was always documented to be implemented for.
+pub trait UnitOfMeasure: ScalarQuantity<Repr = f64> {
     /// The dimension this unit measures, as a [`euclid_units::dim`] marker. Conversions are
     /// only possible between units that share the same `Dim`.
     type Dim: euclid_units::Dimensioned;
@@ -90,7 +95,7 @@ pub trait UnitOfMeasure: ScalarQuantity {
 /// Format a quantity as its numeric value followed by its unit symbol (`5 m`, `90 km/h`,
 /// `50 %`); a dimensionless unit with an empty symbol prints just the number. Used by the
 /// `Display` impl each unit delegates to.
-pub(crate) fn fmt_quantity<Q: Quantity<Repr = f64>>(
+pub(crate) fn fmt_quantity<Q: Measure<Repr = f64>>(
     value: Q,
     f: &mut fmt::Formatter<'_>,
 ) -> fmt::Result {
@@ -122,7 +127,7 @@ mod tests {
             LengthKm::new(1.0)
         );
         let feet = LengthKm::new(1.0).convert::<LengthFeet>();
-        assert!(feet.approx_eq(LengthFeet::new(3280.839895), LengthFeet::new(1e-3)));
+        assert!(feet.approx_eq(&LengthFeet::new(3280.839895), &LengthFeet::new(1e-3)));
 
         assert_eq!(
             MassKilograms::new(2.5).convert::<MassGrams>(),
@@ -173,66 +178,66 @@ mod tests {
         let km = LengthKm::new(2.5);
         assert!(
             km.convert::<LengthMeters>()
-                .approx_eq(km.to_meters(), LengthMeters::new(1e-9))
+                .approx_eq(&km.to_meters(), &LengthMeters::new(1e-9))
         );
 
         let ft = LengthFeet::new(10.0);
         assert!(
             ft.convert::<LengthMeters>()
-                .approx_eq(ft.to_meters(), LengthMeters::new(1e-9))
+                .approx_eq(&ft.to_meters(), &LengthMeters::new(1e-9))
         );
 
         let mins = TimeMinutes::new(3.0);
         assert!(
             mins.convert::<TimeSeconds>()
-                .approx_eq(mins.to_seconds(), TimeSeconds::new(1e-9))
+                .approx_eq(&mins.to_seconds(), &TimeSeconds::new(1e-9))
         );
 
         let millis = TimeMillis::new(2500.0);
         assert!(
             millis
                 .convert::<TimeSeconds>()
-                .approx_eq(millis.to_seconds(), TimeSeconds::new(1e-9))
+                .approx_eq(&millis.to_seconds(), &TimeSeconds::new(1e-9))
         );
 
         let ms = SpeedMs::new(10.0);
         assert!(
             ms.convert::<SpeedKph>()
-                .approx_eq(ms.to_kph(), SpeedKph::new(1e-9))
+                .approx_eq(&ms.to_kph(), &SpeedKph::new(1e-9))
         );
         assert!(
             ms.convert::<SpeedMph>()
-                .approx_eq(ms.to_mph(), SpeedMph::new(1e-9))
+                .approx_eq(&ms.to_mph(), &SpeedMph::new(1e-9))
         );
 
         let mph = SpeedMph::new(60.0);
         assert!(
             mph.convert::<SpeedMs>()
-                .approx_eq(mph.to_ms(), SpeedMs::new(1e-9))
+                .approx_eq(&mph.to_ms(), &SpeedMs::new(1e-9))
         );
         assert!(
             mph.convert::<SpeedKph>()
-                .approx_eq(mph.to_kph(), SpeedKph::new(1e-9))
+                .approx_eq(&mph.to_kph(), &SpeedKph::new(1e-9))
         );
 
         assert!(
             AngleDegrees::new(180.0)
                 .convert::<AngleRadians>()
-                .approx_eq(AngleRadians::PI, AngleRadians::new(1e-12))
+                .approx_eq(&AngleRadians::PI, &AngleRadians::new(1e-12))
         );
 
         let grams = MassGrams::new(2500.0);
         assert!(
             grams
                 .convert::<MassKilograms>()
-                .approx_eq(grams.to_kilograms(), MassKilograms::new(1e-12))
+                .approx_eq(&grams.to_kilograms(), &MassKilograms::new(1e-12))
         );
 
         let sq_km = AreaSquareKilometers::new(1.25);
         assert!(
             sq_km
                 .convert::<AreaSquareMeters>()
-                .approx_eq(sq_km.to_square_meters(), AreaSquareMeters::new(1e-9))
+                .approx_eq(&sq_km.to_square_meters(), &AreaSquareMeters::new(1e-9))
         );
 
         let acceleration = AccelerationCentimetersPerSecondSquared::new(981.0);
@@ -240,15 +245,18 @@ mod tests {
             acceleration
                 .convert::<AccelerationMetersPerSecondSquared>()
                 .approx_eq(
-                    acceleration.to_meters_per_second_squared(),
-                    AccelerationMetersPerSecondSquared::new(1e-12),
+                    &acceleration.to_meters_per_second_squared(),
+                    &AccelerationMetersPerSecondSquared::new(1e-12),
                 )
         );
 
         assert!(
             TemperatureFahrenheit::new(32.0)
                 .convert::<TemperatureCelsius>()
-                .approx_eq(TemperatureCelsius::new(0.0), TemperatureCelsius::new(1e-12))
+                .approx_eq(
+                    &TemperatureCelsius::new(0.0),
+                    &TemperatureCelsius::new(1e-12)
+                )
         );
     }
 
@@ -257,12 +265,12 @@ mod tests {
         assert!(
             Percentage::new(50.0)
                 .convert::<Factor>()
-                .approx_eq(Factor::new(0.5), Factor::new(1e-12))
+                .approx_eq(&Factor::new(0.5), &Factor::new(1e-12))
         );
         assert!(
             Factor::new(0.25)
                 .convert::<Percentage>()
-                .approx_eq(Percentage::new(25.0), Percentage::new(1e-9))
+                .approx_eq(&Percentage::new(25.0), &Percentage::new(1e-9))
         );
     }
 
@@ -270,7 +278,7 @@ mod tests {
     fn round_trip_preserves_value() {
         let original = LengthMeters::new(123.456);
         let round_tripped = original.convert::<LengthFeet>().convert::<LengthMeters>();
-        assert!(round_tripped.approx_eq(original, LengthMeters::new(1e-9)));
+        assert!(round_tripped.approx_eq(&original, &LengthMeters::new(1e-9)));
     }
 
     #[test]

@@ -53,7 +53,7 @@ pub(crate) const MPS2_PER_CMPS2: f64 = 0.01;
 #[cfg(test)]
 mod time_tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-    use crate::{Dimension, Quantity};
+    use crate::{Dimension, Measure};
 
     use crate::*;
 
@@ -223,7 +223,7 @@ mod speed_tests {
 #[cfg(test)]
 mod acceleration_tests {
     use crate::{
-        AccelerationCentimetersPerSecondSquared, AccelerationMetersPerSecondSquared, Quantity,
+        AccelerationCentimetersPerSecondSquared, AccelerationMetersPerSecondSquared, Measure,
     };
 
     #[test]

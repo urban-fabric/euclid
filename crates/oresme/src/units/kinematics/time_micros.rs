@@ -1,5 +1,4 @@
 use super::MS_PER_S;
-use crate::{Dimension, Quantity};
 use crate::{TimeMillis, TimeSeconds};
 use bytemuck::{Pod, Zeroable};
 
@@ -8,8 +7,8 @@ impl core::fmt::Display for TimeMicros {
         write!(
             f,
             "{} {}",
-            <TimeMicros as crate::Quantity>::raw(*self),
-            <TimeMicros as crate::Quantity>::UNIT_NAME,
+            <TimeMicros as euclid_units::Measure>::raw(self),
+            <TimeMicros as euclid_units::Measure>::UNIT_NAME,
         )
     }
 }
@@ -19,8 +18,8 @@ impl core::fmt::Display for TimeMicrosDelta {
         write!(
             f,
             "{} {}",
-            <TimeMicrosDelta as crate::Quantity>::raw(*self),
-            <TimeMicrosDelta as crate::Quantity>::UNIT_NAME,
+            <TimeMicrosDelta as euclid_units::Measure>::raw(self),
+            <TimeMicrosDelta as euclid_units::Measure>::UNIT_NAME,
         )
     }
 }
@@ -63,6 +62,18 @@ pub struct TimeMicros(pub(crate) u64);
 #[serde(transparent)]
 pub struct TimeMicrosDelta(pub(crate) i64);
 
+impl euclid_units::Measure for TimeMicros {
+    type Repr = u64;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Time;
+    const UNIT_NAME: &'static str = "µs";
+    fn raw(&self) -> u64 {
+        self.0
+    }
+    fn from_raw(v: u64) -> Self {
+        Self(v)
+    }
+}
+
 impl TimeMicros {
     pub const ZERO: Self = Self(0);
 
@@ -92,6 +103,18 @@ impl TimeMicros {
     }
 }
 
+impl euclid_units::Measure for TimeMicrosDelta {
+    type Repr = i64;
+    const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Time;
+    const UNIT_NAME: &'static str = "µs (signed)";
+    fn raw(&self) -> i64 {
+        self.0
+    }
+    fn from_raw(v: i64) -> Self {
+        Self(v)
+    }
+}
+
 impl TimeMicrosDelta {
     pub const ZERO: Self = Self(0);
 
@@ -106,30 +129,6 @@ impl TimeMicrosDelta {
     #[allow(clippy::cast_possible_wrap)]
     pub fn between(before: TimeMicros, after: TimeMicros) -> Self {
         Self(after.as_micros() as i64 - before.as_micros() as i64)
-    }
-}
-
-impl Quantity for TimeMicros {
-    type Repr = u64;
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "µs";
-    fn raw(self) -> u64 {
-        self.0
-    }
-    fn from_raw(v: u64) -> Self {
-        Self(v)
-    }
-}
-
-impl Quantity for TimeMicrosDelta {
-    type Repr = i64;
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "µs (signed)";
-    fn raw(self) -> i64 {
-        self.0
-    }
-    fn from_raw(v: i64) -> Self {
-        Self(v)
     }
 }
 

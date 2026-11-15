@@ -82,7 +82,7 @@ mod length_tests {
 }
 #[cfg(test)]
 mod area_tests {
-    use crate::{AreaSquareKilometers, AreaSquareMeters, Quantity};
+    use crate::{AreaSquareKilometers, AreaSquareMeters, Measure};
 
     #[test]
     fn area_round_trips() {

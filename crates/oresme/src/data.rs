@@ -9,5 +9,3 @@ pub use bytes::{ByteRange, Bytes};
 pub use count::{Count, ThreadCount};
 pub use storage::{DistanceDecimeters, TimeCentiseconds};
 pub use timestamp::{UnixMillis, UnixSeconds};
-
-pub(crate) use crate::{Dimension, Quantity};

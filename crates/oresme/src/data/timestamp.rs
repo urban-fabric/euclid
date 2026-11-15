@@ -2,8 +2,6 @@
 
 use bytemuck::{Pod, Zeroable};
 
-use super::{Dimension, Quantity};
-
 #[repr(transparent)]
 #[derive(
     Copy,
@@ -80,36 +78,6 @@ impl UnixMillis {
     }
 }
 
-impl Quantity for UnixSeconds {
-    type Repr = i64;
-
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "s (since epoch)";
-
-    fn raw(self) -> i64 {
-        self.0
-    }
-
-    fn from_raw(v: i64) -> Self {
-        Self(v)
-    }
-}
-
-impl Quantity for UnixMillis {
-    type Repr = i64;
-
-    const DIMENSION: Dimension = Dimension::Time;
-    const UNIT_NAME: &'static str = "ms (since epoch)";
-
-    fn raw(self) -> i64 {
-        self.0
-    }
-
-    fn from_raw(v: i64) -> Self {
-        Self(v)
-    }
-}
-
 impl euclid_units::Measure for UnixSeconds {
     type Repr = i64;
     const DIMENSION: euclid_units::Dimension = euclid_units::Dimension::Time;
@@ -141,7 +109,7 @@ impl euclid_units::Instant for UnixMillis {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Dimension, Quantity};
+    use crate::{Dimension, Measure};
 
     #[test]
     fn unix_seconds_is_an_affine_instant() {

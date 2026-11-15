@@ -39,8 +39,11 @@ use oresme::units::geometry::LengthMeters;
 
 The crate is organized by responsibility:
 
-- `oresme::quantity` defines `Dimension`, `Quantity`, `ScalarQuantity`,
-  `LinearQuantity`, and `QuantityError`.
+- `oresme::quantity` re-exports euclid's quantity contracts — `Dimension`,
+  `Measure`, `Quantity`, `ScalarQuantity`, `LinearQuantity`, `DiscreteQuantity` —
+  and adds the two things they cannot express: `HostQuantity` and
+  `QuantityError`. It does **not** define traits of its own; `oresme::Quantity`
+  and `euclid_units::Quantity` are the same trait.
 - `oresme::conversion` defines `UnitOfMeasure` and re-exports euclid's type-level
   `dim` markers, so a dimension has one definition rather than two.
 - `oresme::units` holds the physical units, grouped by euclid dimension family —
@@ -81,14 +84,23 @@ between Kelvin, Celsius, and Fahrenheit without becoming vector quantities.
 
 ## Arithmetic
 
-`ScalarQuantity` provides shared helpers for finite construction, ordering,
-rounding, finiteness checks, and typed approximate equality.
+`ScalarQuantity` provides shared helpers for ordering, rounding, finiteness
+checks, and typed approximate equality. These are euclid's traits, so the
+predicates are typed to return a carrier mask — but `<f64 as Compare>::Mask` is
+`bool`, so for every unit here they return a plain `bool`.
 
 `LinearQuantity` marks quantities that behave like displacements. Linear
 quantities can be added, subtracted, negated, scaled, interpolated, summed, and
 used in `Interval<Q>` and `Point<Q>`.
 
-Absolute temperatures intentionally do not implement `LinearQuantity`.
+Absolute temperatures intentionally do not implement `LinearQuantity`, which is
+what keeps them out of `Interval` and `Point`.
+
+`HostQuantity` carries the two conveniences euclid's carrier-generic contracts
+structurally cannot: `from_raw_finite`, which returns a `Result` and so must
+branch on the value, and `map`, which applies a host `Fn(f64) -> f64`. A carrier
+that might be an expression handle can do neither. Every unit here is a concrete
+`f64`, so both are available by blanket impl.
 
 ## Dimensional algebra
 
@@ -143,27 +155,31 @@ belong in the crates that use `oresme`.
 
 Each unit lives in its own file under `src/units/<family>/` (one file per unit, e.g.
 `units/mechanics/force.rs`); shared constants and the family's tests live in
-`units/<family>/mod.rs`. The crate is deliberately macro-free, so each unit spells
+`units/<family>.rs` beside the directory — the workspace denies `mod_module_files`,
+so there is no `mod.rs`. The crate is deliberately macro-free, so each unit spells
 out its impls explicitly; the quickest path is to copy the nearest existing unit's
 file and adjust it:
 
 1. Create `src/units/<family>/<unit>.rs` with the transparent `f64` newtype
    (`pub(crate)` field, standard derives), a `new` constructor, a raw accessor, and
-   any helpers, then implement `crate::Quantity` (its runtime dimension and unit
-   symbol) and `crate::LinearQuantity` — the latter only for displacement-like
-   quantities, not absolute scalars like temperature.
-2. Implement `conversion::UnitOfMeasure` (scale/offset to the dimension's primary
+   any helpers.
+2. Implement `euclid_units::Measure` — the carrier type, runtime `Dimension`, unit
+   symbol, and `raw`/`from_raw`. This is the only one with a body to write.
+3. Opt into the contracts the unit actually satisfies with **empty impl blocks**:
+   `euclid_units::ScalarQuantity` always, and `euclid_units::LinearQuantity` only
+   for displacement-like quantities, never an absolute scalar like temperature.
+   Both are defaulted over the carrier's `Real` surface, so there is no body —
+   the empty block is just the claim. `Quantity` needs no impl at all; it is
+   blanket-implemented for every `Real`-backed `Measure`.
+4. Implement `conversion::UnitOfMeasure` (scale/offset to the dimension's primary
    unit) and `core::fmt::Display` (delegating to `conversion::fmt_quantity`).
-3. Implement euclid's base contracts `euclid_units::{Quantity, ScalarQuantity}`
-   (and `LinearQuantity` unless it is an absolute scalar), delegating to
-   `<Self as crate::Quantity>::{raw, from_raw}`.
-4. If it is a new dimension's primary unit, implement euclid's dimension contract
+5. If it is a new dimension's primary unit, implement euclid's dimension contract
    for it and wire its associated types to the other primaries.
-5. Implement the `+`/`-`/scaling/`Sum` operators (delegating to the
+6. Implement the `+`/`-`/scaling/`Sum` operators (delegating to the
    `crate::quantity::scalar_*` helpers) if it is linear.
-6. Declare the file in `units/<family>/mod.rs` (`mod <unit>; pub use <unit>::*;`);
+7. Declare the file in `units/<family>.rs` (`mod <unit>; pub use <unit>::*;`);
    the family and `units::*` re-export it to the crate root automatically. Add
-   tests in the family `mod.rs`'s `#[cfg(test)]` modules matching nearby ones.
+   tests in the family file's `#[cfg(test)]` modules matching nearby ones.
 
 ## Validation
 

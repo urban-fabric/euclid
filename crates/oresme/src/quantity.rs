@@ -1,17 +1,35 @@
+//! The quantity surface — re-exported from `euclid-units` rather than redefined here.
+//!
+//! This module used to declare its own `Quantity`, `ScalarQuantity` and `LinearQuantity`
+//! traits, named identically to euclid-units' and shadowing them at the crate root. Every unit
+//! type then implemented *both* families, with a hand-written bridge delegating one to the
+//! other — 329 impl blocks of it. `use oresme::Quantity` and `use euclid_units::Quantity` were
+//! different traits with the same method names, which is the kind of thing that reads as a typo
+//! for years before anyone checks.
+//!
+//! There is now one family. These are euclid-units' traits, and a unit here implements
+//! [`Measure`] plus whichever of the opt-in contracts it actually satisfies. Because
+//! `<f64 as Compare>::Mask` is `bool`, the mask-returning predicates collapse to plain `bool`
+//! for every carrier in this crate, so most of the surface a caller sees is unchanged.
+//!
+//! What euclid-units deliberately cannot express is anything that needs a *host* `f64` — to
+//! branch on, or to hand to a host closure. A carrier that might be an expression handle can do
+//! neither. Those two conveniences stay here, on [`HostQuantity`].
+
 /// The physical dimension a quantity measures.
 ///
-/// The single source of truth is [`euclid_units::Dimension`]; it is re-exported here so the concrete
-/// (`Copy`/`Pod`/serde) units in this crate share the exact same `Dimension` type — and the same
-/// runtime dimension tags — as euclid's carrier-generic unit contracts.
+/// The single source of truth is [`euclid_units::Dimension`]; it is re-exported here so the
+/// concrete (`Copy`/`Pod`/serde) units in this crate share the exact same `Dimension` type — and
+/// the same runtime dimension tags — as euclid's carrier-generic unit contracts.
 pub use euclid_units::Dimension;
 
-pub trait Quantity: Copy + PartialOrd {
-    type Repr: Copy;
-    const DIMENSION: Dimension;
-    const UNIT_NAME: &'static str;
-    fn raw(self) -> Self::Repr;
-    fn from_raw(v: Self::Repr) -> Self;
-}
+/// euclid's quantity contracts, re-exported as this crate's own surface.
+///
+/// [`Measure`] is the one a unit implements by hand: carrier type, dimension, unit symbol, and
+/// raw access. [`Quantity`] follows from it by blanket impl for any `Real`-backed measure.
+/// [`ScalarQuantity`] and [`LinearQuantity`] are opt-in empty impls over euclid-units' default
+/// bodies, and [`DiscreteQuantity`] is the integer-carrier counterpart for counts and sizes.
+pub use euclid_units::{DiscreteQuantity, LinearQuantity, Measure, Quantity, ScalarQuantity};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum QuantityError {
@@ -29,19 +47,27 @@ impl core::fmt::Display for QuantityError {
 
 impl std::error::Error for QuantityError {}
 
-/// A [`Quantity`] backed by an `f64`.
+/// The two conveniences that require a value to be a real host `f64`.
 ///
-/// Every `f64`-backed quantity is a `ScalarQuantity`, and gets uniform finite
-/// construction, finiteness checks, ordering helpers, rounding, and approximate
-/// equality. Vector-like operations live on [`LinearQuantity`] so absolute scalar
-/// values such as temperatures are not accidentally treated as displacements.
-pub trait ScalarQuantity: Quantity<Repr = f64> {
+/// Both are absent from euclid-units for the same structural reason, not by omission:
+///
+/// - [`from_raw_finite`](Self::from_raw_finite) returns a `Result`, so it has to branch on the
+///   value at construction time.
+/// - [`map`](Self::map) applies a host closure `impl Fn(f64) -> f64` to the carrier.
+///
+/// A carrier that might be an expression handle or a graph node can do neither — it has no host
+/// value to inspect at that point, which is exactly why euclid-units stops at mask-returning
+/// predicates and carrier-valued scaling. Every carrier in this crate *is* a concrete `f64`, so
+/// both are available here.
+///
+/// Blanket-implemented for every `f64`-backed [`Measure`], so a unit gets it without opting in.
+pub trait HostQuantity: Measure<Repr = f64> {
     /// Construct from a raw value, rejecting non-finite inputs.
     ///
-    /// The plain [`from_raw`](Quantity::from_raw) constructor validates nothing
-    /// and the inherent `new` constructors only `debug_assert!` against `NaN`, so
-    /// a `NaN` or infinity can slip through silently in release builds. This is
-    /// the checked counterpart for untrusted or computed inputs.
+    /// The plain [`from_raw`](Measure::from_raw) constructor validates nothing and the inherent
+    /// `new` constructors only `debug_assert!` against `NaN`, so a `NaN` or infinity can slip
+    /// through silently in release builds. This is the checked counterpart for untrusted or
+    /// computed inputs.
     fn from_raw_finite(value: f64) -> Result<Self, QuantityError> {
         if value.is_finite() {
             Ok(Self::from_raw(value))
@@ -50,151 +76,52 @@ pub trait ScalarQuantity: Quantity<Repr = f64> {
         }
     }
 
-    /// The lesser of two values.
-    fn min(self, other: Self) -> Self {
-        if other.raw() < self.raw() {
-            other
-        } else {
-            self
-        }
-    }
-
-    /// The greater of two values.
-    fn max(self, other: Self) -> Self {
-        if other.raw() > self.raw() {
-            other
-        } else {
-            self
-        }
-    }
-
-    /// Clamp into the inclusive range `[lo, hi]`, which must satisfy `lo <= hi`.
-    fn clamp(self, lo: Self, hi: Self) -> Self {
-        let v = self.raw();
-        let clamped = if v < lo.raw() {
-            lo.raw()
-        } else if v > hi.raw() {
-            hi.raw()
-        } else {
-            v
-        };
-        Self::from_raw(clamped)
-    }
-
-    /// Round toward negative infinity to a whole number of this unit.
-    fn floor(self) -> Self {
-        Self::from_raw(self.raw().floor())
-    }
-
-    /// Round toward positive infinity to a whole number of this unit.
-    fn ceil(self) -> Self {
-        Self::from_raw(self.raw().ceil())
-    }
-
-    /// Round to the nearest whole number of this unit (ties away from zero).
-    fn round(self) -> Self {
-        Self::from_raw(self.raw().round())
-    }
-
-    /// Truncate toward zero to a whole number of this unit.
-    fn trunc(self) -> Self {
-        Self::from_raw(self.raw().trunc())
-    }
-
-    /// Whether the value is finite (neither infinite nor `NaN`).
-    fn is_finite(self) -> bool {
-        self.raw().is_finite()
-    }
-
-    /// Whether the value is positive or negative infinity.
-    fn is_infinite(self) -> bool {
-        self.raw().is_infinite()
-    }
-
-    /// Whether the value is `NaN`.
-    fn is_nan(self) -> bool {
-        self.raw().is_nan()
-    }
-
-    /// Approximate equality within a tolerance expressed in the same unit.
-    ///
-    /// The tolerance is itself a quantity, not a bare `f64`, so its dimension
-    /// cannot be confused with some other unit's.
-    fn approx_eq(self, other: Self, tolerance: Self) -> bool {
-        (self.raw() - other.raw()).abs() <= tolerance.raw().abs()
-    }
-}
-
-impl<T> ScalarQuantity for T where T: Quantity<Repr = f64> {}
-
-/// An `f64` quantity that behaves like a vector/displacement.
-///
-/// Linear quantities can be negated, scaled, added, subtracted, interpolated,
-/// and used in interval arithmetic. Absolute scalar values such as Celsius or
-/// Fahrenheit intentionally do not implement this trait.
-///
-/// ```compile_fail
-/// use oresme::{Interval, TemperatureCelsius};
-///
-/// let _ = Interval::point(TemperatureCelsius::new(20.0));
-/// ```
-pub trait LinearQuantity: ScalarQuantity {
-    /// The absolute value.
-    fn abs(self) -> Self {
-        Self::from_raw(self.raw().abs())
-    }
-
-    /// The sign of the raw value, following [`f64::signum`]: `1.0` for positive
-    /// values and `+0.0`, `-1.0` for negative values and `-0.0`, and `NaN` for
-    /// `NaN`.
-    fn signum(self) -> f64 {
-        self.raw().signum()
-    }
-
-    /// The dimensionless ratio `self / other`.
-    fn ratio(self, other: Self) -> f64 {
-        self.raw() / other.raw()
-    }
-
-    /// Linear interpolation: `t = 0.0` yields `self`, `t = 1.0` yields `other`.
-    fn lerp(self, other: Self, t: f64) -> Self {
-        Self::from_raw(self.raw() * (1.0 - t) + other.raw() * t)
-    }
-
     /// Apply a function to the raw value, staying in the same unit.
     fn map(self, f: impl Fn(f64) -> f64) -> Self {
         Self::from_raw(f(self.raw()))
     }
 }
 
+impl<T> HostQuantity for T where T: Measure<Repr = f64> {}
+
+// --- operator helpers ----------------------------------------------------------------------
+//
+// The per-unit `Add`/`Sub`/`Neg`/`Mul<f64>`/`Div<f64>`/`Sum` impls call these rather than
+// `LinearQuantity` directly, which keeps one place to look when the lowering changes.
+//
+// Each call is fully qualified. `LinearQuantity::add` and `core::ops::Add::add` have the same
+// name and both are in scope at every one of these call sites, so method syntax would be
+// ambiguous — and the ambiguity would resolve to the operator impl, which calls back into here.
+
 pub(crate) fn scalar_add<T: LinearQuantity>(lhs: T, rhs: T) -> T {
-    T::from_raw(lhs.raw() + rhs.raw())
+    LinearQuantity::add(lhs, rhs)
 }
 
 pub(crate) fn scalar_sub<T: LinearQuantity>(lhs: T, rhs: T) -> T {
-    T::from_raw(lhs.raw() - rhs.raw())
+    LinearQuantity::sub(lhs, rhs)
 }
 
 pub(crate) fn scalar_neg<T: LinearQuantity>(value: T) -> T {
-    T::from_raw(-value.raw())
+    LinearQuantity::neg(value)
 }
 
-/// Scale a linear quantity by a dimensionless scalar while preserving its unit
-/// type.
-pub fn scalar_mul<T: LinearQuantity>(value: T, factor: f64) -> T {
-    T::from_raw(value.raw() * factor)
+/// Scale a linear quantity by a dimensionless scalar while preserving its unit type.
+pub fn scalar_mul<T: LinearQuantity<Repr = f64>>(value: T, factor: f64) -> T {
+    LinearQuantity::scale(value, factor)
 }
 
-pub(crate) fn scalar_div<T: LinearQuantity>(value: T, divisor: f64) -> T {
+pub(crate) fn scalar_div<T: LinearQuantity<Repr = f64>>(value: T, divisor: f64) -> T {
+    // Not `scale(1.0 / divisor)`: the reciprocal rounds once before multiplying, which is a
+    // different result from dividing directly.
     T::from_raw(value.raw() / divisor)
 }
 
 pub(crate) fn scalar_sum<T, I>(iter: I) -> T
 where
-    T: LinearQuantity,
+    T: LinearQuantity<Repr = f64>,
     I: Iterator<Item = T>,
 {
-    T::from_raw(iter.map(Quantity::raw).sum())
+    T::from_raw(iter.map(|v| v.raw()).sum())
 }
 
 #[cfg(test)]
@@ -206,8 +133,8 @@ mod tests {
     //! regardless of which quantity they are called on.
 
     use crate::{
-        Factor, LengthMeters, LinearQuantity, Percentage, Quantity, QuantityError, ScalarQuantity,
-        SpeedMs, TimeSeconds,
+        Factor, HostQuantity, LengthMeters, LinearQuantity, Measure, Percentage, QuantityError,
+        ScalarQuantity, SpeedMs, TimeSeconds,
     };
 
     #[test]
@@ -228,8 +155,8 @@ mod tests {
 
     #[test]
     fn abs_is_available_uniformly_even_without_an_inherent_method() {
-        assert_eq!(SpeedMs::new(-4.0).abs(), SpeedMs::new(4.0));
-        assert_eq!(Factor::new(-2.0).abs(), Factor::new(2.0));
+        assert_eq!(LinearQuantity::abs(SpeedMs::new(-4.0)), SpeedMs::new(4.0));
+        assert_eq!(LinearQuantity::abs(Factor::new(-2.0)), Factor::new(2.0));
     }
 
     #[test]
@@ -263,9 +190,9 @@ mod tests {
         assert!(Percentage::new(50.0).is_finite());
         let inf = Percentage::from_raw(f64::INFINITY);
         let nan = Percentage::from_raw(f64::NAN);
-        assert!(!inf.is_finite());
-        assert!(inf.is_infinite());
-        assert!(nan.is_nan());
+        assert!(!ScalarQuantity::is_finite(&inf));
+        assert!(ScalarQuantity::is_infinite(&inf));
+        assert!(ScalarQuantity::is_nan(&nan));
     }
 
     #[test]
@@ -285,8 +212,8 @@ mod tests {
     fn approx_eq_uses_a_typed_tolerance() {
         let a = LengthMeters::new(1.000_1);
         let b = LengthMeters::new(1.000_2);
-        assert!(a.approx_eq(b, LengthMeters::new(0.001)));
-        assert!(!a.approx_eq(b, LengthMeters::new(0.000_01)));
-        assert!(a.approx_eq(b, LengthMeters::new(-0.001)));
+        assert!(a.approx_eq(&b, &LengthMeters::new(0.001)));
+        assert!(!a.approx_eq(&b, &LengthMeters::new(0.000_01)));
+        assert!(a.approx_eq(&b, &LengthMeters::new(-0.001)));
     }
 }
