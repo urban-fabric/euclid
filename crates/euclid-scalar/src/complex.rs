@@ -1,15 +1,14 @@
 //! The concrete complex number [`Complex`] — the complex peer of [`Real`].
 
 use crate::Real;
-use euclid_numeric::Complex as LazyComplex;
 
 /// A **concrete complex number** — the complex peer of [`Real`]. It fuses the
-/// algebraically-closed field structure ([`crate::algebra::AlgebraicallyClosedField`])
-/// with [`LazyComplex`](euclid_numeric::Complex) analysis
+/// algebraically-closed field structure ([`euclid_algebra::AlgebraicallyClosedField`])
+/// with [`euclid_numeric::Complex`] analysis
 /// (`conj`/`re`/`im`/`magnitude`), `Copy`, a concrete [`Real`] component, and the
 /// complex transcendentals. Implemented by `jacobi::Complex{32,64}`.
 pub trait Complex:
-    crate::algebra::AlgebraicallyClosedField + LazyComplex<RealPart: Real> + Copy
+    euclid_algebra::AlgebraicallyClosedField + euclid_numeric::Complex<RealPart: Real> + Copy
 {
     /// Lift a real literal into the complex plane (`x + 0i`).
     fn from_f64(x: f64) -> Self;

@@ -8,16 +8,20 @@ edition.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 repository.workspace = true
-description = "The concrete Copy numeric tier - the Real and Complex numbers where euclid's algebra and lazy-numeric foundations unify. The eager backend's scalar surface."
+description = "The abstract-algebra tower: the semiring/dioid trunk, the ring/field numeric branch, and the exact carriers Rational, Zn/Zp, GaussianRational. Dependency-free."
 
 [lib]
 path = "src/lib.rs"
 
-[dependencies]
-# The analysis surface euclid-algebra fuses with its own algebra tower: euclid-numeric
-# spells these `Real`/`Complex`, and euclid-algebra imports them under its former
-# `LazyReal`/`LazyComplex` names to avoid colliding with its own concrete types.
-euclid-numeric.workspace = true
+# No dependencies, not even euclid-numeric. Algebraic structure needs nothing from
+# analysis: this crate says which tier a carrier reaches, euclid-numeric says what
+# operations a formula may use, and the two meet only in euclid-scalar — which is
+# the one crate that depends on both.
+#
+# Until 0.3 this crate also held the concrete Copy tier, which forced a dependency
+# on euclid-numeric plus `LazyReal`/`LazyComplex` import aliases to dodge a name
+# collision with its own `Real`/`Complex`. Splitting that tier out into
+# euclid-scalar removed the dependency, the aliases, and the collision together.
 
 # Inherited, like every other member. The warn-level copy of this table that
 # came over with the fold named the same lints one severity down, and euclid-algebra

@@ -3,7 +3,7 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use crate::algebra::{
+use crate::{
     AdditiveMagma, AssociativeAddition, AssociativeMultiplication, CommutativeAddition,
     CommutativeMultiplication, Distributive, EuclideanDomain, Field, HasOne, HasZero,
     IntegralDomain, MultiplicativeMagma, Pid, Rational128, RefAdditiveMagma,

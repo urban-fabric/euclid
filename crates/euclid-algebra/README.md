@@ -1,47 +1,81 @@
 # euclid-algebra
 
-**The abstract-algebra tower, and the concrete `Copy` numeric tier where it
-meets euclid's analysis surface.**
+**The abstract-algebra tower: which structure a carrier's `⊕` and `⊗` actually
+satisfy.** Part of [euclid](../..).
 
-euclid's other crates are contracts that deliberately say nothing about what a
-number *is*: `euclid-numeric`'s `Real` is implemented by `f64`, but equally by
-an expression handle or a tensor element that is neither `Copy` nor one machine
-word. euclid-algebra is the tier for code that genuinely needs the real number line —
-eager geometry, matrix and physics kernels — plus the algebraic structures those
-kernels are written over.
-
-```rust
-use euclid_algebra::Real;
-
-// Written once against the concrete tier: constants and `Copy` are available,
-// so this is an ordinary scalar formula rather than a staged expression.
-fn circle_area<T: Real>(r: T) -> T {
-    T::PI * r * r
-}
-
-let a = circle_area(2.0_f64);
-let b = circle_area(2.0_f32); // same formula, different carrier
+```toml
+[dependencies]
+euclid-algebra = "0.3"
 ```
 
-## What is in it
+This crate has **no dependencies at all**. Algebraic structure needs nothing
+from analysis — it says which tier a carrier reaches, not what a formula may
+compute.
 
-| Module | What it holds |
+## Two layers
+
+**The trunk** is method-based. `AdditiveMagma::add` and
+`MultiplicativeMagma::mul` are *methods*, not operators, because one carrier has
+to host several semirings at once — min-plus shortest paths, boolean
+reachability, counting — and none of those could overload `+`:
+
+```rust
+use euclid_algebra::Semiring;
+
+// One routine, any semiring: ordinary arithmetic, min-plus, or boolean.
+fn fold<T: Semiring>(xs: &[T]) -> T {
+    xs.iter().copied().fold(T::ZERO, |acc, x| acc.add(x))
+}
+```
+
+The hierarchy is property-driven and blanket-implemented, so a carrier gets its
+tier by declaring which laws hold rather than by naming the tier:
+
+| layer | traits |
 |---|---|
-| `algebra` | The tower: `Field` → `OrderedField` / `AlgebraicallyClosedField`, the semiring/dioid stack, and the exact carriers `Rational`, `Zn`/`Zp`, `Integer`, `GaussianRational`. |
-| `Real` | `OrderedField` + euclid's `Real` + `Copy`, plus the associated constants (`PI`, `TAU`, `EPSILON`, `INFINITY`, …) and the `bool`-returning predicates (`is_finite`, `is_nan`, …). Implemented by `f64` and `f32`. |
-| `Complex` | `AlgebraicallyClosedField` + euclid's `Complex` + `Copy`, plus the complex transcendentals. |
+| operations | `AdditiveMagma`, `MultiplicativeMagma`, and the `Ref*` variants for non-`Copy` carriers |
+| identities | `HasZero`, `HasOne` |
+| laws (markers) | `AssociativeAddition`, `CommutativeAddition`, `IdempotentAddition`, `AssociativeMultiplication`, `CommutativeMultiplication`, `Distributive`, `ZeroAnnihilatesMultiplication`, `MonotoneMultiplication` |
+| structures | `AdditiveSemigroup` → `AdditiveMonoid` → `AdditiveBand` → `AdditiveSemilattice`, `MultiplicativeSemigroup` → `MultiplicativeMonoid`, then `Semiring` → `CommutativeSemiring` / `IdempotentSemiring` → `Dioid`, `OrderedSemiring`, `StarSemiring` |
 
-euclid's analysis traits are imported here under the names `LazyReal` /
-`LazyComplex`. The "lazy" names the *contract* tier, not deferred evaluation — a
-staged or columnar backend implements the same contracts and stays entirely on
-that tier, never depending on this crate.
+**The numeric branch** is operator-based. `Ring` → `Field` add what a semiring
+lacks — additive inverses and division — as `std::ops`, and bind `+ *` as
+operators too, so numeric and matrix code reads naturally. A numeric type bridges
+the layers in a line: its `AdditiveMagma::add` *is* `+`.
 
-## Why it lives in euclid
+`f64`/`f32` climb the whole chain `Semiring → Ring → Field`; an idempotent
+carrier like min-plus stops at `Dioid`, having no additive inverse.
+`OrderedField` and `AlgebraicallyClosedField` top it out.
 
-euclid-algebra was its own repository until it was folded here. Its only dependency was
-euclid, nothing released it independently, and it had gone stale: it still named
-the single `euclid` facade crate that euclid 0.3 removed in favour of per-tier
-crates, so it no longer resolved against euclid's own main branch.
+## Exact carriers
 
-It keeps its own `Proprietary` licence rather than inheriting the workspace's
-Apache-2.0 — a move should not relicense code.
+Concrete number systems that are pure algebraic structure — no analysis, no
+floating point:
+
+| type | tier |
+|---|---|
+| `Rational`, `Rational64`, `Rational128` | `OrderedField` |
+| `Zn<N>` | `CommutativeRing` — not a field unless the modulus is prime |
+| `Zp<P>` | `Field` |
+| `GaussianRational` | `Field` — ℚ(i) |
+| `Integer` | `EuclideanDomain` |
+
+## Not Here
+
+**Analysis** — `exp`, `ln`, `conj`, the real transcendentals — is a separate
+concern, and lives in `euclid-numeric` as a contract over any carrier.
+
+**The concrete number line** is a third concern again: `euclid-scalar` is where
+this tower's `OrderedField`/`AlgebraicallyClosedField` fuse with that analysis
+surface into the `Copy` `Real` and `Complex` of `f64`/`f32`.
+
+Until 0.3 this crate held the tower *and* that concrete tier, which forced a
+dependency on `euclid-numeric` plus `LazyReal`/`LazyComplex` import aliases to
+dodge a name collision with its own `Real`/`Complex`. Splitting the tier out
+removed the dependency, the aliases, and the collision together.
+
+## License
+
+euclid-algebra predates the fold into euclid and keeps its own `Proprietary`
+licence rather than inheriting the workspace's Apache-2.0 — a move should not
+relicense code.

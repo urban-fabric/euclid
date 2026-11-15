@@ -1,0 +1,27 @@
+[package]
+name = "euclid-scalar"
+# Split out of euclid-algebra, which predates the fold into euclid and carries its own
+# licence rather than inheriting the workspace's Apache-2.0. This crate is that crate's
+# code, so it keeps the same licence — a split should not relicense any more than a move.
+license = "Proprietary"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+description = "The concrete Copy number line - the Real and Complex numbers where euclid's algebra tower and numeric analysis surface fuse. The eager backend's scalar surface."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# The two foundations this crate exists to fuse, and the reason it is the only member
+# that needs both. euclid-numeric supplies the analysis surface (spelled `Real`/`Complex`
+# there, named by full path here so they do not collide with this crate's own concrete
+# traits of the same name); euclid-algebra supplies the structure the concrete number
+# must satisfy (`OrderedField`, `AlgebraicallyClosedField`).
+euclid-algebra.workspace = true
+euclid-numeric.workspace = true
+
+[lints]
+workspace = true

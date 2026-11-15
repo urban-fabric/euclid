@@ -9,7 +9,7 @@
 //! exact one.)
 //!
 //! [`Zn<N>`] is the **ring** ℤ/Nℤ for *any* `N` — only a
-//! [`CommutativeRing`](crate::algebra::CommutativeRing) (no
+//! [`CommutativeRing`](crate::CommutativeRing) (no
 //! division), since for composite `N` it has zero divisors. It is exactly where the
 //! Howell normal form lives (the ℤ/Nℤ analog of Hermite form, since ℤ/Nℤ is not a PID).
 //!
@@ -19,7 +19,7 @@
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use crate::algebra::{
+use crate::{
     AdditiveMagma, AssociativeAddition, AssociativeMultiplication, CommutativeAddition,
     CommutativeMultiplication, Distributive, EuclideanDomain, Field, HasOne, HasZero,
     IntegralDomain, MultiplicativeMagma, Pid, RefAdditiveMagma, RefMultiplicativeMagma, Ufd,
@@ -194,7 +194,7 @@ impl<const P: u64> fmt::Display for Zp<P> {
 }
 
 /// An element of the ring **ℤ/Nℤ** for any modulus `N` — a residue in `[0, N)`. A
-/// [`CommutativeRing`](crate::algebra::CommutativeRing) but **not** a field
+/// [`CommutativeRing`](crate::CommutativeRing) but **not** a field
 /// (composite `N` has zero divisors and
 /// non-invertible elements), so it has no division. Use [`Zp`] when `N` is prime and
 /// you need a field.
