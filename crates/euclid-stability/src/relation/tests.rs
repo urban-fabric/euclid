@@ -6,8 +6,9 @@
 
 use super::{
     Absolute, Compare, Exact, Relative, Ulps, agree, associative, bounded, commutative,
-    distributes, even, fixed_point, forward_stable, forward_stable_margin, idempotent, involution,
-    monotone, odd, order_independent, precision_agrees, preserves, round_trip,
+    distributes, even, f32_ulps_between, fixed_point, forward_stable, forward_stable_margin,
+    idempotent, involution, monotone, odd, order_independent, precision_agrees, preserves,
+    round_trip,
 };
 
 // ===== The comparators ====================================================
@@ -418,4 +419,241 @@ fn precision_agrees_treats_matching_non_finite_results_as_agreement() {
     precision_agrees("overflow", 1e30, |x| x * x, |x| x * x, 2)
         .expect("both overflow to +inf, which is agreement");
     precision_agrees("nan", -1.0, f64::sqrt, f32::sqrt, 2).expect("both are NaN");
+}
+
+// ===== The comparators, pinned in both directions =========================
+
+/// Every comparator must say **yes** to something.
+///
+/// The suite above checks each one's refusals thoroughly and its acceptances barely, and mutation
+/// testing found the hole: `Relative::same` could be replaced with a function returning `false`
+/// unconditionally and the whole workspace stayed green. A comparator that never agrees turns
+/// every relation built on it into a vacuous pass-by-failure — or rather, it would make them all
+/// fail, which is worse, and nothing was exercising the agreeing path to notice.
+#[test]
+fn every_comparator_accepts_a_value_that_matches() {
+    assert!(Exact.same(&3_u32, &3_u32));
+    assert!(Ulps(0).same(&1.0_f64, &1.0_f64));
+    assert!(Relative(1e-9).same(&1.0_f64, &1.0_f64));
+    assert!(Relative(0.01).same(&1.0_f64, &1.005_f64));
+    assert!(Absolute(1e-9).same(&1.0_f64, &1.0_f64));
+    assert!(Absolute(0.5).same(&1.0_f64, &1.25_f64));
+}
+
+/// A comparator's description reaches the reader on every failure, so it is part of the
+/// deliverable rather than decoration.
+///
+/// Mutation testing replaced three of these four with `String::new()` and with `"xyzzy"`, and
+/// nothing failed: only `Exact` had its description checked. A failure report that cannot say
+/// *what* notion of sameness was being applied is the report that sends someone to read the
+/// source of the relation they just used.
+#[test]
+fn every_comparator_describes_the_notion_it_applies() {
+    let described = [
+        <Exact as Compare<f64>>::describe(&Exact),
+        <Ulps as Compare<f64>>::describe(&Ulps(3)),
+        <Relative as Compare<f64>>::describe(&Relative(1e-9)),
+        <Absolute as Compare<f64>>::describe(&Absolute(0.5)),
+    ];
+    for description in &described {
+        assert!(
+            !description.is_empty(),
+            "a comparator described itself as nothing"
+        );
+    }
+    // Each must name its own tolerance, or two failures at different tolerances read identically.
+    assert!(
+        <Ulps as Compare<f64>>::describe(&Ulps(3)).contains('3'),
+        "Ulps did not name its tolerance: {}",
+        described[1]
+    );
+    assert!(
+        <Relative as Compare<f64>>::describe(&Relative(1e-9)).contains("e-9"),
+        "Relative did not name its tolerance: {}",
+        described[2]
+    );
+    // Scientific notation, like `Relative` — `0.5` reaches the reader as `5e-1`.
+    assert!(
+        <Absolute as Compare<f64>>::describe(&Absolute(0.5)).contains("5e-1"),
+        "Absolute did not name its tolerance: {}",
+        described[3]
+    );
+    // And they must be distinguishable from one another.
+    let distinct: std::collections::BTreeSet<&String> = described.iter().collect();
+    assert_eq!(
+        distinct.len(),
+        described.len(),
+        "two comparators describe themselves identically: {described:?}"
+    );
+}
+
+// ===== f32 ulp distance ===================================================
+
+/// The `f32` ulp metric, pinned to exact counts.
+///
+/// `precision_agrees` is built entirely on this function and was the only thing exercising it —
+/// through a tolerance comparison, which cannot distinguish a gap of 1 from a gap of 1,065,353,216
+/// when the allowance is generous. Mutation testing left six survivors here, including flipping
+/// the sign test that makes the mapping monotone across zero.
+///
+/// The constants are the point. `0.0` to `1.0` is `0x3F800000` steps because that *is* the bit
+/// pattern of `1.0f32`, and a pair straddling zero is twice that — the property that a
+/// sign-magnitude format does not give you for free and that this function exists to supply.
+#[test]
+fn f32_ulps_between_counts_representable_steps() {
+    assert_eq!(f32_ulps_between(1.0, 1.0), Some(0));
+    assert_eq!(f32_ulps_between(-1.0, -1.0), Some(0));
+
+    let next = f32::from_bits(1.0_f32.to_bits() + 1);
+    assert_eq!(f32_ulps_between(1.0, next), Some(1));
+    assert_eq!(f32_ulps_between(next, 1.0), Some(1), "must be symmetric");
+
+    // Signed zero is zero steps apart, not 2^31.
+    assert_eq!(f32_ulps_between(-0.0, 0.0), Some(0));
+
+    // Exact distances, which a tolerance comparison cannot pin.
+    assert_eq!(f32_ulps_between(0.0, 1.0), Some(1_065_353_216));
+    assert_eq!(f32_ulps_between(-1.0, 1.0), Some(2_130_706_432));
+
+    // Non-finite on *either* side is unmeasurable, not large.
+    assert_eq!(f32_ulps_between(f32::NAN, 1.0), None);
+    assert_eq!(f32_ulps_between(1.0, f32::NAN), None);
+    assert_eq!(f32_ulps_between(f32::INFINITY, 1.0), None);
+    assert_eq!(f32_ulps_between(1.0, f32::NEG_INFINITY), None);
+}
+
+/// The margin is the relative error **divided by** the admissible bound, and the arithmetic has
+/// to be that and not merely monotone in it.
+///
+/// [`the_margin_is_a_ratio_against_the_admissible_bound`] checks which side of `1.0` the margin
+/// falls on and that it grows with the error. Mutation testing showed that is not enough: turning
+/// the division in `relative` into a multiplication or a remainder leaves the margin on the same
+/// side of one and still growing, because `exp(1.5)` is a number near four and scaling the error
+/// by it changes nothing qualitative. Both mutants survived.
+///
+/// So this computes the bound independently and asserts the ratio exactly. The margin is the
+/// score a [`budget`](crate::budget) baseline records, so a constant factor in it is a silently
+/// wrong number in a committed file.
+#[test]
+fn the_margin_is_exactly_the_relative_error_over_the_bound() {
+    let x = 1.5_f64;
+    let error = 1e-4;
+    let sloppy = move |v: f64| f64::exp(v) * (1.0 + error);
+
+    let bound = crate::numeric::forward_error_bound(sloppy, x, 8.0).expect("bound is defined");
+    let margin = forward_stable_margin(x, sloppy, f64::exp, 8.0).expect("margin is defined");
+
+    // `(exp(x) * (1 + error) - exp(x)) / exp(x)` is exactly `error`.
+    let expected = error / bound;
+    assert!(
+        (margin - expected).abs() <= expected * 1e-9,
+        "margin was {margin:e}, expected {expected:e} (relative error {error:e} over bound \
+         {bound:e})"
+    );
+}
+
+/// A reference that vanishes or runs away has no relative error to measure, even where the bound
+/// itself is perfectly well defined.
+///
+/// [`the_margin_is_undefined_where_the_reference_vanishes`] looks like it covers this and does
+/// not: it uses a *constant* kernel, whose condition number is zero, so the `None` it observes
+/// comes from the bound being zero rather than from the guard on the reference. Mutation testing
+/// weakened that guard from `||` to `&&` — making it unsatisfiable, since zero is finite — and
+/// nothing failed.
+///
+/// A linear kernel has a condition number of one, so the bound is positive and the guard is the
+/// only thing standing between a zero reference and a division by it.
+#[test]
+fn the_margin_is_undefined_against_a_zero_or_runaway_reference() {
+    let identity = |v: f64| v;
+    assert!(
+        crate::numeric::forward_error_bound(identity, 1.0, 8.0).is_some_and(|b| b > 0.0),
+        "precondition: the bound must be positive, or this tests the wrong guard"
+    );
+
+    assert_eq!(
+        forward_stable_margin(1.0, identity, |_| 0.0, 8.0),
+        None,
+        "a zero reference has no relative error"
+    );
+    assert_eq!(
+        forward_stable_margin(1.0, identity, |_| f64::INFINITY, 8.0),
+        None,
+        "a non-finite reference has no relative error"
+    );
+}
+
+/// The failure report must state the error it actually measured.
+///
+/// [`forward_stable_names_the_conditioning_in_its_message`] checks the prose and not the numbers,
+/// and the numbers are what a reader acts on. Mutation testing found four ways to corrupt the
+/// relative error on the report while leaving the verdict correct — the failure is decided from
+/// the margin, so a wrong number here is a wrong number in a message nobody can cross-check.
+///
+/// The inputs are chosen so the right answer is exactly `1e0` while every mutation lands
+/// somewhere visibly different: a remainder gives `0e0`, an addition `3e0`, a multiplication
+/// `9e0`, a division `6.66e-1`.
+///
+/// `x = 3` rather than `x = 1` for exactly that reason. At `x = 1` the reference is `1`, and
+/// multiplying by it is the same as dividing by it — so the multiplication mutant produced the
+/// right answer by coincidence and survived the first version of this test.
+#[test]
+fn the_failure_report_states_the_relative_error_it_measured() {
+    let failure = forward_stable("doubling", 3.0, |v: f64| v * 2.0, |v| v, 8.0)
+        .expect_err("a kernel returning twice the answer is not forward stable");
+
+    assert!(
+        failure.message.contains("relative:   1e0"),
+        "a kernel off by a factor of two has a relative error of exactly 1; the report said:\n{}",
+        failure.message
+    );
+}
+
+/// A narrow kernel must not be allowed to invent a finite answer where the wide one has none.
+///
+/// Mutation testing relaxed `rounded.is_nan() && computed.is_nan()` to `||`, which accepts
+/// exactly that: the wide reference returns NaN, the narrow kernel returns a number, and the
+/// relation calls it agreement. That is the most dangerous direction for this check to fail,
+/// because a narrow kernel returning plausible garbage outside its domain is a real bug class.
+#[test]
+fn precision_agrees_refuses_a_narrow_kernel_that_invents_a_finite_answer() {
+    precision_agrees("invented", 1.0, |_| f64::NAN, |_| 1.0_f32, 2)
+        .expect_err("a finite narrow result cannot agree with a NaN wide one");
+    precision_agrees("invented", 1.0, |_| 1.0_f64, |_| f32::NAN, 2)
+        .expect_err("a NaN narrow result cannot agree with a finite wide one");
+
+    // Both absent in the same way is agreement, which is the case the guard exists to allow.
+    precision_agrees("both nan", 1.0, |_| f64::NAN, |_| f32::NAN, 2).expect("two NaNs agree");
+    precision_agrees(
+        "both infinite",
+        1.0,
+        |_| f64::INFINITY,
+        |_| f32::INFINITY,
+        2,
+    )
+    .expect("two infinities of the same sign agree");
+}
+
+/// A degenerate safety factor abstains rather than reporting a NaN margin.
+///
+/// `forward_error_bound` floors itself at `safety * UNIT_ROUNDOFF`, so the bound is positive for
+/// every sane call and the `bound > 0.0` guard looks like dead weight — mutation testing relaxed
+/// it to `>=` and nothing failed. It is not dead: `safety = 0` drives the bound to zero, and
+/// without the guard the margin becomes `0.0 / 0.0`.
+///
+/// That matters more than it looks. The margin is the score a [`budget`](crate::budget) records,
+/// and the budget machinery silently *ignores* non-finite scores — so a NaN here would not fail
+/// loudly, it would quietly stop recording a baseline and leave the property protected by
+/// nothing at all. Abstaining is the honest answer.
+#[test]
+fn a_degenerate_safety_factor_abstains_rather_than_scoring_nan() {
+    assert_eq!(
+        forward_stable_margin(1.5, f64::exp, f64::exp, 0.0),
+        None,
+        "a zero safety factor leaves no admissible bound to measure against"
+    );
+    // And the relation built on it abstains too, rather than reporting a failure it cannot
+    // describe.
+    forward_stable("zero-safety", 1.5, f64::exp, f64::exp, 0.0)
+        .expect("a zero safety factor must abstain, not fail");
 }

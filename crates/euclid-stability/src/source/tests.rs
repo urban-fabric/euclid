@@ -131,6 +131,131 @@ fn consumed_reports_only_what_was_read() {
     assert_eq!(source.consumed(), vec![1, 2]);
 }
 
+/// `below` must be **monotone**: a smaller tape entry can never produce a larger value.
+///
+/// The invariant the entire shrinker rests on, documented at length on
+/// [`below`](super::Source::below) as "the single most expensive mistake available in this file"
+/// — and, until this test, not actually checked. `shrink_entries` binary-searches an entry
+/// downward assuming that if a smaller value still fails then smaller values are worth trying,
+/// and a `%` implementation makes failure *periodic* in the entry rather than monotone, which
+/// breaks the search silently: the shrinker reports a tape of full-width garbage and no
+/// assertion fires.
+///
+/// Every other test in this file passes under a modulo implementation, which is exactly why
+/// this one is here.
+#[test]
+fn below_is_monotone_in_the_tape_entry() {
+    for bound in [2u64, 3, 8, 17, 100, 1_000, u64::MAX] {
+        let mut previous = 0u64;
+        for step in 0..=512u64 {
+            // A sweep across the whole u64 range, so the coarse and fine ends are both covered.
+            let entry = step.saturating_mul(u64::MAX / 512);
+            let drawn = Source::replaying(vec![entry])
+                .below(bound)
+                .expect("one entry is on the tape");
+            assert!(
+                drawn >= previous,
+                "below({bound}) fell from {previous} to {drawn} as the entry rose to {entry}; \
+                 the mapping is not monotone and binary-search shrinking is unsound"
+            );
+            assert!(drawn < bound, "below({bound}) returned {drawn}");
+            previous = drawn;
+        }
+    }
+}
+
+/// A zero entry draws zero, whatever the bound. The other half of monotonicity, and the reason
+/// `zero_chunks` is a minimisation at all rather than an arbitrary edit.
+#[test]
+fn a_zero_entry_draws_the_smallest_value() {
+    for bound in [1u64, 2, 7, 64, u64::MAX] {
+        assert_eq!(
+            Source::replaying(vec![0]).below(bound),
+            Ok(0),
+            "a zeroed entry must draw the smallest value for bound {bound}"
+        );
+    }
+}
+
+/// `boolean` must map a **low** entry to `false`.
+///
+/// Polarity is not cosmetic. The shrinker lowers entries, so `false` has to be the smaller
+/// choice — otherwise a minimised counterexample reports the opposite branch from the one that
+/// shrank, and `generate::boolean()` shrinks *away* from its base case. Mutation testing found
+/// that inverting this comparison left all 1,169 tests in the workspace green, because a
+/// symmetric generator is still a perfectly valid generator and nothing was asserting direction.
+#[test]
+fn boolean_draws_false_from_a_low_entry_and_true_from_a_high_one() {
+    assert_eq!(Source::replaying(vec![0]).boolean(), Ok(false));
+    assert_eq!(Source::replaying(vec![u64::MAX]).boolean(), Ok(true));
+}
+
+/// `tape` is what the source **recorded**; `consumed` is what the generator **read**. The two
+/// differ whenever a replayed tape is longer than the draw needs, and the distinction matters
+/// because only `consumed` is the identity of the value — see
+/// [`consumed_reports_only_what_was_read`].
+#[test]
+fn tape_reports_everything_recorded_not_merely_what_was_read() {
+    let mut source = Source::replaying(vec![11, 22, 33, 44]);
+    let _ = source.below(10).expect("entry present");
+
+    assert_eq!(
+        source.tape(),
+        &[11, 22, 33, 44],
+        "tape must report the whole recorded sequence"
+    );
+    assert_eq!(
+        source.consumed(),
+        vec![11],
+        "consumed must report only the entry that was read"
+    );
+}
+
+/// The climber's mode: replay the given prefix, then keep going rather than overrun.
+///
+/// This is what [`restart_climbing`](super::Source::restart_climbing) exists for. A hill-climbing
+/// step perturbs one entry of the best tape, and a perturbation that raises a length makes the
+/// generator read further than that tape went — which under a fixed tape is discarded, costing
+/// 11% of the case budget at the default `targeted_fraction`.
+#[test]
+fn a_climbing_tape_replays_its_prefix_then_grows() {
+    let prefix = [7u64, 8];
+    let mut climbing = Source::generating(0, 0);
+    climbing.restart_climbing(&prefix, 42, 64);
+    let mut fixed = Source::replaying(prefix.to_vec());
+
+    // Over the prefix the two are indistinguishable: a climbing step must honour the entries it
+    // was handed, or the perturbation it is exploring is not the one it chose.
+    assert_eq!(climbing.below(100), fixed.below(100));
+    assert_eq!(climbing.below(100), fixed.below(100));
+
+    // Past the prefix they diverge, and that divergence is the whole point.
+    assert!(
+        fixed.below(10).is_err(),
+        "precondition: a fixed tape overruns past its end"
+    );
+    assert!(
+        climbing.below(10).is_ok(),
+        "a climbing tape must grow past its prefix, not overrun"
+    );
+    assert_eq!(
+        &climbing.consumed()[..2],
+        &prefix,
+        "the recorded tape must still begin with the prefix it replayed"
+    );
+}
+
+/// But growth is still bounded, or a runaway generator would allocate without limit.
+#[test]
+fn a_climbing_tape_still_respects_its_limit() {
+    let mut source = Source::generating(0, 0);
+    source.restart_climbing(&[1], 42, 3);
+    assert!(source.below(10).is_ok(), "the prefix entry");
+    assert!(source.below(10).is_ok(), "grown");
+    assert!(source.below(10).is_ok(), "grown to the limit");
+    assert!(source.below(10).is_err(), "max_len must bound the growth");
+}
+
 #[test]
 fn modes_are_distinguishable() {
     // Guards against the two constructors being accidentally made identical, which would make

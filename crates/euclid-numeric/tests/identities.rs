@@ -32,7 +32,9 @@
 
 use euclid_numeric::Real;
 use euclid_stability::relation::{Absolute, Exact, Relative, Ulps};
-use euclid_stability::{Config, check, check_ulps, classify, generate, property, relation};
+use euclid_stability::{
+    Config, check, check_ulps, classify, generate, numeric, property, relation,
+};
 
 fn settings(suite: &str) -> Config {
     Config::default()
@@ -180,11 +182,38 @@ property! {
 property! {
     #![config(settings("round_trips"))]
 
-    /// `exp` and `ln` invert each other. Four ulps, because the trip passes through two kernels
-    /// and `exp`'s relative error is amplified by `ln`'s derivative near 1.
+    /// `exp` and `ln` invert each other, to the bound the **composition** is entitled to.
+    ///
+    /// # Why this is not a fixed ulp count any more
+    ///
+    /// It was four ulps, and four ulps is wrong. The property passed 400 cases for three
+    /// releases and failed on the first 25x soak, at `x = -0.0624`, where the round trip costs
+    /// more than four ulps for a perfectly good reason.
+    ///
+    /// The docstring it replaces already named the mechanism — "`exp`'s relative error is
+    /// amplified by `ln`'s derivative near 1" — and then picked a constant anyway. That is
+    /// exactly the mistake [`two_stage_error_bound`] exists to prevent, and the amplification is
+    /// not constant: with `κ_exp(x) = |x|` and `κ_ln(exp x) = 1/|x|`, the two-stage bound's
+    /// `κ_outer·κ_inner + κ_outer` comes to `1 + 1/|x|`. At `x = -0.0624` that is about 17, so
+    /// seventeen ulps is the honest allowance and four was a claim about a different function.
+    ///
+    /// It diverges as `x` approaches zero, which is not a defect to be clamped away: `ln` is
+    /// genuinely ill conditioned at 1, and a round trip through it near zero *cannot* be
+    /// ulp-exact. Any constant tolerance here is either wrong near zero or vacuous away from
+    /// it — the two-stage bound is the only spelling that is neither, and away from zero it
+    /// settles to about `8u`, which is where the original four ulps was aiming.
+    ///
+    /// [`two_stage_error_bound`]: euclid_stability::numeric::two_stage_error_bound
     fn exp_and_ln_round_trip(x in generate::float::in_range(-700.0, 700.0)) {
         classify!("near zero", x.abs() < 1.0);
-        relation::round_trip("exp then ln", x, f64::exp, f64::ln, &Ulps(4))?;
+        classify!("ordinary", x.abs() >= 1.0);
+
+        // Undefined where `ln`'s conditioning has no value — `x = 0` exactly, where the trip is
+        // exact anyway and there is no relative error to bound.
+        let Some(bound) = numeric::two_stage_error_bound(f64::exp, f64::ln, x, 8.0) else {
+            return Ok(());
+        };
+        relation::round_trip("exp then ln", x, f64::exp, f64::ln, &Relative(bound))?;
     }
 
     /// `sqrt` and squaring invert each other, to a relative tolerance rather than ULP: squaring

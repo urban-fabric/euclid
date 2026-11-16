@@ -102,6 +102,33 @@ impl Source {
         self.max_len = max_len;
     }
 
+    /// Reuse this source to replay `tape` and then **keep going** with fresh randomness.
+    ///
+    /// The climber's mode, and the one place where replaying and growing are both wanted. A
+    /// hill-climbing step perturbs one entry of the best tape so far, and a perturbation that
+    /// *raises* a length or a count makes the generator read further than the original tape
+    /// went — so under [`restart_replaying`](Self::restart_replaying) the candidate overruns and
+    /// is thrown away. Measured on a generator whose score did not reward length, that discarded
+    /// 11% of the case budget at the default `targeted_fraction`, and every one of those
+    /// discards was counted as a *rejection* against a budget meant for generator filters.
+    ///
+    /// Growing past the end fixes it: the mutated prefix is honoured, and whatever the generator
+    /// asks for beyond it is invented. The candidate is a different case than the original, which
+    /// is exactly what a climbing step is supposed to produce.
+    ///
+    /// **Not for shrinking.** There the opposite is required — see
+    /// [`restart_replaying`](Self::restart_replaying), which refuses to extend — because topping
+    /// a short candidate up with new randomness would silently change the case under examination
+    /// and make the minimisation unsound.
+    pub fn restart_climbing(&mut self, tape: &[u64], seed: u64, max_len: usize) {
+        self.tape.clear();
+        self.tape.extend_from_slice(tape);
+        self.position = 0;
+        self.rng = SplitMix64::new(seed);
+        self.mode = Mode::Grow;
+        self.max_len = max_len.max(tape.len());
+    }
+
     /// Reuse this source to replay `tape`, **keeping its allocation**.
     ///
     /// The shrink path's reason for existing. Every probe needs a source over a candidate tape,

@@ -528,3 +528,78 @@ fn a_broken_invariant_is_reported() {
     execute::<Leaky>(&[(), ()]).expect("two steps are within the invariant");
     execute::<Leaky>(&[(), (), ()]).expect_err("the third step breaks the invariant");
 }
+
+/// `check_machine` must **search**, not merely run.
+///
+/// Mutation testing found that replacing this function's whole body with `()` left every test in
+/// this file green, which is a fair summary of what they check: two of them drive `execute`
+/// directly with a hand-built sequence, and the third
+/// ([`persist_agrees_with_its_model_over_any_sequence`]) hands `check_machine` a *correct*
+/// machine and asserts it does not complain. A function that does nothing also does not complain.
+///
+/// So the missing test is the one that matters most: given a machine that is wrong, the search
+/// has to find a sequence that proves it. The divergence here needs three steps, so no
+/// single-shot case can witness it and the generator has to produce a sequence long enough —
+/// which is the whole claim [`check_machine`] makes.
+#[test]
+fn check_machine_finds_a_sequence_that_breaks_a_wrong_system() {
+    /// Agrees with its model for two steps, then stops incrementing. A counter that saturates
+    /// one step early is the smallest honest version of "correct until the third interleaving".
+    struct StallsAfterTwo;
+
+    impl Machine for StallsAfterTwo {
+        type System = u32;
+        type Model = u32;
+        type Command = ();
+
+        fn system() -> Self::System {
+            0
+        }
+        fn model() -> Self::Model {
+            0
+        }
+        fn command(_: &Self::Model) -> Gen<Self::Command> {
+            generate::just(())
+        }
+        fn step_model(model: &mut Self::Model, _: &Self::Command) {
+            *model += 1;
+        }
+        fn step_system(
+            system: &mut Self::System,
+            model: &Self::Model,
+            _: &Self::Command,
+        ) -> Outcome {
+            if *system < 2 {
+                *system += 1;
+            }
+            if system == model {
+                Ok(())
+            } else {
+                Err(Failure::new(
+                    format!("system {system} disagrees with model {model}"),
+                    "a sequential property",
+                ))
+            }
+        }
+    }
+
+    let config = Config::default().cases(256);
+    let result = std::panic::catch_unwind(|| {
+        check_machine::<StallsAfterTwo>("stalls", &config, 6);
+    });
+
+    let message = result
+        .expect_err("check_machine must find the sequence that breaks this system")
+        .downcast_ref::<String>()
+        .cloned()
+        .unwrap_or_default();
+
+    assert!(
+        message.contains("property failed"),
+        "the failure should be reported through the ordinary runner: {message}"
+    );
+    assert!(
+        message.contains("disagrees"),
+        "the report should carry the machine's own message: {message}"
+    );
+}

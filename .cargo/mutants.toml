@@ -1,0 +1,267 @@
+# cargo-mutants: the test-strength gate.
+#
+# The six checks in CONTRIBUTING.md ask "does the code pass its tests". This asks the question
+# underneath: **would the tests notice if the code were wrong?** It answers by changing a function
+# body — a `+` to a `-`, a return value to a default — and re-running the suite. A mutant the
+# suite still passes is a line nothing is pinning.
+#
+# That is a different instrument from coverage, and the difference is the reason this file exists.
+# `compensated_sum` in euclid-stability was executed by three tests and pinned by none of them:
+# they asserted a *band* on a derived quantity, so the sign of the Kahan correction could be
+# flipped and the whole 1,169-test workspace suite stayed green. Coverage reported that function
+# as covered, and it was. It just was not checked.
+#
+# Run as `cargo mutants`. It needs no network.
+#
+#     cargo mutants --in-diff <(git diff origin/main)   # what this branch changed
+#     cargo mutants -p euclid-stability                 # one crate
+#     cargo mutants -f crates/euclid-numeric/src/gamma.rs   # one file
+#     cargo mutants --shard 1/8                         # a slice, for splitting across runs
+#
+# # This is not a seventh local check
+#
+# CONTRIBUTING.md says there is no CI by choice, because the suite takes well under a second. A
+# full mutation run is the opposite: 11,264 mutants across the workspace, each needing a rebuild
+# and a test run. That is hours, not seconds, so it does not belong in the pre-push loop.
+#
+# Treat it the way `cargo deny check` is treated — the check with an unusual cost that runs
+# deliberately rather than constantly. `--in-diff` is the exception and is worth running on a
+# branch that touches a kernel: it mutates only the lines the diff added, which is minutes.
+#
+# # Why exclusions live here and not in attributes
+#
+# cargo-mutants reads `#[mutants::skip]`, which would mean a `mutants` dependency on crates whose
+# whole posture is that they have none — and `deny.toml` exists to keep that true. So a skip is a
+# regex in this file, and the cost of that choice is that each one has to be justified in a
+# comment rather than sitting next to the code. Each one below is.
+
+# ---------------------------------------------------------------------------
+
+# Mutants that cannot be killed, because they do not change behaviour. These are *equivalent
+# mutants* in the classical sense, and each was confirmed by brute-force differential search over
+# the notable f64 values rather than argued from the source.
+#
+# Leaving them in the report would be worse than excluding them: a permanent floor of
+# unkillable survivors trains a reader to skim the list, which is how a real survivor gets
+# missed.
+# Each pattern matches cargo-mutants' *description* of a mutation ("replace X with Y in f"), not
+# the source line — so a pattern has to name the operator, and naming only the function would
+# silently exclude every future mutant in it too.
+exclude_re = [
+    # --- euclid-stability: redundant defensive guards -----------------------
+    #
+    # `within_relative` and `within_absolute` open with `if a.is_nan() || b.is_nan()`, and
+    # weakening that `||` to `&&` is undetectable. The reason is `f64::max` ignoring NaN: with the
+    # guard weakened, a single NaN falls through to `(a - b).abs() / scale`, which is NaN, and
+    # `NaN <= tolerance` is false — the same answer the guard returns. Checked over 6,250
+    # (a, b, tolerance) combinations with no differing input.
+    #
+    # The same holds for `if scale == 0.0 || !scale.is_finite()`. Its `scale == 0.0` arm is in
+    # fact unreachable: `scale` is `max(|a|, |b|)`, so `scale == 0.0` requires both to be ±0,
+    # and `a == b` has already returned true for that. The guards stay because they document
+    # intent and survive refactoring; they are simply not load-bearing today.
+    #
+    # Note how narrow these are. `within_absolute`'s *other* mutant — subtraction to addition —
+    # is a real defect and is now pinned by `within_absolute_measures_a_difference_not_a_sum`, so
+    # excluding the function wholesale would have thrown away a genuine finding.
+    'replace \|\| with && in within_relative',
+    'replace \|\| with && in within_absolute',
+
+    # `Source::weighted` ends `Ok(weights.len() - 1)` as a fallback the loop above never reaches:
+    # `below(total)` returns strictly less than `total` (multiply-shift, see `Source::below`) and
+    # the weights sum to exactly `total`, so the running subtraction always returns inside the
+    # loop. The arm cannot be reached, so no mutation of it can be observed. `unreachable!()`
+    # would say so in the type system, but the workspace denies `panic`.
+    # The invariant that makes it unreachable is pinned by `below_is_monotone_in_the_tape_entry`.
+    'replace - with \+ in Source::weighted',
+    'replace - with / in Source::weighted',
+
+    # --- euclid-stability: clauses the guard above them makes unreachable ---
+    #
+    # `seam_ratio`'s window guard ends `|| x + window == x || x - window == x`, testing whether
+    # the derivative window has underflowed relative to the argument. Neither clause can fire.
+    # The window is `sqrt(EPSILON) * |x|`, about `1.5e-8` of the argument, where one ulp is about
+    # `2.2e-16` of it — so the window is seven orders of magnitude larger than the spacing it
+    # would have to vanish below. The only range where it could is the subnormals, and the two
+    # clauses *before* these already decline there.
+    #
+    # Checked by sweeping every exponent from -1080 to 1023 at four mantissas and both signs,
+    # plus both zeros: 16,367 arguments reaching the clause, zero hits on either. The clauses stay
+    # as documentation of an invariant that happens to be guaranteed elsewhere.
+    #
+    # Note how narrow this is: the *first* two clauses of the same guard are real, and
+    # `seam_ratio_declines_either_side_of_the_subnormal_boundary` pins them.
+
+    # `condition_at` opens with `if x == 0.0 || !x.is_finite()` and later guards its difference
+    # with `if !up.is_finite() || !down.is_finite()`. Weakening either `||` to `&&` is
+    # unobservable, because the arithmetic downstream reaches the same verdict by itself: a zero
+    # or non-finite argument drives the central difference to `0/0` or `inf/inf`, and the closing
+    # `condition.is_finite().then_some(condition)` turns that into the same `None` the guard would
+    # have returned.
+    #
+    # Checked across nine functions (identity, constants including infinite and NaN, exp, ln,
+    # reciprocal, square) against seventeen arguments spanning both zeros, both infinities, NaN,
+    # the subnormals and the extremes: no differing result for either guard.
+    #
+    # The middle guard, on `f(x)` itself, is **not** equivalent and is not excluded — an infinite
+    # value there produces a finite `κ` of zero, which reads as perfect conditioning. That one is
+    # pinned by `condition_at_declines_an_infinite_value`.
+    'replace \|\| with && in condition_at',
+
+    # `next_up` and `next_down` both branch on `if x > 0.0` to choose which way to move the bit
+    # pattern, and relaxing either to `>= 0.0` changes nothing: both functions return early on
+    # `x == 0.0` — which is also true of `-0.0` — so the comparison is only ever reached for a
+    # strictly non-zero, non-NaN argument, where the two spellings agree by definition.
+    'replace > with >= in next_up',
+    'replace > with >= in next_down',
+
+    # --- euclid-matrix: a crate with no carrier to run anything against -----
+    #
+    # `euclid-matrix` is the one member whose conformance suites cannot run here at all, and the
+    # workspace manifest says why: "it names no backend: a backend supplies the concrete tensor
+    # type these monomorphize on." There is no `Tensor` implementation in this repository for its
+    # laws to be instantiated at, so every mutation inside `assert_close` — the residual norm
+    # against a relative tolerance — is unreachable by construction rather than unchecked by
+    # oversight.
+    #
+    # This is the one exclusion here that is a *limitation* rather than a proof. The mutants are
+    # probably killable; they are simply not killable without a backend, and standing one up in
+    # euclid would undo the decision that keeps this crate backend-agnostic. A consumer that
+    # implements `Tensor` gets these laws exercised for real, which is where the coverage
+    # belongs.
+    'replace \* with \+ in assert_close',
+
+    # --- euclid-stability: an environment read with no logic in it ----------
+    #
+    # `budget::recording()` is `std::env::var_os(RECORD).is_some()` and nothing else, so the only
+    # test that could pin it is one that sets the variable — and that is not available here.
+    # `std::env::set_var` is `unsafe` as of the 2024 edition, the workspace denies `unsafe_code`,
+    # and libtest shares one process across threads so a mutable environment would race every
+    # other test regardless.
+    #
+    # The logic that *does* depend on it is tested: `budget::evaluate`'s recording and enforcing
+    # paths both have direct tests, reached by calling them rather than by setting a variable.
+    # This is the one-line read that connects them to a shell.
+    'replace recording -> bool with false',
+
+    # --- euclid-stability: redundant by construction, and documented as such --
+    #
+    # `Climber::would_improve` is a cheap pre-check that exists only so the search can skip
+    # copying the tape for a case that is not an improvement. Its own docstring says why nothing
+    # can observe a mutation of it: "`observe` re-checks the same condition rather than trusting
+    # this one, so the two cannot disagree about which tape is stored." Making it return `true`
+    # unconditionally, or relaxing its comparison, costs an allocation per case and changes no
+    # result.
+    'replace Climber::would_improve -> bool with true',
+    'replace > with >= in Climber::would_improve',
+
+    # `Climber::observe` keeps the better-scoring tape, and relaxing `score > best` to `>=`
+    # changes only which of two *equally* scoring tapes is climbed from next. The recorded score —
+    # the thing a budget baseline compares and the only output of the climb — is identical either
+    # way, and no property can depend on the choice between two equally bad inputs.
+    'replace > with >= in Climber::observe',
+
+    # --- euclid-stability: behaviour that only reaches stderr ---------------
+    #
+    # `install_hook_once` exists to stop a shrink from printing hundreds of backtraces, by
+    # installing a panic hook that stays quiet while a probe is running. Every mutation of it
+    # changes what gets *printed* and nothing else: the hook is never installed, or it is
+    # installed repeatedly, or it prints during probes.
+    #
+    # Unobservable through any channel a test here has. The crate's own docs record this, and
+    # record that it has already cost a real bug: an early version suppressed the final report as
+    # well as the probes, "and the engine's own tests did not catch it, because they read the
+    # panic payload through `catch_unwind` and the payload was always correct — it was only the
+    # printing that was lost." A test would have to install a competing global panic hook, which
+    # races every other test in the process.
+    #
+    # The flag the hook reads is a thread-local the runner sets and clears around each probe, and
+    # the behaviour that depends on it — a failure still being reported with its message — is
+    # pinned by every test in `runner::tests` that asserts on a panic payload.
+    'replace install_hook_once with \(\)',
+    'delete ! in install_hook_once',
+    'replace \|\| with && in install_hook_once',
+
+    # --- euclid-stability: off-by-one in a bound with no observable edge ----
+    #
+    # `Prober::ask` grows its memo while `self.memo.len() < MAX_MEMO`. Relaxing that to `<=`
+    # stores one extra entry. The memo is a pure cache — a miss costs a probe, a hit saves one,
+    # and `MAX_MEMO` exists only so a pathological tape cannot turn a shrink into an allocation
+    # problem — so a capacity of 4,096 versus 4,097 has no observable consequence at all.
+    'replace < with <= in Prober<F>::ask',
+
+    # `shrink_entries` binary-searches with `while low < high`. Relaxing to `<=` adds exactly one
+    # iteration, at `low == high`, where `mid` computes to `high` and the `if mid == high { break }`
+    # guard on the next line exits immediately. The assignment after the loop is already a no-op by
+    # then, because `tape[position]` holds `high` on both paths out of the body.
+    'replace < with <= in shrink_entries',
+
+    # `precision_agrees` guards its non-finite branch with
+    # `if !rounded.is_finite() || !computed.is_finite()`, and dropping the second `!` cannot be
+    # observed. The branch only ever *returns* on agreement — both NaN, or bitwise equal — and
+    # both of those outcomes are what the ulp comparison below it produces anyway, so entering
+    # the branch more or less often changes nothing. Every one of the four
+    # (finite, non-finite) combinations was checked by hand against both spellings.
+    #
+    # Its sibling, relaxing `rounded.is_nan() && computed.is_nan()` to `||`, is a real and
+    # dangerous weakening and is pinned by
+    # `precision_agrees_refuses_a_narrow_kernel_that_invents_a_finite_answer`.
+    'delete ! in precision_agrees',
+    'replace \|\| with && in precision_agrees',
+
+    # `cancelling_pair` builds its second element as `x - delta`, and flipping that to `x + delta`
+    # is undetectable because it is not a defect. The generator's contract is that the pair
+    # cancels — that `|x - y|` is tiny relative to `|x|` — and perturbing upwards satisfies it
+    # exactly as well as perturbing downwards. The *direction* is an unstated detail of a
+    # generator whose whole purpose is the magnitude of the gap.
+    #
+    # Its sibling mutation, narrowing `magnitude(-40, 40)` to `magnitude(40, 40)`, is a real
+    # defect and is pinned by `a_cancelling_pair_spans_the_magnitudes_it_declares`.
+    'replace - with \+ in cancelling_pair',
+
+    # `TapeHasher` is a performance choice, not a correctness one. The memo it feeds is a
+    # `HashMap<Vec<u64>, Probe>`, so lookups are decided by `Eq` on the full tape and a collision
+    # costs a bucket walk rather than a wrong answer. Any mutation here yields a different hash
+    # function, which is still a hash function — undetectable by construction, and it should be:
+    # a test that pinned specific hash values would be pinning the wrong thing.
+    # `the_tape_hasher_distinguishes_tapes_through_its_bulk_path` covers what does matter.
+    "TapeHasher",
+]
+
+# ---------------------------------------------------------------------------
+
+# Timeouts.
+#
+# A mutated shrinker loops forever: turning `width /= 2` into `width %= 2` leaves the pass
+# spinning on the same width, and fourteen mutants in `shrink.rs` do some version of that. Those
+# are *caught* in every sense that matters — the suite would hang rather than pass — but
+# cargo-mutants reports them in their own category, so the timeout needs to be short enough to
+# keep a full run tractable and long enough not to flag a slow-but-finite mutant.
+#
+# The baseline suite is about 3.5 seconds, and a property run is the slow part. 20 seconds is
+# comfortably clear of that while catching a spin in a couple of heartbeats.
+minimum_test_timeout = 20
+
+# `cargo test --all-features`, matching the fourth and fifth checks in CONTRIBUTING.md. Without
+# this, the `conformance` features are off and the generated laws the contract crates export are
+# never compiled, so every mutant inside one reads as unviable.
+additional_cargo_args = ["--all-features"]
+
+# Run the **whole workspace's** tests against each mutant, not just the tests of the crate the
+# mutant lives in.
+#
+# Not a performance knob — a correctness one, and the default gets the wrong answer here. Without
+# it a mutant in `euclid-stability` is judged by that crate's own 242 tests, and everything the
+# other nine crates check is invisible. `two_stage_error_bound` is the clearest case: nothing in
+# `euclid-stability` calls it, and two property suites in `euclid-numeric` are built on it, so it
+# read as completely unpinned when it was not.
+#
+# That cuts both ways and the other direction matters more. `euclid-stability` *is* the test
+# engine, so a mutation in it can only be caught by a test that fails because the engine stopped
+# detecting something — and most of those tests live in the crates being tested, not here. The
+# question worth answering is "would anything in this repository notice", and this is the setting
+# that asks it.
+#
+# The cost is real but small: 1,204 tests per mutant instead of 242, against a suite that takes
+# about three seconds.
+test_workspace = true

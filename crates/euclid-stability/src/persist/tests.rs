@@ -265,3 +265,94 @@ fn belongs_to_matches_the_whole_name_only() {
     let anonymous = super::parse_line("0000000000000001").expect("parses");
     assert!(!anonymous.belongs_to("anything"));
 }
+
+/// A rendering exactly at the limit is kept whole.
+///
+/// The truncation test is `text.len() > MAX_RENDERING`, and relaxing it to `>=` truncates a
+/// rendering that fits exactly — replacing its last character with an ellipsis and, worse, making
+/// it compare unequal to itself on the next load. That is the staleness check firing on a case
+/// nothing changed.
+#[test]
+fn a_rendering_at_the_limit_is_kept_whole() {
+    // `Debug` for a string adds the two quotes, so this renders to exactly MAX_RENDERING.
+    let exactly = "a".repeat(super::MAX_RENDERING - 2);
+    let rendered = render(&exactly);
+
+    assert_eq!(
+        rendered.chars().count(),
+        super::MAX_RENDERING,
+        "precondition: this case must land exactly on the limit"
+    );
+    assert!(
+        !rendered.contains('…'),
+        "a rendering that fits must not be truncated: {rendered}"
+    );
+
+    // One character more is truncated, which is the other side of the same boundary.
+    let over = "a".repeat(super::MAX_RENDERING - 1);
+    assert!(
+        render(&over).contains('…'),
+        "a rendering over the limit must be truncated"
+    );
+}
+
+/// Truncation keeps a **prefix**, not just the ellipsis.
+///
+/// The character-boundary search is `take_while(|i| *i <= MAX_RENDERING)`, and inverting that
+/// comparison makes the search stop at the first index — so every over-long case collapses to a
+/// bare `…`. The file would still load, every long case would render identically, and staleness
+/// detection over them would be gone entirely while the suite stayed green.
+#[test]
+fn truncation_keeps_a_readable_prefix() {
+    let long = "bcdefghij".repeat(200);
+    let rendered = render(&long);
+
+    assert!(rendered.ends_with('…'), "should be truncated: {rendered}");
+    assert!(
+        rendered.starts_with("\"bcdefghij"),
+        "the prefix must survive: {rendered}"
+    );
+    assert!(
+        rendered.chars().count() > super::MAX_RENDERING / 2,
+        "kept only {} characters of a {}-character rendering",
+        rendered.chars().count(),
+        long.len()
+    );
+
+    // And two long cases differing early still render differently, which is what makes the
+    // staleness check mean anything at all for large values.
+    let other = format!("z{}", "bcdefghij".repeat(200));
+    assert_ne!(rendered, render(&other));
+}
+
+/// `refresh` creates its directory, like `save` does.
+///
+/// The asymmetry the source comment warns about, and mutation testing found it unpinned: every
+/// existing test calls `save` first, which creates the directory, so a `refresh` that never
+/// creates one passes all of them. Dropping the negation on the emptiness check is enough to
+/// skip the creation entirely.
+///
+/// Checked by refreshing into a directory that does not exist, which is the only arrangement
+/// that can tell the two apart.
+#[test]
+fn refreshing_creates_its_directory_like_saving_does() {
+    let dir = std::env::temp_dir().join("euclid-stability-persist-refresh-mkdir");
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("cases.txt").to_string_lossy().to_string();
+    assert!(
+        !dir.exists(),
+        "precondition: the directory must be absent so creation is required"
+    );
+
+    super::refresh(&path, "p", &[(vec![7], Some("only".to_string()))]);
+
+    let loaded = load(&path);
+    assert_eq!(
+        loaded.len(),
+        1,
+        "refresh did not create its directory, so nothing was written"
+    );
+    assert_eq!(loaded[0].tape, vec![7]);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

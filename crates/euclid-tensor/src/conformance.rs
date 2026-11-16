@@ -356,11 +356,26 @@ pub mod generated {
         })
     }
 
+    /// Build the carriers for one generated case.
+    ///
+    /// # Panics
+    /// If `parts` is empty, or if it yields no carriers.
+    ///
+    /// The assertion is the point. A law suite over an empty sample asserts nothing and reports
+    /// a clean pass, and mutation testing found this function replaceable with `vec![]` —
+    /// returning no tensors at all — with every generated law in the crate still green. The
+    /// generator is `vec(shaped_data(), 1, 3)`, so a case can never legitimately be empty; if one
+    /// is, the sample construction is broken rather than the laws being satisfied.
     fn sample<T: Tensor + Real>(parts: &[(Vec<usize>, Vec<f64>)]) -> Vec<T> {
-        parts
+        let xs: Vec<T> = parts
             .iter()
             .map(|(shape, data)| T::from_host(data, shape))
-            .collect()
+            .collect();
+        assert!(
+            !xs.is_empty(),
+            "the generated sample is empty, so the laws below would pass vacuously"
+        );
+        xs
     }
 
     fn has_repeated_extents(shape: &[usize]) -> bool {

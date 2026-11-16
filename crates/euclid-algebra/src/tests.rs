@@ -11,11 +11,15 @@
 //!   parameter rather than the type. These matter more than their element-layer counterparts:
 //!   a witness carries no property markers, so the laws are the only thing between it and a
 //!   wrong algebra.
+//! - [`vacuity`] — that the law suites **reject** a carrier that breaks them. Every other test
+//!   here runs a suite against a correct carrier, which cannot distinguish a law that holds from
+//!   a law that is never checked.
 //! - This file — that the *tiers* are reachable: a formula written once at a tier compiles and
 //!   runs for the carriers that claim it, and the blanket impls fire as intended.
 
 mod generated_laws;
 mod laws;
+mod vacuity;
 mod witnesses;
 
 use super::*;

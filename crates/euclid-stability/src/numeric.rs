@@ -67,6 +67,29 @@ pub const UNIT_ROUNDOFF: f64 = f64::EPSILON / 2.0;
 ///
 /// Returns `None` where the comparison is meaningless: non-finite values, or a derivative
 /// estimate that cannot be formed.
+///
+/// # Three permanent survivors under `cargo mutants`, and why
+///
+/// This function keeps three equivalent mutants that cannot be excluded in
+/// `.cargo/mutants.toml`, because `exclude_re` matches a mutation's *description* and not its
+/// line — and each of these shares its description with a mutation elsewhere in the same
+/// function that is real and pinned. Recorded here so the next person to read a report does not
+/// re-derive it:
+///
+/// - **Both `||`s in the finiteness guard below** (`!here.is_finite() || !there.is_finite() ||
+///   next == x`). Weakening either is unobservable, because the closing
+///   `ratio.is_finite().then_some(ratio)` reaches the same verdict unaided: a non-finite `here`
+///   or `there` makes `observed` infinite or NaN, so the ratio is too, so the result is `None`
+///   either way. The guard is an early-out, not a correctness gate.
+/// - **`x + window == x` mutated to `x - window == x`** in the window guard. The clause
+///   immediately after it already *is* `x - window == x`, so the mutation duplicates a test that
+///   is still performed.
+///
+/// Everything else in both guards is real and has a test. Note especially that the *other*
+/// mutations of the window guard are **not** equivalent, which is why the exclusions cannot be
+/// written by operator: at `x = -f64::INFINITY` three of them make this function report a finite
+/// ratio of zero for an argument where nothing was measured. See
+/// `seam_ratio_declines_an_infinite_argument`.
 #[must_use]
 pub fn seam_ratio(f: impl Fn(f64) -> f64, x: f64) -> Option<f64> {
     let next = next_up(x);

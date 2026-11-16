@@ -122,3 +122,79 @@ fn toy_sampler_satisfies_the_key_laws() {
 fn toy_sampler_satisfies_the_sampler_bound_laws() {
     crate::conformance::sampler_bound_laws::<ToySampler>(&[0, 1, 7, 42], "ToySampler");
 }
+
+/// `sampler_bound_laws` must **reject** a sampler that leaves its range.
+///
+/// [`toy_sampler_satisfies_the_sampler_bound_laws`] runs the suite against a correct sampler and
+/// checks it stays quiet, which cannot tell a law that holds from a law that is never checked.
+/// Mutation testing found both: the whole suite was replaceable with an empty body, and the `two`
+/// it builds as `one + one` could be made `one - one` — collapsing the test range to `[0, 0]`, so
+/// every bound check became trivially true while still *looking* like a range check.
+///
+/// The sampler below draws outside the interval it is handed, which is the defect the suite's
+/// first assertion exists to catch and the most consequential thing a backend can get wrong: a
+/// `uniform(0, 1)` that occasionally returns `1.4` silently corrupts every rejection sampler
+/// built on it.
+#[test]
+fn the_sampler_bound_laws_reject_a_sampler_that_escapes_its_range() {
+    /// A sampler identical to [`ToySampler`] except that `uniform` overshoots its upper bound.
+    struct Escapes;
+
+    impl crate::RandomKey for Escapes {
+        type Key = <ToySampler as crate::RandomKey>::Key;
+        fn key(seed: u64) -> Self::Key {
+            <ToySampler as crate::RandomKey>::key(seed)
+        }
+        fn split(key: &Self::Key, count: usize) -> Vec<Self::Key> {
+            <ToySampler as crate::RandomKey>::split(key, count)
+        }
+        fn fold_in(key: &Self::Key, data: u64) -> Self::Key {
+            <ToySampler as crate::RandomKey>::fold_in(key, data)
+        }
+    }
+
+    impl crate::RandomSampler for Escapes {
+        type Real = f64;
+        type Bool = bool;
+        type Int = i64;
+
+        fn uniform(
+            key: &Self::Key,
+            shape: &[usize],
+            low: Self::Real,
+            high: Self::Real,
+        ) -> Self::Real {
+            // Overshoots by a fifth of the range, so a non-degenerate interval is escaped.
+            let drawn = <ToySampler as crate::RandomSampler>::uniform(key, shape, low, high);
+            drawn + (high - low) * 0.2
+        }
+        fn normal(
+            key: &Self::Key,
+            shape: &[usize],
+            mean: Self::Real,
+            stddev: Self::Real,
+        ) -> Self::Real {
+            <ToySampler as crate::RandomSampler>::normal(key, shape, mean, stddev)
+        }
+        fn bernoulli(key: &Self::Key, shape: &[usize], p: Self::Real) -> Self::Bool {
+            <ToySampler as crate::RandomSampler>::bernoulli(key, shape, p)
+        }
+        fn randint(key: &Self::Key, shape: &[usize], low: Self::Int, high: Self::Int) -> Self::Int {
+            <ToySampler as crate::RandomSampler>::randint(key, shape, low, high)
+        }
+    }
+
+    /// Whether `body` panicked, with the hook silenced so an expected panic prints nothing.
+    fn rejects(body: impl FnOnce()) -> bool {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+        std::panic::set_hook(previous);
+        outcome.is_err()
+    }
+
+    assert!(
+        rejects(|| crate::conformance::sampler_bound_laws::<Escapes>(&[0, 1, 7, 42], "Escapes")),
+        "sampler_bound_laws must reject a uniform that draws outside its interval"
+    );
+}

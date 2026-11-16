@@ -126,3 +126,81 @@ fn an_absolute_scalar_satisfies_everything_but_the_linear_laws() {
     crate::conformance::measure_laws(&xs, "Tmp");
     crate::conformance::scalar_laws(&xs, &Tmp::from_raw(1e-9), "Tmp");
 }
+
+/// The conformance suites must **reject** a carrier that breaks them.
+///
+/// Every other test in this crate runs a law suite against a correct carrier and checks it does
+/// not complain, which cannot distinguish a law that holds from a law that is never checked.
+/// Mutation testing showed the gap was real: `scalar_laws`, `scalar_laws_for` and
+/// `measure_laws_for` were all replaceable with empty bodies while the whole workspace stayed
+/// green.
+///
+/// `measure_laws` checks the most basic thing a unit carrier can get wrong — that `from_raw` and
+/// `raw` are inverses — so the carrier below breaks exactly that, by scaling on the way in and
+/// not on the way out. It is also the realistic mistake: a stray unit conversion inside one
+/// accessor.
+#[test]
+fn the_conformance_suites_reject_a_broken_carrier() {
+    use crate::Measure;
+
+    /// A carrier whose `from_raw` and `raw` are not inverses.
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    struct Lossy(f64);
+
+    impl Measure for Lossy {
+        type Repr = f64;
+        const DIMENSION: crate::Dimension = crate::Dimension::Length;
+        const UNIT_NAME: &'static str = "lossy";
+        fn from_raw(raw: Self::Repr) -> Self {
+            // The stray conversion: doubled on the way in, not halved on the way out.
+            Self(raw * 2.0)
+        }
+        fn raw(&self) -> Self::Repr {
+            self.0
+        }
+    }
+
+    /// Whether `body` panicked, with the hook silenced so an expected panic prints nothing.
+    fn rejects(body: impl FnOnce()) -> bool {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+        std::panic::set_hook(previous);
+        outcome.is_err()
+    }
+
+    let broken = [Lossy(1.0), Lossy(0.0), Lossy(-3.5)];
+    assert!(
+        rejects(|| crate::conformance::measure_laws(&broken, "Lossy")),
+        "measure_laws must reject a carrier whose from_raw and raw are not inverses"
+    );
+
+    // And it accepts a correct one, so the suite is not simply always-fail.
+    let sound = [Tmp::from_raw(0.0), Tmp::from_raw(273.15)];
+    assert!(!rejects(|| crate::conformance::measure_laws(&sound, "Tmp")));
+}
+
+/// `measure_laws_for` is the wrapper a carrier author actually calls, and nothing called it.
+///
+/// The `_for` variants read a carrier's own [`ConformanceSample`] so a call site needs no sample
+/// argument. Every test in the fleet passed its sample explicitly instead, so the wrappers were
+/// dead code — and `measure_laws_for` was replaceable with an empty body. Exercising it here
+/// means the delegation is covered as well as the laws it delegates to.
+impl crate::conformance::ConformanceSample for Tmp {
+    fn sample() -> Vec<Self> {
+        vec![
+            Self::from_raw(0.0),
+            Self::from_raw(273.15),
+            Self::from_raw(-40.0),
+        ]
+    }
+    fn tolerance() -> Self {
+        Self::from_raw(1e-9)
+    }
+}
+
+#[test]
+fn the_sample_reading_wrappers_are_exercised() {
+    crate::conformance::measure_laws_for::<Tmp>("Tmp");
+    crate::conformance::scalar_laws_for::<Tmp>("Tmp");
+}

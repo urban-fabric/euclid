@@ -140,6 +140,89 @@ fn the_probe_budget_is_respected() {
     assert!(calls <= MAX_PROBES, "probe called {calls} times");
 }
 
+/// `zero_chunks` has to earn its place: a case only it can minimise.
+///
+/// Mutation testing found that **deleting the whole pass** left every test here green, so the
+/// suite was paying for a pass nothing depended on — or, read the other way, had no evidence the
+/// pass worked. `a_required_length_is_preserved` looks like it covers this and does not: there
+/// the entries are individually irrelevant, so `shrink_entries` zeroes them one at a time and
+/// reaches the same answer.
+///
+/// This probe makes one-at-a-time impossible. The failure needs the length pinned at four and
+/// the entries either *all* zero or *all* at least 1000 — a valley between two basins:
+///
+/// - `delete_chunks` cannot help, because every deletion changes the length.
+/// - `shrink_entries` cannot cross the valley. Lowering any entry below 1000 leaves the tape
+///   neither all-zero nor all-above-1000, so every probe is discarded and each entry sticks at
+///   exactly 1000.
+/// - `zero_chunks` zeroes all four in a single probe, landing in the other basin, which still
+///   fails and is strictly smaller.
+///
+/// The gap in each basin is what makes this test work where a first attempt did not. With a
+/// `sum >= 1000` condition instead, `shrink_entries` could zero three of the four entries, and
+/// the *next* fixpoint round then handed `zero_chunks` a tape with zeros already in it — enough
+/// for even a broken pass to finish the job. A mutant has to be unable to recover across rounds,
+/// not merely stall within one.
+///
+/// Both of that pass's own comparisons are pinned here too. The entries start all-nonzero and
+/// stay that way under any mutation, so inverting the `== 0` skip test — which turns "this chunk
+/// is already zeroed, do not waste a probe" into "skip exactly the chunks that need zeroing" —
+/// makes the pass a no-op for the whole run.
+#[test]
+fn zeroing_a_run_reaches_a_case_entry_by_entry_shrinking_cannot() {
+    let predicate =
+        |t: &[u64]| t.len() == 4 && (t.iter().all(|v| *v == 0) || t.iter().all(|v| *v >= 1_000));
+    let tape = vec![2_000u64; 4];
+    assert!(predicate(&tape), "precondition: the start must fail");
+
+    let (minimal, _) = minimise(tape, probe_on(predicate));
+    assert_eq!(
+        minimal,
+        vec![0, 0, 0, 0],
+        "a whole run had to be zeroed at once; entry-by-entry shrinking stalls at [1000; 4]"
+    );
+}
+
+/// The probe budget has to actually stop a minimisation that would otherwise run away.
+///
+/// [`the_probe_budget_is_respected`] looks like it covers this and does not, for the reason
+/// spelled out on [`memo_hits_do_not_consume_the_probe_budget`]: an always-failing probe means
+/// the widest deletion succeeds immediately, the tape empties in one probe, and the cap is never
+/// approached. Mutation testing confirmed it — `Prober::exhausted` could be made to return
+/// `false` unconditionally and every test here still passed.
+///
+/// So this probe resists every pass at once: the length is pinned, zeroing any entry fails, and
+/// each of the 200 entries needs a full 64-probe binary search. That is roughly 15,000 probes of
+/// work on a 4,096 budget, so the cap must bite and must be reported.
+#[test]
+fn a_minimisation_that_cannot_converge_stops_at_the_cap() {
+    let calls = std::cell::Cell::new(0usize);
+    let tape = vec![u64::MAX; 200];
+
+    let (minimal, cost) = minimise(tape, |t| {
+        calls.set(calls.get() + 1);
+        if t.len() >= 200 && t.iter().all(|v| *v >= 1) {
+            Probe::StillFails
+        } else {
+            Probe::Discard
+        }
+    });
+
+    assert!(
+        calls.get() <= MAX_PROBES,
+        "the probe closure ran {} times against a budget of {MAX_PROBES}; the cap is not \
+         bounding anything",
+        calls.get()
+    );
+    assert!(cost.probes <= MAX_PROBES, "spent {}", cost.probes);
+    assert!(
+        cost.hit_the_cap(),
+        "this minimisation cannot converge inside the budget, so the report must say the case \
+         may not be minimal"
+    );
+    assert_eq!(minimal.len(), 200, "the required length must be preserved");
+}
+
 /// An empty tape is a legitimate input and must not panic — it is what a generator that reads
 /// nothing produces.
 #[test]

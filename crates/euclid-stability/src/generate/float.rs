@@ -61,6 +61,26 @@ const NOTABLE: &[f64] = &[
 /// The non-finite values, which are legal `f64`s and the ones most code forgets.
 const NON_FINITE: &[f64] = &[f64::INFINITY, f64::NEG_INFINITY, f64::NAN];
 
+/// Bits in an `f64` mantissa.
+const MANTISSA_BITS: u32 = 52;
+
+/// The largest mantissa bit pattern [`magnitude`] may draw.
+///
+/// Named rather than written inline, because it is the one bound in this module that **no amount
+/// of sampling can check**. [`magnitude`] builds `fraction = 1 + bits / 2^52`, so the interval is
+/// half-open only while `bits` stops one short of `2^52` — and a bound one too high is reachable
+/// with probability `2^-52`, which no test that draws values will ever witness. Mutation testing
+/// found it surviving a four-thousand-draw assertion that every mantissa lands in `[1, 2)`.
+///
+/// So the constant is asserted directly instead, by
+/// `the_mantissa_bound_keeps_the_interval_half_open`. The lesson generalises: a bound whose
+/// violation is astronomically rare has to be pinned as arithmetic, not as behaviour.
+const MANTISSA_MAX: i64 = (1i64 << MANTISSA_BITS) - 1;
+
+/// `2^52`, as the divisor that maps [`MANTISSA_MAX`] onto `[1, 2)`.
+#[allow(clippy::cast_precision_loss)]
+const MANTISSA_SCALE: f64 = (1i64 << MANTISSA_BITS) as f64;
+
 /// One of the notable values listed in this module's source.
 #[must_use]
 pub fn notable() -> Gen<f64> {
@@ -105,12 +125,12 @@ pub fn magnitude(min_exp: i32, max_exp: i32) -> Gen<f64> {
     let exponent = int(i64::from(min_exp), i64::from(max_exp));
     // A mantissa in [1, 2) built from 52 bits, so the result is a full-precision float rather
     // than a round number — round numbers hide alignment bugs.
-    let mantissa = int(0, (1i64 << 52) - 1);
+    let mantissa = int(0, MANTISSA_MAX);
     let negative = super::boolean();
 
     super::triple(exponent, mantissa, negative).map(|(exp, bits, neg)| {
         #[allow(clippy::cast_precision_loss)]
-        let fraction = 1.0 + (bits as f64) / ((1i64 << 52) as f64);
+        let fraction = 1.0 + (bits as f64) / MANTISSA_SCALE;
         let value = fraction * 2.0_f64.powi(exp as i32);
         if neg { -value } else { value }
     })

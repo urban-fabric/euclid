@@ -157,6 +157,75 @@ worth knowing before a dependency change:
 
 It needs the advisory database, so it is the one check that wants a network.
 
+## The Seventh Check, Run Deliberately: `cargo mutants`
+
+The six above ask whether the code passes its tests. **`cargo mutants` asks the
+question underneath: would the tests notice if the code were wrong?** It changes
+one function body at a time — a `+` to a `-`, a return value to a default — and
+re-runs the suite. A mutant the suite still passes is a line nothing is pinning.
+
+That is a different instrument from coverage, and the difference is not academic.
+`euclid-stability`'s `compensated_sum` was executed by three tests and pinned by
+none of them: they asserted a *band* on a derived condition number, so the sign of
+the Kahan correction could be flipped and all 1,169 workspace tests stayed green.
+Coverage called that function covered, and it was. It simply was not checked.
+
+It is **not** a seventh item in the pre-push loop. A full run is 11,264 mutants,
+each needing a rebuild and a test run — hours, against a suite that takes under a
+second. Treat it the way `cargo deny check` is treated: the check with an unusual
+cost, run on purpose rather than constantly.
+
+```sh
+cargo mutants --in-diff <(git diff main)   # only what this branch changed — minutes
+cargo mutants -p euclid-stability          # one crate
+cargo mutants -f crates/euclid-numeric/src/gamma.rs   # one file
+cargo mutants --shard 1/8                  # a slice, to split a full run across sittings
+```
+
+Configuration lives in **`.cargo/mutants.toml`**, and that path is not a
+preference — it is the only location cargo-mutants reads. A `mutants.toml` at the
+repository root is *silently ignored*: the run looks normal and simply applies none
+of the exclusions. Pass `--config` if you ever need it elsewhere.
+
+Two conventions worth knowing before adding to it:
+
+- **Exclusions are regexes in that file, not `#[mutants::skip]` attributes.** The
+  attribute needs a `mutants` dependency, on crates whose whole posture is that
+  they have none. The cost of the trade is that every exclusion has to justify
+  itself in a comment instead of sitting beside the code, and each one there does.
+- **An exclusion names the operator, never just the function.** `within_absolute`
+  has two mutants: weakening its NaN guard is provably undetectable, and turning
+  its subtraction into an addition is a real defect. Excluding the function would
+  have thrown the second one away.
+
+A surviving mutant is not automatically a bug. Some are *equivalent mutants* —
+genuinely unobservable, like a changed hash function that is still a hash function.
+Confirm which before writing a test: the ones excluded in that file were each
+checked by brute-force differential search or by a reachability argument, not by
+eye. But the default assumption should be that a survivor is a missing assertion,
+because that is what most of them are.
+
+### Soak runs
+
+`euclid-stability` fixes its seed by default, deliberately — a property that fails
+on one seed in ten is a property that fails, and a drifting seed turns that finding
+into a flake. To search harder on purpose:
+
+```sh
+EUCLID_STABILITY_SOAK=100 cargo test        # every property, a hundred times the cases
+EUCLID_STABILITY_SEED=0x1234 cargo test     # the same effort down a different path
+EUCLID_STABILITY_STATS=1 cargo test         # what the generators actually produced
+```
+
+A multiplier rather than an absolute count, because the suites choose their case
+counts deliberately and an absolute override would flatten considered numbers into
+one. Unset, these change nothing.
+
+A soak that trips an accuracy budget has **found something**: searching harder
+reached a worse input than the committed baseline, so the recorded number is now
+known to be optimistic. Re-record it with `EUCLID_STABILITY_RECORD=1` only once
+you have decided the kernel is acceptable there.
+
 **A git `pre-push` hook will not help you here.** `jj` does not run git hooks, so
 a `.git/hooks/pre-push` script is silently skipped on `jj git push` — exactly when
 you would want it. Use a `jj` alias instead, in your own

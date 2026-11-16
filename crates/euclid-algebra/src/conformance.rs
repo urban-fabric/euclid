@@ -56,7 +56,8 @@
 use crate::witness::{DioidWitness, SemiringWitness};
 use crate::{
     AdditiveMagma, CanonicalOrder, CommutativeSemiring, Dioid, EuclideanDomain, Field,
-    LeftSemimodule, MultiplicativeMagma, OrderedSemiring, Ring, Semiring, StarSemiring,
+    LeftSemimodule, MultiplicativeMagma, OrderedSemiring, RefAdditiveMagma, RefMultiplicativeMagma,
+    Ring, Semiring, StarSemiring,
 };
 
 /// A carrier's own curated sample, declared once.
@@ -234,8 +235,83 @@ where
             assert_eq!(MultiplicativeMagma::mul(a, b), a * b, "{what}: ⊗ is *");
             assert_eq!(a - b, a + (-b), "{what}: a − b = a + (−b)");
             assert_eq!(-(a * b), (-a) * b, "{what}: −(ab) = (−a)b");
+
+            // The **compound-assignment bridge**, which is the operator bridge's other half and
+            // was missing until mutation testing noticed. `Ring` requires `AddAssign`,
+            // `SubAssign` and `MulAssign`, and nothing checked that any of them agrees with the
+            // binary operator it abbreviates — so `a += b` could be written to do nothing at all
+            // and every carrier in the fleet still conformed.
+            //
+            // It is a separate impl block from `Add`, which is exactly why it drifts: the usual
+            // spelling is `*self = *self + rhs`, and the usual mistake is a typo in the operator
+            // or an operand order that only matters for a non-commutative carrier.
+            let mut assigned = a;
+            assigned += b;
+            assert_eq!(assigned, a + b, "{what}: a += b agrees with a + b");
+
+            let mut assigned = a;
+            assigned -= b;
+            assert_eq!(assigned, a - b, "{what}: a −= b agrees with a − b");
+
+            let mut assigned = a;
+            assigned *= b;
+            assert_eq!(assigned, a * b, "{what}: a ×= b agrees with a × b");
         }
     }
+}
+
+/// The by-reference magma operations agree with their by-value counterparts.
+///
+/// [`RefAdditiveMagma::add_ref`] and [`RefMultiplicativeMagma::mul_ref`] exist for carriers that
+/// are not [`Copy`], and their documentation states the law directly: "Must agree with
+/// [`AdditiveMagma::add`] where both exist: `a.add_ref(&b) == a.add(b)` for a `Copy` carrier."
+///
+/// Nothing checked it. Mutation testing found every `add_ref` and `mul_ref` in the crate
+/// replaceable with `Default::default()` — returning zero for every input — and the whole
+/// workspace suite stayed green, across `i64`, `i128`, `f64`, `f32` and `GaussianRational`.
+///
+/// The reason the gap is structural rather than careless: a by-reference operation is written so
+/// that a generic algorithm can avoid a clone, so it is reached only from code paths that are
+/// generic over the *ref* traits — and the fleet's own suites all instantiate at `Copy` carriers,
+/// which take the by-value path. The duplicate implementation is never the one that runs here,
+/// and an implementation nothing runs is an implementation nothing checks.
+pub fn ref_magma_laws<T>(xs: &[T], what: &str)
+where
+    T: AdditiveMagma
+        + MultiplicativeMagma
+        + RefAdditiveMagma
+        + RefMultiplicativeMagma
+        + core::fmt::Debug
+        + Copy,
+{
+    for &a in xs {
+        for &b in xs {
+            assert_eq!(
+                a.add_ref(&b),
+                AdditiveMagma::add(a, b),
+                "{what}: a.add_ref(&b) must agree with a ⊕ b"
+            );
+            assert_eq!(
+                a.mul_ref(&b),
+                MultiplicativeMagma::mul(a, b),
+                "{what}: a.mul_ref(&b) must agree with a ⊗ b"
+            );
+        }
+    }
+}
+
+/// [`ref_magma_laws`] over a carrier's own [`ConformanceSample`].
+pub fn ref_magma_laws_for<T>(what: &str)
+where
+    T: AdditiveMagma
+        + MultiplicativeMagma
+        + RefAdditiveMagma
+        + RefMultiplicativeMagma
+        + ConformanceSample
+        + core::fmt::Debug
+        + Copy,
+{
+    ref_magma_laws(&T::sample(), what);
 }
 
 /// The field axiom: every nonzero element is invertible, and division is multiplication by the
@@ -262,6 +338,13 @@ where
 
         for &b in xs {
             assert_eq!(b / a, b * inv, "{what}: b / a = b · a⁻¹");
+
+            // The division half of the compound-assignment bridge; see `ring_laws` for why this
+            // whole family went unchecked. `Field` requires `DivAssign`, and `/=` could be
+            // written to do nothing.
+            let mut assigned = b;
+            assigned /= a;
+            assert_eq!(assigned, b / a, "{what}: b /= a agrees with b / a");
         }
     }
     for &a in xs {

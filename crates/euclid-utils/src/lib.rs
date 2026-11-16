@@ -308,6 +308,79 @@ pub fn no_step_across(name: &str, f: impl Fn(f64) -> f64, x: f64, derivative: f6
 mod tests {
     use super::*;
 
+    /// The assertion helpers have to **fire**, which is not what the tests above establish.
+    ///
+    /// Every other test here calls `assert_close` and `no_step_across` on input that satisfies
+    /// them, and mutation testing showed what that misses: `no_step_across` could be replaced
+    /// with an empty body and `assert_close`'s bound could be made additive instead of
+    /// multiplicative, with the whole workspace suite green.
+    ///
+    /// These are *assertion helpers* in a dev-only crate, so a vacuous one is a silent hole
+    /// under every suite that uses it — which is six crates. The same argument as the
+    /// conformance suites in `euclid-algebra`: a check nobody has seen fail is a check nobody
+    /// has tested.
+    #[test]
+    fn the_assertion_helpers_reject_what_they_are_meant_to_reject() {
+        /// Whether `body` panicked, with the hook silenced so an expected panic prints nothing.
+        fn rejects(body: impl FnOnce()) -> bool {
+            let previous = std::panic::take_hook();
+            std::panic::set_hook(Box::new(|_| {}));
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+            std::panic::set_hook(previous);
+            outcome.is_err()
+        }
+
+        // --- assert_close ---
+        assert!(!rejects(|| assert_close(1.0, 1.0, 1e-12, "equal")));
+        assert!(
+            rejects(|| assert_close(2.0, 1.0, 1e-12, "far apart")),
+            "assert_close must reject a value twice the target"
+        );
+
+        // The bound is `tol * max(|want|, 1)` — *relative* away from zero. An additive bound
+        // would accept this, because `1e-12 + 1e9` is enormous.
+        assert!(
+            rejects(|| assert_close(1e9 * (1.0 + 1e-6), 1e9, 1e-12, "relative")),
+            "assert_close's tolerance must scale with the target, not be added to it"
+        );
+        // And it really does scale: the same relative error passes at a looser tolerance.
+        assert!(!rejects(|| assert_close(
+            1e9 * (1.0 + 1e-13),
+            1e9,
+            1e-12,
+            "inside"
+        )));
+
+        // --- assert_exact ---
+        assert!(!rejects(|| assert_exact(1.0, 1.0, "identical")));
+        assert!(rejects(|| assert_exact(
+            1.0 + f64::EPSILON,
+            1.0,
+            "one ulp apart"
+        )));
+
+        // --- no_step_across ---
+        // A smooth function has no step at any threshold.
+        assert!(!rejects(|| no_step_across(
+            "exp",
+            f64::exp,
+            1.0,
+            f64::exp(1.0),
+            1e-12
+        )));
+        // A function that jumps by one at the threshold does.
+        assert!(
+            rejects(|| no_step_across(
+                "step",
+                |v| if v >= 1.0 { 1.0 } else { 0.0 },
+                1.0,
+                0.0,
+                1e-12
+            )),
+            "no_step_across must detect a unit jump at the threshold it is given"
+        );
+    }
+
     #[test]
     fn mixed_criterion_behaves_absolutely_near_zero_and_relatively_away() {
         // Near zero: the bound is `tol`, so two roundings of zero compare equal.

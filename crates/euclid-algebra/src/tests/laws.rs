@@ -196,6 +196,10 @@ fn zn_composite_has_zero_divisors() {
 fn gaussian_rationals_satisfy_the_field_laws() {
     laws::commutative_semiring_laws_for::<GaussianRational>("GaussianRational");
     laws::ring_laws_for::<GaussianRational>("GaussianRational");
+    // The Euclidean tier too: `div_rem` is the one operation a field's zero remainder makes
+    // look trivial, and mutation testing found its quotient unpinned.
+    laws::euclidean_laws_for::<GaussianRational>("GaussianRational");
+    laws::field_laws_for::<GaussianRational>("GaussianRational");
     laws::field_laws_for::<GaussianRational>("GaussianRational");
 }
 
@@ -299,4 +303,27 @@ fn the_boolean_dioid_is_an_ordered_semiring() {
     // Monotonicity is what makes a relaxation step sound: extending two ordered partial results
     // by the same factor must not reorder them.
     laws::ordered_semiring_laws(&[Reach(false), Reach(true)], "Reach");
+}
+
+/// The by-reference magma operations, for every carrier that offers them.
+///
+/// A separate test rather than a line inside each carrier's block above, because the `Ref`
+/// traits are not part of the tier tower — a carrier can host a semiring without them — so the
+/// check is keyed on the operations rather than on the tier.
+///
+/// Mutation testing is what prompted it: `add_ref` and `mul_ref` were replaceable with
+/// `Default::default()` for every carrier in the crate, returning zero for all input, with the
+/// whole workspace suite green. See [`conformance::ref_magma_laws`](crate::conformance::ref_magma_laws)
+/// for why the duplicate implementation is the one nothing exercises.
+#[test]
+fn by_reference_operations_agree_with_by_value() {
+    laws::ref_magma_laws_for::<i64>("i64");
+    // `i128` has the operations but declares no `ConformanceSample`, so it brings its own.
+    laws::ref_magma_laws(&[0_i128, 1, -1, 7, -12], "i128");
+    laws::ref_magma_laws_for::<f32>("f32");
+    laws::ref_magma_laws_for::<f64>("f64");
+    laws::ref_magma_laws_for::<Rational64>("Rational64");
+    laws::ref_magma_laws_for::<GaussianRational>("GaussianRational");
+    laws::ref_magma_laws_for::<Zp<7>>("Zp<7>");
+    laws::ref_magma_laws_for::<Zn<6>>("Zn<6>");
 }

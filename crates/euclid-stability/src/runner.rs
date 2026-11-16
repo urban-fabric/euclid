@@ -62,9 +62,29 @@ impl Failure {
 /// How hard to search.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Cases to try before declaring the property held.
+    /// Cases that must actually **run** before the property is declared to hold.
+    ///
+    /// Run, not attempted. A rejected case does not spend one of these — see
+    /// [`max_rejects`](Self::max_rejects) for why that distinction is the whole point.
     pub cases: usize,
     /// Rejections tolerated across the whole run before giving up and saying so.
+    ///
+    /// # This is a budget on *extra attempts*, not on cases
+    ///
+    /// It used to be neither, and the bug is worth recording because it made the diagnostic this
+    /// field exists for unreachable. The search ran `for case in 0..cases` and counted a
+    /// rejection as a spent case, so `rejects <= cases` held by construction — and with the
+    /// default `cases: 256` against `max_rejects: 4096`, the budget could never be exceeded and
+    /// the "gave up after N rejected cases" report could never fire.
+    ///
+    /// Worse, the thing it was meant to catch happened silently instead. A generator rejecting
+    /// nine cases in ten ran **19 of 256 cases** and passed green, which is precisely the
+    /// "testing far less than its case count suggests" failure the module docs promise to
+    /// report.
+    ///
+    /// So the search now draws until `cases` have *run*, and this bounds the rejections it will
+    /// tolerate on the way. QuickCheck's `tests` versus `max_tests` split, which is the one idea
+    /// that crate has that this one was missing.
     pub max_rejects: usize,
     /// Longest tape a generator may consume for one case.
     pub max_tape: usize,
@@ -120,6 +140,18 @@ impl Config {
         self
     }
 
+    /// Set how many rejections to tolerate before giving up and reporting.
+    ///
+    /// Rarely worth setting. The default is generous because a rejection now costs an extra
+    /// draw rather than a case, so the budget is a guard against a generator that can never
+    /// satisfy its own filter rather than a tuning knob. See
+    /// [`max_rejects`](Self::max_rejects).
+    #[must_use]
+    pub fn max_rejects(mut self, max_rejects: usize) -> Self {
+        self.max_rejects = max_rejects;
+        self
+    }
+
     /// Require that at least `percent` of the cases that ran carried `label`.
     ///
     /// The run fails if they did not. This is an assertion about the *generator*, and it is
@@ -152,10 +184,90 @@ impl Config {
     }
 }
 
+/// Multiply every property's case count, for a deliberate soak run.
+///
+/// `EUCLID_STABILITY_SOAK=100 cargo test` searches a hundred times as hard.
+pub const SOAK: &str = "EUCLID_STABILITY_SOAK";
+
+/// Replace every property's base seed, for a soak down a different path.
+pub const SEED: &str = "EUCLID_STABILITY_SEED";
+
+/// Apply the soak overrides to a configuration.
+///
+/// # Why a multiplier rather than an absolute count
+///
+/// QuickCheck's `QUICKCHECK_TESTS` sets the case count outright, and that does not transfer
+/// here: euclid's suites choose their own counts deliberately — 400 for the `Real` identities,
+/// 600 where a climb needs room — and an absolute override would flatten considered numbers into
+/// one. A multiplier composes with them instead, so `SOAK=100` means "a hundred times whatever
+/// this property decided it needed".
+///
+/// # On determinism
+///
+/// [`Config::seed`] is fixed by default and the crate docs are emphatic about why: a property
+/// that fails on one seed in ten is a property that fails, and letting the seed drift per run
+/// turns that finding into a flake. These overrides do not weaken that. Unset — which is every
+/// ordinary `cargo test` — they change nothing, and a suite that passes today still passes
+/// tomorrow. Set, they are a soak someone asked for by name.
+///
+/// A soak that trips an accuracy [`budget`] has **found something**: searching
+/// harder reached a worse input than the committed baseline, and the recorded number is now
+/// known to be optimistic. That is a real finding about the kernel rather than an artefact of
+/// the longer run, so it is reported as a failure like any other.
+fn with_overrides(config: &Config) -> Config {
+    // Bound before borrowing, so the `String`s outlive the `&str`s handed on.
+    let soak = std::env::var(SOAK).ok();
+    let seed = std::env::var(SEED).ok();
+    apply_overrides(config, soak.as_deref(), seed.as_deref())
+}
+
+/// The override logic, separated from reading the environment.
+///
+/// Split out purely so it can be tested: a test that sets a process-wide variable races every
+/// other test in the binary, and libtest gives no way to serialise them. Taking the raw strings
+/// as arguments makes the interesting part — what a malformed, zero or missing value does — an
+/// ordinary pure function.
+///
+/// That mattered immediately. Mutation testing found the `factor > 0` guard below unpinned by the
+/// first version of these tests, which only checked the *unset* path. A relaxation to `>= 0`
+/// accepts `SOAK=0`, which multiplies the case count to zero and turns every property in the
+/// workspace into the "never exercised" failure.
+fn apply_overrides(config: &Config, soak: Option<&str>, seed: Option<&str>) -> Config {
+    let mut config = config.clone();
+
+    if let Some(factor) = soak
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|factor| *factor > 0)
+    {
+        config.cases = config.cases.saturating_mul(factor);
+        // The rejection budget has to scale with the case count or a soak turns every filtered
+        // generator into a spurious "gave up" report.
+        config.max_rejects = config.max_rejects.saturating_mul(factor);
+    }
+
+    if let Some(seed) = seed.and_then(|raw| parse_seed(raw.trim())) {
+        config.seed = seed;
+    }
+
+    config
+}
+
+/// Parse a seed as decimal, or as hex behind an `0x` prefix.
+fn parse_seed(raw: &str) -> Option<u64> {
+    raw.strip_prefix("0x")
+        .or_else(|| raw.strip_prefix("0X"))
+        .map_or_else(
+            || raw.parse::<u64>().ok(),
+            |hex| u64::from_str_radix(hex, 16).ok(),
+        )
+}
+
 /// Run `property` over cases drawn from `generator`.
 ///
 /// Panics with a formatted report if the property fails, which is how a test harness learns
 /// about it. On success it returns normally, having reported nothing.
+///
+/// Honours the [`SOAK`] and [`SEED`] environment overrides.
 ///
 /// # Panics
 /// If the property fails, or if every case was rejected.
@@ -165,6 +277,7 @@ pub fn check<T: 'static + core::fmt::Debug>(
     generator: &Gen<T>,
     mut property: impl FnMut(T) -> Outcome,
 ) {
+    let config = &with_overrides(config);
     // Persisted regressions first. A counterexample that cost a random search to find should
     // be the first thing tried on every subsequent run, not rediscovered by luck.
     let persisted = config
@@ -230,16 +343,30 @@ pub fn check<T: 'static + core::fmt::Debug>(
     // several reallocations every time; reusing the buffer makes that once per property.
     let mut source = Source::generating(config.seed, config.max_tape);
 
-    for case in 0..config.cases {
+    // `ran` counts cases that reached the property; `attempt` counts draws. They differ exactly
+    // when the generator rejects, and keeping them apart is what stops a filtered generator from
+    // quietly testing a fraction of `cases` — see [`Config::max_rejects`].
+    //
+    // The seed is derived from `attempt`, because retrying a rejected case under the same seed
+    // would redraw the same rejected value forever. The explore-versus-climb split reads `ran`,
+    // because it is a share of the cases that actually run. For a generator that rejects
+    // nothing the two counters are equal and every tape is identical to what this produced
+    // before the distinction existed — which is what keeps committed budgets and regressions
+    // meaningful across this change.
+    let mut ran = 0usize;
+    let mut attempt = 0usize;
+
+    while ran < config.cases && rejects <= config.max_rejects {
         let seed = config
             .seed
-            .wrapping_add(case as u64)
+            .wrapping_add(attempt as u64)
             .wrapping_mul(0x2545_F491);
+        attempt += 1;
 
         // Either a fresh draw, or a perturbation of the best-scoring tape found so far. The
         // climb only engages once the property has actually reported a score.
-        match climber.propose(case, seed) {
-            Some(tape) => source.restart_replaying(&tape),
+        match climber.propose(ran, seed) {
+            Some(tape) => source.restart_climbing(&tape, seed, config.max_tape),
             None => source.restart_generating(seed, config.max_tape),
         }
 
@@ -279,24 +406,25 @@ pub fn check<T: 'static + core::fmt::Debug>(
                         );
                     }
                 }
+                ran += 1;
             }
         }
-
-        assert!(
-            rejects <= config.max_rejects,
-            "{name}: gave up after {rejects} rejected cases (budget {}). \
-             The generator is producing mostly inputs the property excludes, so the case count \
-             is misleading. Narrow the generator instead of assuming inside the property. \
-             Reasons seen: {:?}",
-            config.max_rejects,
-            dedup(&reasons)
-        );
     }
 
     assert!(
-        rejects < config.cases,
-        "{name}: every one of {} cases was rejected, so the property was never exercised. \
-         Reasons seen: {:?}",
+        ran > 0,
+        "{name}: every one of {attempt} attempts was rejected, so the property was never \
+         exercised. Reasons seen: {:?}",
+        dedup(&reasons)
+    );
+
+    assert!(
+        rejects <= config.max_rejects,
+        "{name}: gave up after {rejects} rejected cases (budget {}), having run only {ran} of \
+         the {} cases asked for. The generator is producing mostly inputs the property excludes, \
+         so the case count is misleading. Narrow the generator instead of assuming inside the \
+         property. Reasons seen: {:?}",
+        config.max_rejects,
         config.cases,
         dedup(&reasons)
     );
@@ -305,7 +433,11 @@ pub fn check<T: 'static + core::fmt::Debug>(
         let climbed = climber.best_score().map_or_else(String::new, |best| {
             format!("\n  best target score: {best:e}")
         });
-        eprintln!("{name}: {}{climbed}", stats::report());
+        eprintln!(
+            "{name}: {}{}{climbed}",
+            stats::report(),
+            rejection_summary(rejects, attempt)
+        );
     }
 
     // Coverage last, so a genuine failure is reported in preference to a coverage shortfall —
@@ -343,6 +475,27 @@ pub fn check<T: 'static + core::fmt::Debug>(
     if let Some(path) = config.budget.as_deref() {
         enforce_budget(name, path, climber.best_score());
     }
+}
+
+/// The rejection rate, for the stats dump.
+///
+/// A free function rather than an inline `format!`, for the same reason
+/// [`apply_overrides`] is one: the block it belongs to only runs when
+/// `EUCLID_STABILITY_STATS` is set, and no test here can set an environment variable —
+/// `std::env::set_var` is `unsafe` as of the 2024 edition and the workspace denies
+/// `unsafe_code`. Inline, the arithmetic was unreachable by any test and mutation testing found
+/// five separate corruptions of it surviving. Extracted, it is an ordinary pure function.
+///
+/// Worth printing even when the run is well inside its budget. A generator rejecting 90% is now
+/// *correct* — the search simply draws until `cases` have run — but it is paying ten draws per
+/// case to get there, and that is a generator worth narrowing.
+fn rejection_summary(rejects: usize, attempts: usize) -> String {
+    if rejects == 0 {
+        return String::new();
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let rate = (rejects as f64) * 100.0 / (attempts as f64);
+    format!("\n  rejected: {rejects} of {attempts} draws ({rate:.1}%)")
 }
 
 /// Compare the run's worst score against its committed baseline.
