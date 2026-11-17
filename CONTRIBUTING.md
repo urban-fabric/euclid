@@ -198,6 +198,10 @@ Two conventions worth knowing before adding to it:
   its subtraction into an addition is a real defect. Excluding the function would
   have thrown the second one away.
 
+The current survivor list, the diagnosis behind each cluster, and what closing it needs are
+tracked in **[MUTANTS.md](MUTANTS.md)** rather than re-derived from a report each time. Most of
+what survives is one or two structural causes repeated, which a list of line numbers hides.
+
 A surviving mutant is not automatically a bug. Some are *equivalent mutants* —
 genuinely unobservable, like a changed hash function that is still a hash function.
 Confirm which before writing a test: the ones excluded in that file were each

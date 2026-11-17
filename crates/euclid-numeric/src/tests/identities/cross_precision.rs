@@ -138,6 +138,68 @@ fn the_delegating_f32_kernels_are_bit_exact() {
     );
 }
 
+/// The rest of the `Real` surface at f32: the delegating half.
+///
+/// A second pass over the surface the first one missed. `impls/real_f32.rs` held 117 survivors —
+/// the largest single file in the crate — because the suites instantiate at `f64` and that impl
+/// block has its own one-line body per method. `asin` could return `0.0` for every input.
+///
+/// Measured at zero ulp across four hundred arguments each, which says these compute in f64 and
+/// round once, like the kernel family above. Pinning zero keeps that true.
+#[test]
+fn the_delegating_f32_real_methods_are_bit_exact() {
+    agrees_to!("asin", -0.99, 0.99, 0, Real::asin, Real::asin);
+    agrees_to!("acos", -0.99, 0.99, 0, Real::acos, Real::acos);
+    agrees_to!("atan", -8.0, 8.0, 0, Real::atan, Real::atan);
+    agrees_to!("asinh", -8.0, 8.0, 0, Real::asinh, Real::asinh);
+    agrees_to!("acosh", 1.01, 10.0, 0, Real::acosh, Real::acosh);
+    agrees_to!("sinh", -5.0, 5.0, 0, Real::sinh, Real::sinh);
+    agrees_to!("cosh", -5.0, 5.0, 0, Real::cosh, Real::cosh);
+    agrees_to!("tanh", -5.0, 5.0, 0, Real::tanh, Real::tanh);
+    agrees_to!("cbrt", -20.0, 20.0, 0, Real::cbrt, Real::cbrt);
+    agrees_to!("exp2", -10.0, 10.0, 0, Real::exp2, Real::exp2);
+    agrees_to!(
+        "bessel_k0e",
+        0.1,
+        15.0,
+        0,
+        Real::bessel_k0e,
+        Real::bessel_k0e
+    );
+    agrees_to!(
+        "bessel_k1e",
+        0.1,
+        15.0,
+        0,
+        Real::bessel_k1e,
+        Real::bessel_k1e
+    );
+}
+
+/// The mathematical constants must agree to the last bit of `f32`.
+///
+/// These are the simplest mutation target in the crate — a constant replaced by a default — and
+/// nothing was checking them. There is no accuracy argument available here: the f32 value is the
+/// f64 value correctly rounded, or it is wrong.
+#[test]
+fn the_constants_agree_across_precisions() {
+    #[allow(clippy::cast_possible_truncation)]
+    let narrowed = |wide: f64| wide as f32;
+
+    assert_eq!(f32::apery(), narrowed(f64::apery()), "Apery's constant");
+    assert_eq!(
+        f32::catalan(),
+        narrowed(f64::catalan()),
+        "Catalan's constant"
+    );
+    assert_eq!(f32::e(), narrowed(f64::e()), "e");
+    assert_eq!(
+        f32::euler_gamma(),
+        narrowed(f64::euler_gamma()),
+        "the Euler-Mascheroni constant"
+    );
+}
+
 /// The f32 kernels with their own implementation, each at its measured budget.
 #[test]
 fn the_independent_f32_kernels_stay_inside_their_budgets() {
@@ -175,6 +237,34 @@ fn the_independent_f32_kernels_stay_inside_their_budgets() {
         |v: f64| Real::ln_1p_exp(&v),
         |v: f32| Real::ln_1p_exp(&v)
     );
+
+    // Measured in a second pass over the surface the first one missed.
+    agrees_to!("sinc", -8.0, 8.0, 1, Real::sinc, Real::sinc);
+    agrees_to!(
+        "ln_1m_exp",
+        -8.0,
+        -0.01,
+        1,
+        |v: f64| Real::ln_1m_exp(&v),
+        |v: f32| Real::ln_1m_exp(&v)
+    );
+    agrees_to!(
+        "bessel_i1_over_i0",
+        0.1,
+        20.0,
+        7,
+        Real::bessel_i1_over_i0,
+        Real::bessel_i1_over_i0
+    );
+    agrees_to!("erfc_inv", 0.01, 1.99, 17, Real::erfc_inv, Real::erfc_inv);
+    agrees_to!(
+        "bessel_i1e",
+        0.0,
+        30.0,
+        42,
+        Real::bessel_i1e,
+        Real::bessel_i1e
+    );
 }
 
 /// The two kernels whose budget is dominated by a zero inside the range, not by the kernel.
@@ -186,4 +276,6 @@ fn the_independent_f32_kernels_stay_inside_their_budgets() {
 fn the_f32_kernels_with_a_root_in_range_are_pinned_loosely() {
     agrees_to!("ln_gamma", 0.1, 20.0, 1_514, Real::ln_gamma, Real::ln_gamma);
     agrees_to!("digamma", 0.1, 20.0, 205, Real::digamma, Real::digamma);
+    // `atanh(0) = 0`, so the same collapse applies — 17 ulp here is the metric, not the kernel.
+    agrees_to!("atanh", -0.99, 0.99, 17, Real::atanh, Real::atanh);
 }

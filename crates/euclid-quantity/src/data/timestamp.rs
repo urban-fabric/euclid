@@ -161,4 +161,40 @@ mod tests {
         assert_eq!(UnixMillis::from_raw(42), UnixMillis::new(42));
         assert_eq!(UnixMillis::new(42).raw(), 42);
     }
+
+    /// The epoch accessor and the wall clock.
+    ///
+    /// `as_secs` is a one-line unwrap and could return `0` — making every timestamp the epoch.
+    /// `now()` cannot be pinned to a value, but it can be pinned to a *range*: a clock reading
+    /// that falls outside a plausible window is either a broken conversion or a fallback to
+    /// `EPOCH`, which is exactly what the mutation does.
+    #[test]
+    fn as_secs_is_the_raw_second_count() {
+        for raw in [0_i64, 1, -1, 1_700_000_000, i64::MIN, i64::MAX] {
+            assert_eq!(UnixSeconds::new(raw).as_secs(), raw);
+        }
+        assert_eq!(UnixSeconds::EPOCH.as_secs(), 0, "the epoch is zero");
+    }
+
+    #[test]
+    fn now_reads_a_plausible_wall_clock() {
+        let now = UnixSeconds::now().as_secs();
+
+        // 2024-01-01 and 2100-01-01. Wide enough never to be a maintenance burden, narrow
+        // enough that the epoch fallback and a units mix-up both fall outside it.
+        const Y2024: i64 = 1_704_067_200;
+        const Y2100: i64 = 4_102_444_800;
+        assert!(
+            (Y2024..Y2100).contains(&now),
+            "now() returned {now}, outside a plausible window — a broken conversion or a \
+             fallback to EPOCH"
+        );
+
+        // And it is not the epoch, which is the value the fallback path returns.
+        assert_ne!(
+            UnixSeconds::now(),
+            UnixSeconds::EPOCH,
+            "now() must read the clock rather than fall back"
+        );
+    }
 }

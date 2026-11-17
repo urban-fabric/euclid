@@ -196,4 +196,37 @@ mod tests {
         let back: DistanceDecimeters = serde_json::from_str(&json).unwrap();
         assert_eq!(back, d);
     }
+
+    /// The compact storage types' accessors and conversions.
+    ///
+    /// Sixteen survivors, all of the same shape: `as_u32`, the unit-named accessor beside it, the
+    /// `From<u32>` pair, and `Measure::raw`/`from_raw`. Each is a one-line unwrap of the same
+    /// field, which is exactly the kind of code that reads as too obvious to test and then turns
+    /// out to be four independent copies of one expression.
+    #[test]
+    fn the_storage_accessors_and_conversions_agree() {
+        use euclid_units::Measure;
+
+        for raw in [0_u32, 1, 100, u32::MAX] {
+            let d = DistanceDecimeters::new(raw);
+            assert_eq!(d.as_u32(), raw, "as_u32 must be the raw value");
+            assert_eq!(d.as_decimeters(), raw, "the unit-named accessor must agree");
+            assert_eq!(Measure::raw(&d), raw, "Measure::raw must agree");
+            assert_eq!(u32::from(d), raw, "From<DistanceDecimeters> for u32");
+            assert_eq!(DistanceDecimeters::from(raw), d, "From<u32>");
+            assert_eq!(
+                <DistanceDecimeters as Measure>::from_raw(raw),
+                d,
+                "Measure::from_raw must invert raw"
+            );
+
+            let t = TimeCentiseconds::new(raw);
+            assert_eq!(t.as_u32(), raw);
+            assert_eq!(t.as_centiseconds(), raw);
+            assert_eq!(Measure::raw(&t), raw);
+            assert_eq!(u32::from(t), raw);
+            assert_eq!(TimeCentiseconds::from(raw), t);
+            assert_eq!(<TimeCentiseconds as Measure>::from_raw(raw), t);
+        }
+    }
 }

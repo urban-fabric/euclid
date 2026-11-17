@@ -131,6 +131,35 @@ exclude_re = [
     # belongs.
     'replace \* with \+ in assert_close',
 
+    # --- euclid-quantity: a redundant write of an identical value -----------
+    #
+    # `corner_bounds` is a plain min/max fold over four corners: `if c < lo { lo = c }`. Relaxing
+    # either comparison to include equality makes it assign `c` to `lo` when the two are already
+    # equal — the same value written twice. Unobservable, NaN included: a NaN comparand is false
+    # under `<` and `<=` alike, so the accumulator is left alone either way.
+    'replace < with <= in corner_bounds',
+    'replace > with >= in corner_bounds',
+
+    # --- euclid-quantity: where `Default` is the right answer ---------------
+    #
+    # Two mutations replace a constructor with `Default::default()` and happen to be *correct*,
+    # because the type's `Default` is that constant:
+    #
+    #   `Factor::unit()` returns `Self::IDENTITY`, and `impl Default for Factor` returns
+    #   `Self::IDENTITY` too. The two are the same expression.
+    #
+    #   `TemperatureKelvin::absolute_zero()` returns `Self::ZERO`, the type derives `Default`, and
+    #   Kelvin's raw value *is* kelvin — so a default-constructed Kelvin is 0 K, which is
+    #   absolute zero.
+    #
+    # The second is narrow on purpose and the pattern names the type. The same mutation on
+    # `TemperatureCelsius` and `TemperatureFahrenheit` is a real defect — their zero is water's
+    # freezing point and 0 °F, not absolute zero — and both are caught by `temperature_laws`.
+    # The description format is `<impl Trait for Type>::method`, not `Type::method` — a first
+    # attempt at these patterns named the type first and matched nothing.
+    'Dimensionless for Factor>::unit -> Self with Default::default\(\)',
+    'Temperature for TemperatureKelvin>::absolute_zero -> Self with Default::default\(\)',
+
     # --- euclid-stability: an environment read with no logic in it ----------
     #
     # `budget::recording()` is `std::env::var_os(RECORD).is_some()` and nothing else, so the only

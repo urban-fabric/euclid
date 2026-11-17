@@ -247,3 +247,6 @@ mod acceleration_tests {
         assert_eq!(AccelerationCentimetersPerSecondSquared::UNIT_NAME, "cm/s^2");
     }
 }
+
+#[cfg(test)]
+mod discrete_time_tests;

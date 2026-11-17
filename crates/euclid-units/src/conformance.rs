@@ -195,6 +195,199 @@ where
     );
 }
 
+/// The **temperature scales**, pinned to physical fixed points.
+///
+/// [`Temperature`](crate::Temperature) is the one tier in this crate whose conversions are
+/// *affine* rather than linear -- each scale has both a factor and an offset -- and that is
+/// exactly the arithmetic
+/// that goes wrong quietly. A dropped offset still round-trips within one scale; a factor applied
+/// to the offset still gives plausible-looking numbers; a swapped multiply and divide is only
+/// visible away from the reference point. Mutation testing found twenty-one survivors across the
+/// three scales, including every `from_*` constructor replaceable with a default and every
+/// accessor with a constant.
+///
+/// # Fixed points, not round trips
+///
+/// A round trip through one scale cannot see a wrong offset, because the offset cancels. So the
+/// anchors here are **physical constants**: water's freezing and boiling points and absolute
+/// zero, in all three scales. They come from outside the implementation, which is what makes
+/// them worth asserting -- the same reasoning as checking the SI exponent table against
+/// definitions rather than against a copy of itself.
+///
+/// `-40` earns its place: it is the single temperature at which Celsius and Fahrenheit agree, so
+/// an implementation that has confused the factor with the offset passes a `0` check and fails
+/// here.
+///
+/// The tolerance is absolute and tight. These are small numbers reached by one multiply and one
+/// add, so there is no accumulation to accommodate; `1e-9` is generous and still four orders
+/// inside what a mistaken constant would cost.
+pub fn temperature_laws<Q>(what: &str)
+where
+    Q: crate::Temperature<Repr = f64> + Copy + core::fmt::Debug,
+{
+    const TOL: f64 = 1e-9;
+
+    let close = |got: f64, want: f64, law: &str| {
+        assert!(
+            (got - want).abs() <= TOL,
+            "{what}: {law} — got {got}, want {want}"
+        );
+    };
+
+    // Each scale reads back what it was given: the weakest law, and the only one a dropped
+    // offset survives.
+    for v in [0.0_f64, 25.0, -40.0, 100.0] {
+        close(Q::from_celsius(v).celsius(), v, "from_celsius then celsius");
+        close(
+            Q::from_fahrenheit(v).fahrenheit(),
+            v,
+            "from_fahrenheit then fahrenheit",
+        );
+    }
+    for v in [0.0_f64, 273.15, 373.15] {
+        close(Q::from_kelvin(v).kelvin(), v, "from_kelvin then kelvin");
+    }
+
+    // Water freezes: 0 °C = 32 °F = 273.15 K.
+    let freezing = Q::from_celsius(0.0);
+    close(freezing.fahrenheit(), 32.0, "water freezes at 32 °F");
+    close(freezing.kelvin(), 273.15, "water freezes at 273.15 K");
+
+    // Water boils: 100 °C = 212 °F = 373.15 K.
+    let boiling = Q::from_celsius(100.0);
+    close(boiling.fahrenheit(), 212.0, "water boils at 212 °F");
+    close(boiling.kelvin(), 373.15, "water boils at 373.15 K");
+
+    // The crossover: -40 °C = -40 °F. An implementation that has swapped the factor and the
+    // offset agrees with the others at zero and disagrees here.
+    let crossover = Q::from_celsius(-40.0);
+    close(
+        crossover.fahrenheit(),
+        -40.0,
+        "-40 °C is -40 °F (the scales cross)",
+    );
+    close(crossover.kelvin(), 233.15, "-40 °C is 233.15 K");
+
+    // Absolute zero, from every direction.
+    let zero = Q::absolute_zero();
+    close(zero.kelvin(), 0.0, "absolute zero is 0 K");
+    close(zero.celsius(), -273.15, "absolute zero is -273.15 °C");
+    close(zero.fahrenheit(), -459.67, "absolute zero is -459.67 °F");
+    close(Q::from_kelvin(0.0).celsius(), -273.15, "0 K is -273.15 °C");
+    close(
+        Q::from_fahrenheit(-459.67).kelvin(),
+        0.0,
+        "-459.67 °F is 0 K",
+    );
+
+    // And every constructor/accessor pair agrees about the same physical temperature, which is
+    // what makes the three scales one quantity rather than three.
+    for celsius in [-40.0_f64, 0.0, 21.0, 100.0] {
+        let from_c = Q::from_celsius(celsius);
+        let from_f = Q::from_fahrenheit(celsius * 9.0 / 5.0 + 32.0);
+        let from_k = Q::from_kelvin(celsius + 273.15);
+        close(from_f.celsius(), celsius, "Fahrenheit agrees with Celsius");
+        close(from_k.celsius(), celsius, "Kelvin agrees with Celsius");
+        close(
+            from_c.kelvin(),
+            from_k.kelvin(),
+            "the three constructors agree",
+        );
+    }
+}
+
+/// **Scalar scaling**: `a * k`, `k * a` and `a / k` must agree with the trait operations they
+/// abbreviate.
+///
+/// The third face of the same gap [`operator_bridge_laws`] closes, and the largest one in
+/// `euclid-quantity`: 118 surviving mutants across `Mul<Repr>`, `Div<Repr>` and the commuted
+/// `Mul<Q> for Repr`. Every one of those impls is a one-line delegation to a shared helper, the
+/// helper is covered, and the sixty-odd delegations were not.
+///
+/// # Multiplication and division are *not* symmetric here, and the law says so
+///
+/// `a * k` is exactly [`LinearQuantity::scale`], so that one is an equality.
+///
+/// `a / k` is **not** `scale(1/k)`, and the difference is deliberate rather than incidental: the
+/// reciprocal rounds once before multiplying, so `a.scale(1.0 / k)` and `a / k` disagree in the
+/// last bits. A carrier must divide the raw value directly. Asserting the wrong one of these
+/// would pin a subtly less accurate implementation, so the law is stated against
+/// [`Measure::from_raw`] of the divided raw value — which is the definition — rather than
+/// against `scale`.
+///
+/// That also makes this law the thing standing between the current implementation and an
+/// "obvious simplification" to `scale(1.0 / k)`.
+pub fn scaling_laws<Q>(xs: &[Q], factors: &[Q::Repr], what: &str)
+where
+    Q: LinearQuantity
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Mul<Q::Repr, Output = Q>
+        + core::ops::Div<Q::Repr, Output = Q>,
+    Q::Repr: Copy + PartialEq + core::ops::Mul<Q, Output = Q>,
+{
+    let zero = <Q::Repr as Element>::zero();
+    let one = <Q::Repr as Element>::one();
+
+    for &a in xs {
+        assert_eq!(a * one, a, "{what}: a * 1 = a");
+        assert_eq!(a / one, a, "{what}: a / 1 = a");
+        assert_eq!(
+            a * zero,
+            Q::from_raw(zero),
+            "{what}: a * 0 is the zero quantity"
+        );
+
+        for &k in factors {
+            assert_eq!(
+                a * k,
+                LinearQuantity::scale(a, k),
+                "{what}: a * k is scale(a, k)"
+            );
+            assert_eq!(k * a, a * k, "{what}: scalar multiplication commutes");
+
+            if k != zero {
+                assert_eq!(
+                    a / k,
+                    Q::from_raw(a.raw() / k),
+                    "{what}: a / k divides the raw value directly, not via a reciprocal"
+                );
+            }
+        }
+    }
+}
+
+/// [`scaling_laws`] over a carrier's own [`ConformanceSample`], with a fixed factor set.
+///
+/// The factors are the ones that matter for a scaling law rather than a wide sweep: the
+/// identities, a sign change, a magnifier and a divisor whose reciprocal is inexact — `3`, whose
+/// reciprocal is not representable, is what separates `a / k` from `a.scale(1/k)`.
+pub fn scaling_laws_for<Q>(what: &str)
+where
+    Q: LinearQuantity
+        + ConformanceSample
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Mul<Q::Repr, Output = Q>
+        + core::ops::Div<Q::Repr, Output = Q>,
+    Q::Repr: Copy + PartialEq + Real + core::ops::Mul<Q, Output = Q>,
+{
+    let one = <Q::Repr as Element>::one();
+    let two = one + one;
+    let three = two + one;
+    let factors = [
+        one,
+        <Q::Repr as Element>::zero(),
+        two,
+        three,
+        <Q::Repr as Element>::zero() - one,
+        one / two,
+    ];
+    scaling_laws(&Q::sample(), &factors, what);
+}
+
 /// [`operator_bridge_laws`] over a carrier's own [`ConformanceSample`].
 pub fn operator_bridge_laws_for<Q>(what: &str)
 where
