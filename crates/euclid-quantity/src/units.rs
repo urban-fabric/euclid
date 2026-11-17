@@ -29,4 +29,6 @@ mod base_tests;
 #[cfg(test)]
 mod conformance_tests;
 #[cfg(test)]
+mod inherent_tests;
+#[cfg(test)]
 mod web_tests;

@@ -125,6 +125,94 @@ where
     }
 }
 
+/// The **operator bridge**: a carrier's `+`, `-`, `+=`, `-=`, `-` and `sum` must agree with the
+/// trait methods they abbreviate.
+///
+/// # Why this is a separate suite
+///
+/// [`LinearQuantity`] supplies `add`, `sub` and `neg` as **default bodies**, so one body serves
+/// every carrier in every consuming crate -- which is exactly what [`quantity_laws`] checks, and
+/// checking it once is enough. The operators are the other half, and they are not: each carrier
+/// writes `impl Add for Length`, `impl AddAssign for Length`, `impl Neg for Length` out by hand,
+/// so there are as many implementations as there are units and nothing tied them to the trait.
+///
+/// Mutation testing measured the gap in `euclid-quantity`: roughly 300 surviving mutants across
+/// `Add`, `Sub`, `Neg`, `AddAssign` and `SubAssign`, including every unit's `+=` being
+/// replaceable with a body that does nothing. The shared default was well covered and its
+/// sixty-one hand-written twins were not.
+///
+/// The operator traits are not bounds on [`LinearQuantity`] -- a carrier may host the tier
+/// without overloading anything -- so this cannot live inside `quantity_laws` and takes its own
+/// bounds instead. A carrier that *does* overload should run it.
+///
+/// `sum` is included because `xs.iter().sum()` is the one of these a caller is most likely to
+/// reach for and the least likely to have written carefully: it must agree with folding `+` from
+/// zero.
+pub fn operator_bridge_laws<Q>(xs: &[Q], what: &str)
+where
+    Q: LinearQuantity
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Add<Output = Q>
+        + core::ops::Sub<Output = Q>
+        + core::ops::Neg<Output = Q>
+        + core::ops::AddAssign
+        + core::ops::SubAssign
+        + core::iter::Sum<Q>,
+{
+    for &a in xs {
+        assert_eq!(LinearQuantity::neg(a), -a, "{what}: neg is unary -");
+
+        for &b in xs {
+            assert_eq!(LinearQuantity::add(a, b), a + b, "{what}: add is +");
+            assert_eq!(LinearQuantity::sub(a, b), a - b, "{what}: sub is -");
+
+            let mut assigned = a;
+            assigned += b;
+            assert_eq!(assigned, a + b, "{what}: a += b agrees with a + b");
+
+            let mut assigned = a;
+            assigned -= b;
+            assert_eq!(assigned, a - b, "{what}: a -= b agrees with a - b");
+        }
+    }
+
+    // `sum` against an explicit fold, including the empty case, which must be zero rather than
+    // a panic or a first element.
+    let folded = xs
+        .iter()
+        .copied()
+        .fold(Q::from_raw(<Q::Repr as Element>::zero()), |acc, x| acc + x);
+    let summed: Q = xs.iter().copied().sum();
+    assert_eq!(summed, folded, "{what}: sum agrees with a fold of +");
+
+    let empty: Q = core::iter::empty().sum();
+    assert_eq!(
+        empty,
+        Q::from_raw(<Q::Repr as Element>::zero()),
+        "{what}: the empty sum is zero"
+    );
+}
+
+/// [`operator_bridge_laws`] over a carrier's own [`ConformanceSample`].
+pub fn operator_bridge_laws_for<Q>(what: &str)
+where
+    Q: LinearQuantity
+        + ConformanceSample
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Add<Output = Q>
+        + core::ops::Sub<Output = Q>
+        + core::ops::Neg<Output = Q>
+        + core::ops::AddAssign
+        + core::ops::SubAssign
+        + core::iter::Sum<Q>,
+{
+    operator_bridge_laws(&Q::sample(), what);
+}
+
 /// The scalar helpers: selection, rounding and the predicates.
 ///
 /// - `min`/`max` are commutative and idempotent, and each returns one of its arguments
