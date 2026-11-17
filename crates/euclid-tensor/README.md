@@ -8,7 +8,7 @@ for the git dependency to add.
 The array surface is a single rank-graded trait, `Tensor`. A vector is a rank-1
 tensor and a matrix a rank-2 tensor; there are no separate `Vector`/`Matrix`
 contracts. A tensor interacts only with other tensors and with the scalar
-`euclid-numeric` surface beneath it.
+`euclid-scalar` surface beneath it.
 
 ## Structural Core
 

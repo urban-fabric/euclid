@@ -1,7 +1,7 @@
 use super::ToyTensor;
 use crate::Tensor;
-use euclid_numeric::Compare;
-use euclid_numeric::ControlFlow;
+use euclid_scalar::Compare;
+use euclid_scalar::ControlFlow;
 
 #[test]
 fn lazy_tensor_control_flow_selects_values() {

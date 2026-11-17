@@ -34,7 +34,7 @@
 /// *independent* copy of the digits: a test checking `Real::euler_gamma` against this is
 /// comparing a lifted constant to a literal, not to itself.
 ///
-/// `core` gained `f64::consts::EULER_GAMMA` in Rust 1.99, and `euclid-numeric`'s catalogue now
+/// `core` gained `f64::consts::EULER_GAMMA` in Rust 1.99, and `euclid-scalar`'s catalogue now
 /// takes its value from there. This copy deliberately does **not** — the independence is the
 /// whole point. Routing both sides to `core` would turn every test that compares them into a
 /// tautology that passes no matter what the trait does, which is exactly the failure this
@@ -78,7 +78,7 @@ pub fn assert_close(got: f64, want: f64, tol: f64, what: &str) {
 #[track_caller]
 pub fn assert_exact(got: f64, want: f64, what: &str) {
     assert!(
-        got == want,
+        got.to_bits() == want.to_bits(),
         "{what}: got {got:.17e}, want {want:.17e} (exact equality required)"
     );
 }
@@ -134,7 +134,7 @@ pub fn derivative_with_step(f: impl Fn(f64) -> f64, x: f64, h: f64) -> f64 {
 /// before trusting a tight tolerance.
 #[must_use]
 pub fn integrate(f: impl Fn(f64) -> f64, a: f64, b: f64, panels: usize) -> f64 {
-    let n = panels.max(2) & !1;
+    let n = panels.max(2) / 2 * 2;
     let h = (b - a) / n as f64;
     let mut total = f(a) + f(b);
     for i in 1..n {
@@ -151,24 +151,15 @@ pub fn integrate(f: impl Fn(f64) -> f64, a: f64, b: f64, panels: usize) -> f64 {
 /// Spelling sweeps this way keeps a test's domain explicit, instead of leaving the reader to
 /// decode `for i in -60..60 { let x = f64::from(i) * 0.25; }`.
 ///
-/// **Inclusive means exactly inclusive.** The first point is bit-equal to `lo` and the last to
-/// `hi`, which is what the convex combination `lo(1−t) + hi·t` buys and the stepping form
-/// `lo + step·i` does not: with `step = (hi − lo)/(n − 1)` both the division and the
-/// multiplication round, so the final point lands near `hi` rather than on it.
-/// `sweep(8, -7.985505297780037, 12)` used to end at `-7.985505297780039`, two ulp short.
-///
-/// That matters more here than two ulp usually would. A sweep exists to cover a domain, and a
-/// suite that sweeps *to* a boundary in order to check behaviour at that boundary misses it
-/// entirely when the endpoint falls short — silently, because the assertion still passes on the
-/// point just inside. This is the endpoint law `euclid_numeric::Interpolate` states for
-/// `lerp`, applied where a test's own coverage depends on it.
+/// The endpoints are returned verbatim, including the sign of zero. Interior points use a
+/// convex combination, so subtracting endpoints of opposite sign cannot overflow.
 pub fn sweep(lo: f64, hi: f64, n: usize) -> impl Iterator<Item = f64> {
-    let n = n.max(2);
-    let last = (n - 1) as f64;
-    (0..n).map(move |i| {
-        let t = i as f64 / last;
+    let last = n.max(2) - 1;
+    let interior = (1..last).map(move |i| {
+        let t = i as f64 / last as f64;
         lo * (1.0 - t) + hi * t
-    })
+    });
+    [lo].into_iter().chain(interior).chain([hi])
 }
 
 /// `n` points spaced evenly in `log10` across `[lo, hi]`, both of which must be positive.
@@ -262,7 +253,13 @@ pub fn variance(xs: &[f64]) -> f64 {
         return 0.0;
     }
     let m = mean(xs);
-    xs.iter().map(|x| (x - m) * (x - m)).sum::<f64>() / xs.len() as f64
+    xs.iter()
+        .map(|x| {
+            let delta = x - m;
+            delta * delta
+        })
+        .sum::<f64>()
+        / xs.len() as f64
 }
 
 /// Population standard deviation.
@@ -305,81 +302,7 @@ pub fn no_step_across(name: &str, f: impl Fn(f64) -> f64, x: f64, derivative: f6
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mixed_criterion_behaves_absolutely_near_zero_and_relatively_away() {
-        // Near zero: the bound is `tol`, so two roundings of zero compare equal.
-        assert!(is_close(1e-18, 0.0, 1e-12));
-        assert!(!is_close(1e-6, 0.0, 1e-12));
-        // Away from zero: the bound scales, so 1e-12 means 1e-12 *relative*.
-        assert!(is_close(1e9 * (1.0 + 1e-13), 1e9, 1e-12));
-        assert!(!is_close(1e9 * (1.0 + 1e-10), 1e9, 1e-12));
-    }
-
-    #[test]
-    fn derivative_recovers_known_derivatives() {
-        for x in sweep(0.5, 4.0, 15) {
-            assert_close(derivative(f64::sin, x), x.cos(), 1e-9, "sin' = cos");
-            assert_close(derivative(f64::exp, x), x.exp(), 1e-9, "exp' = exp");
-            assert_close(derivative(f64::ln, x), 1.0 / x, 1e-9, "ln' = 1/x");
-        }
-    }
-
-    #[test]
-    fn integrate_recovers_known_integrals() {
-        // int_0^pi sin = 2
-        assert_close(
-            integrate(f64::sin, 0.0, core::f64::consts::PI, 2000),
-            2.0,
-            1e-12,
-            "int sin",
-        );
-        // int_0^1 x^2 = 1/3 (Simpson is exact for cubics)
-        assert_close(
-            integrate(|x| x * x, 0.0, 1.0, 10),
-            1.0 / 3.0,
-            1e-15,
-            "int x^2",
-        );
-    }
-
-    #[test]
-    fn sweeps_hit_their_endpoints() {
-        let s: Vec<f64> = sweep(-1.0, 1.0, 5).collect();
-        assert_eq!(s.len(), 5);
-        assert_exact(s[0], -1.0, "sweep lo");
-        assert_exact(s[4], 1.0, "sweep hi");
-        let l: Vec<f64> = log_sweep(1e-3, 1e3, 7).collect();
-        assert_close(l[0], 1e-3, 1e-12, "log_sweep lo");
-        assert_close(l[6], 1e3, 1e-12, "log_sweep hi");
-    }
-
-    #[test]
-    fn two_pass_variance_survives_a_large_offset() {
-        // The case that breaks `E[x^2] - E[x]^2`: a small spread on a huge mean. The naive
-        // form loses every digit here; the two-pass form does not.
-        let xs: Vec<f64> = (0..5).map(|i| 1e9 + f64::from(i)).collect();
-        let naive = {
-            let m = mean(&xs);
-            xs.iter().map(|x| x * x).sum::<f64>() / xs.len() as f64 - m * m
-        };
-        assert_close(variance(&xs), 2.0, 1e-9, "two-pass variance");
-        assert!(
-            rel(naive, 2.0) > 1e-3,
-            "the naive form is expected to be badly wrong here, got {naive}"
-        );
-    }
-
-    #[test]
-    fn shape_assertions_accept_and_reject() {
-        assert_nondecreasing(sweep(0.0, 1.0, 10), 0.0, "sweep rises");
-        assert_nonincreasing(sweep(1.0, 0.0, 10), 0.0, "reversed sweep falls");
-        assert_probability(sweep(0.0, 1.0, 10), "unit sweep");
-        assert_all_finite(sweep(-5.0, 5.0, 10), "finite sweep");
-    }
-}
+mod tests;
 
 // The README's examples, compiled.
 //

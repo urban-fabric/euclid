@@ -1,4 +1,4 @@
-use euclid_numeric::Semiring;
+use euclid_scalar::Semiring;
 
 use super::Measure;
 

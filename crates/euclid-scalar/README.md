@@ -1,76 +1,95 @@
 # euclid-scalar
 
-**The concrete `Copy` number line, where euclid's algebra tower and analysis
-surface fuse.** Part of [euclid](../..).
+Scalar numeric contracts — the foundation of [euclid](../..) and of the Urban
+Fabric numeric vocabulary. Depends on `euclid-algebra`; no third-party production dependencies.
 
 These crates are not on crates.io. See [the root README](../../README.md#using-it)
 for the git dependency to add.
 
-euclid's contract crates deliberately say nothing about what a number *is*:
-`euclid-numeric`'s `Real` is implemented by `f64`, but equally by an expression
-handle or a tensor element that is neither `Copy` nor one machine word.
-euclid-scalar is the tier for code that genuinely needs the real number line —
-eager geometry, matrix and physics kernels.
-
 ```rust
 use euclid_scalar::Real;
 
-// Written once against the concrete tier: constants and `Copy` are available,
-// so this is an ordinary scalar formula rather than a staged expression.
-fn circle_area<T: Real>(r: T) -> T {
-    T::PI * r * r
+/// Standard-normal log-density over any real carrier.
+fn standard_normal_logpdf<T: Real>(x: T) -> T {
+    let x2 = x.square();
+    -(T::half() * x2) - T::half_ln_tau()
 }
-
-let a = circle_area(2.0_f64);
-let b = circle_area(2.0_f32); // same formula, different carrier
 ```
 
-## What is in it
+## Trait Tiers
 
-| Trait | What it fuses |
-|---|---|
-| `Real` | `euclid_algebra::OrderedField` + `euclid_numeric::Real` + `Copy`, plus the associated constants (`PI`, `TAU`, `EPSILON`, `INFINITY`, …) and the `bool`-returning predicates (`is_finite`, `is_nan`, `is_sign_negative`). Implemented by `f64` and `f32`. |
-| `Complex` | `euclid_algebra::AlgebraicallyClosedField` + `euclid_numeric::Complex` with a `Real` real part + `Copy`, plus the complex transcendentals. |
+Layered by algebraic structure. Pick the first tier that has the operation you
+need.
 
-Two crates supply the halves: `euclid-algebra` says which algebraic tier a
-carrier reaches, `euclid-numeric` says what operations a formula may use. This is
-the only crate in the workspace that depends on both, which is precisely its job.
+| trait | adds |
+|-------|------|
+| `Element` | carrier-defined `zero`/`one`; shared by real, integer, natural, and boolean carriers |
+| `Semiring` | `Element` plus `+` and `*` |
+| `Natural` | unsigned count/index ops on `Semiring`: `div_rem`, conversions, count combinatorics |
+| `Ring` | `Semiring` plus subtraction and negation |
+| `Integer` | signed count/index ops on `Ring`: Euclidean `div_rem`, conversion to real carriers |
+| `Arithmetic` | `Ring` plus division |
+| `Real` | real analysis over `Arithmetic`: lifted constants, powers, transcendentals, rounding/sign, masks, selectors, special functions, stable log-domain helpers |
+| `NormedDivisionAlgebra` | the ℝ/ℂ/ℍ surface: conjugation, magnitude, real part, real-axis lifting |
+| `Complex`, `Quaternion` | construction and component access for those refinements |
+| `Boolean`, `Compare` | mask algebra, comparisons, and `select` |
 
-## Which bound to use
+`Real` also carries probability/statistics primitives: `erf`, `erfc`, `erf_inv`,
+`erfcx`, `ln_gamma`, `digamma`, `trigamma`, `gamma_lr`, `gamma_ur`, `beta_reg`,
+`bessel_i0e`, `bessel_i1e`, `xlogy`, `xlog1py`.
 
-Prefer `euclid_numeric::Real`. It is the wider bound, and a formula written
-against it runs on expression handles, graph nodes and tensor elements as well as
-on `f64`.
+Nothing here returns a scalar `bool` from a generic comparison; comparisons
+return masks, consumed by `Compare::select` or `Compare::if_then_else`.
 
-| you need | bound |
-|---|---|
-| transcendentals, rounding, `min`/`max`/`clamp` — anything a tensor compiler can lower | `euclid_numeric::Real` |
-| `Copy`, a host `bool` from a predicate, a single `PI` value | `euclid_scalar::Real` |
+## Host Scalar Traits
 
-A `Tensor` or columnar `Expr` backend stays entirely on the contract tier and
-never depends on this crate.
+`HostReal` extends `Real` with the algebraic `OrderedField` structure, `Copy`, associated
+constants and host predicates. `HostComplex` extends `Complex` with an algebraically closed
+field, a `HostReal` real part, `Copy` and complex transcendentals. Use the portable traits by
+default and the host traits when eager scalar semantics are required.
 
-## Why it is a separate crate
+```rust
+use euclid_scalar::{HostReal, Real};
+assert_eq!(<f64 as HostReal>::PI, <f64 as Real>::pi());
+assert_eq!(<f32 as HostReal>::from_f64(2.5), 2.5_f32);
+```
 
-Until 0.4 this tier lived inside `euclid-algebra`, which therefore owned two
-goals at once: the abstract tower and the concrete number. The symptom was a name
-collision — it imported euclid's `Real`/`Complex` as `LazyReal`/`LazyComplex` to
-keep them apart from its own same-named traits, so the crate documented a
-workaround instead of a boundary.
+The former `euclid-numeric` source and tests are merged here. `traits/` contains private trait modules
+re-exported at the root, `host/` adds the eager tiers, `impls/` implements primitive
+carriers, and `kernels/` contains numerical algorithms. All generated numerical properties
+run through `cargo test -p euclid-scalar --test properties`; persisted tapes and budgets remain
+under `tests/regressions` and `tests/budgets.txt`.
 
-Splitting them removed the aliases. `euclid_numeric::Real` is the contract and
-`euclid_scalar::Real` is the concrete number, so the distinction is carried by
-the crate name rather than by an import rename. It also left `euclid-algebra`
-with no dependencies at all.
+## Also Here
+
+- **`Interpolate`** — scalar-parameterized interpolation with explicit `lerp` and
+  `midpoint`. `midpoint` is required separately because some carriers need a more
+  stable formula than `lerp(a, b, 0.5)`. It is deliberately opt-in rather than
+  blanket-implemented over the algebra tiers: the affine `lerp` is the wrong
+  interpolation for some division algebras (a unit quaternion wants `slerp`).
+- **`ControlFlow: Compare`** — the explicit graph conditional/loop contract, for
+  carriers that can represent `cond` and `while_loop` as graph nodes.
+
+Both live here rather than in crates of their own: `Interpolate`'s `f64`/`f32`
+impls are part of this crate's reference implementations, and `ControlFlow`
+refines `Compare`.
+
+Like every trait here, both are named at the crate root —
+`euclid_scalar::Interpolate` — and their modules are private, so each trait has
+exactly one path. `constants`, `compensated`, `interval` and the opt-in `conformance` module are public namespaces.
+
+## Implemented Here
+
+- `f64`, `f32` — `Element`, `Arithmetic`, `Real`, `NormedDivisionAlgebra`,
+  `Interpolate`, `HostReal`
+- `i32`, `i64`, `i128` — `Element`, `Integer`
+- `u32`, `u64`, `u128` — `Element`, `Natural`
+- `bool` — `Element`, `Boolean`
+
+Concrete complex and quaternion carriers are not shipped; those traits are
+contracts for consumer-provided types.
 
 ## License
 
-Apache-2.0, inherited from the workspace like every other member — see
-[LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-This crate was split out of `euclid-algebra`, which predates the fold into
-euclid, and carried that crate's `Proprietary` licence until 0.4 — on the
-reasoning that a split should not relicense any more than a move. That has been
-overridden deliberately by the copyright holder: the fleet ships under one
-licence. `cargo deny` is what surfaced it — `"Proprietary"` is not valid SPDX,
-so the crate read as *unlicensed* rather than as restrictively licensed.
+Licensed under the [Apache License, Version 2.0](LICENSE).
+Copyright 2026 Raymond Mead.

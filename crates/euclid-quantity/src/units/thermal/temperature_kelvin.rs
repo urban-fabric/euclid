@@ -11,19 +11,16 @@ use bytemuck::{Pod, Zeroable};
 /// is what makes it the one that can be scaled: twice 100 K is 200 K, where twice
 /// 100 °C is meaningless.
 #[derive(
-    Copy,
-    Clone,
-    Debug,
-    Default,
-    PartialEq,
-    PartialOrd,
-    Pod,
-    Zeroable,
-    serde::Serialize,
-    serde::Deserialize,
+    Copy, Clone, Debug, PartialEq, PartialOrd, Pod, Zeroable, serde::Serialize, serde::Deserialize,
 )]
 #[serde(transparent)]
 pub struct TemperatureKelvin(pub(crate) f64);
+
+impl Default for TemperatureKelvin {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
 
 impl TemperatureKelvin {
     /// Absolute zero, which is both the additive identity and the physical floor of the
@@ -131,6 +128,6 @@ impl euclid_units::Temperature for TemperatureKelvin {
     }
 
     fn absolute_zero() -> Self {
-        Self::ZERO
+        Default::default()
     }
 }

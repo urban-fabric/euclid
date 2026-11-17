@@ -32,6 +32,7 @@
 
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
+use std::num::NonZeroUsize;
 
 /// How many **distinct** candidate tapes a single minimisation may try.
 ///
@@ -109,11 +110,10 @@ impl Hasher for TapeHasher {
         for word in words {
             self.add(u64::from_le_bytes(*word));
         }
-        let mut tail = 0u64;
-        for byte in remainder {
-            tail = (tail << 8) | u64::from(*byte);
-        }
-        self.add(tail);
+        let mut tail = [0; 8];
+        let start = tail.len() - remainder.len();
+        tail[start..].copy_from_slice(remainder);
+        self.add(u64::from_be_bytes(tail));
     }
 
     #[inline]
@@ -196,16 +196,8 @@ impl<F: FnMut(&[u64]) -> Probe> Prober<F> {
 ///
 /// Returns the smallest tape found and how many probes were spent.
 ///
-/// # Convergence is detected by comparing tapes, not by trusting the passes
-///
-/// Each pass returns whether it improved anything, and the obvious loop is "repeat while some
-/// pass improved". That loop does not converge. `shrink_entries` lowering an entry can put the
-/// tape out of order, `sort_pairs` then swaps it back, and the two report progress forever
-/// while the tape cycles between two states — which is how an eleven-entry tape burned the
-/// entire probe budget and reported itself unminimised.
-///
-/// Snapshotting the tape and stopping when a full round leaves it unchanged is the actual
-/// fixpoint, and it costs one clone per round.
+/// Each round must shorten the tape or lower it lexicographically. Memoized probes do
+/// not spend budget, so the progress check also applies to rounds made entirely of memo hits.
 pub fn minimise(tape: Vec<u64>, probe: impl FnMut(&[u64]) -> Probe) -> (Vec<u64>, Cost) {
     let mut best = tape;
     let mut prober = Prober::new(probe);
@@ -221,12 +213,20 @@ pub fn minimise(tape: Vec<u64>, probe: impl FnMut(&[u64]) -> Probe) -> (Vec<u64>
         shrink_entries(&mut best, &mut prober);
         sort_pairs(&mut best, &mut prober);
 
-        if best == before {
-            break;
+        match (best.len(), &best).cmp(&(before.len(), &before)) {
+            std::cmp::Ordering::Less => {}
+            std::cmp::Ordering::Equal | std::cmp::Ordering::Greater => break,
         }
     }
 
     (best, prober.cost)
+}
+
+/// The nonzero widths obtained by repeatedly halving a tape's starting length.
+fn chunk_widths(len: usize) -> impl Iterator<Item = NonZeroUsize> {
+    std::iter::successors(NonZeroUsize::new(len), |width| {
+        NonZeroUsize::new(width.get() >> 1)
+    })
 }
 
 /// Try removing contiguous runs, longest first.
@@ -239,17 +239,19 @@ fn delete_chunks<F: FnMut(&[u64]) -> Probe>(
     prober: &mut Prober<F>,
     scratch: &mut Vec<u64>,
 ) {
-    let mut width = tape.len().max(1);
-
-    while width > 0 {
-        let mut start = 0;
-        while start + width <= tape.len() {
+    for width in chunk_widths(tape.len()) {
+        let mut starts = (0..tape.len()).peekable();
+        while let Some(&start) = starts.peek() {
+            let (prefix, rest) = tape.split_at(start);
+            let Some(suffix) = rest.get(width.get()..) else {
+                break;
+            };
             if prober.exhausted() {
                 return;
             }
             scratch.clear();
-            scratch.extend_from_slice(&tape[..start]);
-            scratch.extend_from_slice(&tape[start + width..]);
+            scratch.extend_from_slice(prefix);
+            scratch.extend_from_slice(suffix);
 
             if prober.ask(scratch) == Probe::StillFails {
                 tape.clear();
@@ -258,10 +260,9 @@ fn delete_chunks<F: FnMut(&[u64]) -> Probe>(
                 // often deletable too. Re-probing the same offset is how a long irrelevant
                 // run collapses in a few probes instead of one probe per entry.
             } else {
-                start += 1;
+                starts.next();
             }
         }
-        width /= 2;
     }
 }
 
@@ -276,30 +277,24 @@ fn zero_chunks<F: FnMut(&[u64]) -> Probe>(
     prober: &mut Prober<F>,
     scratch: &mut Vec<u64>,
 ) {
-    let mut width = tape.len().max(1);
-
-    while width > 0 {
-        let mut start = 0;
-        while start + width <= tape.len() {
+    for width in chunk_widths(tape.len()) {
+        let width = width.get();
+        for start in 0..=tape.len() - width {
             if prober.exhausted() {
                 return;
             }
-            if tape[start..start + width].iter().all(|entry| *entry == 0) {
-                start += 1;
+            let range = start..start + width;
+            if tape[range.clone()].iter().all(|entry| *entry == 0) {
                 continue;
             }
             scratch.clear();
             scratch.extend_from_slice(tape);
-            for entry in &mut scratch[start..start + width] {
-                *entry = 0;
-            }
+            scratch[range].fill(0);
 
             if prober.ask(scratch) == Probe::StillFails {
                 tape.copy_from_slice(scratch);
             }
-            start += 1;
         }
-        width /= 2;
     }
 }
 
@@ -318,21 +313,21 @@ fn shrink_entries<F: FnMut(&[u64]) -> Probe>(tape: &mut [u64], prober: &mut Prob
         let mut low = 0u64;
         let mut high = tape[position];
 
-        while low < high {
+        for _ in 0..u64::BITS {
+            if low == high {
+                break;
+            }
             if prober.exhausted() {
                 return;
             }
-            let mid = low + (high - low) / 2;
-            if mid == high {
-                break;
-            }
+            let mid = low.midpoint(high);
             let previous = tape[position];
             tape[position] = mid;
             if prober.ask(tape) == Probe::StillFails {
                 high = mid;
             } else {
                 tape[position] = previous;
-                low = mid + 1;
+                low = mid.saturating_add(1);
             }
         }
         tape[position] = high;

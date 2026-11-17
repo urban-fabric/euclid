@@ -4,7 +4,7 @@
 //!
 //! euclid's array surface is a single rank-graded type, the [`Tensor`]. A vector is a rank-1
 //! tensor and a matrix a rank-2 tensor; there are no separate `Vector`/`Matrix` contracts. A
-//! tensor interacts only with other tensors and with the scalar [`euclid_numeric`] surface
+//! tensor interacts only with other tensors and with the scalar [`euclid_scalar`] surface
 //! beneath it.
 //!
 //! The contract is layered:
@@ -12,13 +12,13 @@
 //! - **Structural core**: [`Tensor`] starts at [`Clone`], so shape, reshape, indexing/gather,
 //!   and structural ops work for real, complex, integer, natural, and boolean tensors alike.
 //!   Arithmetic methods add the bounds they need: [`sum`](Tensor::sum) and
-//!   [`matmul`](Tensor::matmul) require [`Ring`](euclid_numeric::Ring),
-//!   [`prod`](Tensor::prod) requires [`Semiring`](euclid_numeric::Semiring),
-//!   [`max`](Tensor::max)/[`min`](Tensor::min) require [`Real`](euclid_numeric::Real),
+//!   [`matmul`](Tensor::matmul) require [`Ring`](euclid_scalar::Ring),
+//!   [`prod`](Tensor::prod) requires [`Semiring`](euclid_scalar::Semiring),
+//!   [`max`](Tensor::max)/[`min`](Tensor::min) require [`Real`](euclid_scalar::Real),
 //!   [`mean`](Tensor::mean) requires
-//!   [`NormedDivisionAlgebra`](euclid_numeric::NormedDivisionAlgebra), and
-//!   [`any`](Tensor::any)/[`all`](Tensor::all) require [`Boolean`](euclid_numeric::Boolean).
-//! - **Graph control flow**: [`ControlFlow`](euclid_numeric::ControlFlow) is the explicit contract for
+//!   [`NormedDivisionAlgebra`](euclid_scalar::NormedDivisionAlgebra), and
+//!   [`any`](Tensor::any)/[`all`](Tensor::all) require [`Boolean`](euclid_scalar::Boolean).
+//! - **Graph control flow**: [`ControlFlow`](euclid_scalar::ControlFlow) is the explicit contract for
 //!   carriers that can represent conditionals and loops.
 //! - **Capability extensions**: opt-in traits that grow the surface an implementation can offer
 //!   without widening the core. [`TensorReduce`] adds statistical/scan reductions (variance,

@@ -65,7 +65,7 @@ two ulp short of its own bound. That matters more than two ulp usually would: a
 suite sweeping *to* a boundary in order to check behaviour *at* that boundary
 misses it entirely when the endpoint falls short — silently, because the
 assertion still passes on the point just inside. It is now the convex form
-`lo(1−t) + hi·t`, which is the endpoint law `euclid_numeric::Interpolate` states
+`lo(1−t) + hi·t`, which is the endpoint law `euclid_scalar::Interpolate` states
 for `lerp`.
 
 ## Why the name is broad

@@ -91,7 +91,7 @@ deny = [
     # geo crates. Listing them makes the commitment enforceable.
     { crate = "nalgebra", reason = "euclid is the fleet's linear-algebra surface" },
     { crate = "ndarray", reason = "euclid-tensor is the fleet's tensor contract" },
-    { crate = "num-traits", reason = "euclid-numeric is the fleet's scalar contract" },
+    { crate = "num-traits", reason = "euclid-scalar is the fleet's scalar contract" },
     { crate = "num-complex", reason = "euclid-scalar is the fleet's complex contract" },
     { crate = "uom", reason = "euclid-units is the fleet's dimension contract" },
     { crate = "proptest", reason = "euclid-stability is the fleet's property engine" },

@@ -7,7 +7,7 @@ use bytemuck::{Pod, Zeroable};
 ///
 /// Worth preferring to radians when a value is *given* in degrees: the quadrant
 /// boundaries are exactly representable here and are not after conversion, which is why
-/// `euclid_numeric::Real::sin_cos_degrees` exists.
+/// `euclid_scalar::Real::sin_cos_degrees` exists.
 #[derive(
     Copy,
     Clone,

@@ -91,17 +91,23 @@ pub fn within_ulps(a: f64, b: f64, ulps: u64) -> bool {
 /// its own test suite. Use [`within_absolute`] when zero is a legitimate expected value.
 #[must_use]
 pub fn within_relative(a: f64, b: f64, tolerance: f64) -> bool {
-    if a.is_nan() || b.is_nan() {
-        return false;
-    }
     if a == b {
         return true;
     }
+    relative_difference(a, b) <= tolerance
+}
+
+fn relative_difference(a: f64, b: f64) -> f64 {
     let scale = a.abs().max(b.abs());
-    if scale == 0.0 || !scale.is_finite() {
-        return false;
+    let difference = (a - b).abs();
+    if difference.is_infinite() && scale.is_finite() {
+        // Only opposite-sign finite values can overflow the subtraction. Scaling
+        // first keeps both terms in [-1, 1] in this case.
+        (a / scale - b / scale).abs()
+    } else {
+        // Subtract first to retain the small gap between nearly equal operands.
+        difference / scale
     }
-    (a - b).abs() / scale <= tolerance
 }
 
 /// Whether `|a - b|` is at most `tolerance`.
@@ -111,9 +117,6 @@ pub fn within_relative(a: f64, b: f64, tolerance: f64) -> bool {
 /// comparison that passes for the wrong reason.
 #[must_use]
 pub fn within_absolute(a: f64, b: f64, tolerance: f64) -> bool {
-    if a.is_nan() || b.is_nan() {
-        return false;
-    }
     if a == b {
         return true;
     }
@@ -141,7 +144,7 @@ pub fn within_absolute(a: f64, b: f64, tolerance: f64) -> bool {
 /// fold returns `0`, so the reported condition number was `inf` rather than `2e16` — the
 /// function diagnosed catastrophic cancellation by suffering from it.
 ///
-/// Kahan–Babuška–Neumaier below, which is the same algorithm euclid-numeric's `compensated::sum`
+/// Kahan–Babuška–Neumaier below, which is the same algorithm euclid-scalar's `compensated::sum`
 /// uses. It is inlined rather than borrowed because this crate is dev-only and must not depend
 /// on the crates whose tests depend on it.
 #[must_use]

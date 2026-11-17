@@ -3,114 +3,38 @@ resolver = "3"
 members = [
     "crates/euclid-algebra",
     "crates/euclid-matrix",
-    "crates/euclid-numeric",
-    "crates/euclid-stability",
     "crates/euclid-quantity",
     "crates/euclid-random",
     "crates/euclid-scalar",
+    "crates/euclid-stability",
     "crates/euclid-tensor",
     "crates/euclid-units",
     "crates/euclid-utils",
 ]
-
-# The euclid *contract* crates are dependency-free: trait surfaces, f64/f32
-# reference scalar implementations, integer/natural/bool carriers, and physical
-# quantities. None of them pulls a third-party dependency; the only edges in the
-# graph are the leaf crates onto euclid-numeric.
+# `matrix` and `tensor` are opt-in, and the opt-in is naming the crate.
 #
-#     euclid-numeric  (no dependencies)
-#       ├── euclid-units
-#       │     └── euclid-quantity
-#       ├── euclid-tensor
-#       │     └── euclid-matrix
-#       ├── euclid-random
-#       └── euclid-scalar ──┐
-#                           │
-#     euclid-algebra  (no dependencies, and the other half of euclid-scalar)
+# There is no `euclid` facade — see RELEASES.md 0.3.0, which removed one and said why: an umbrella
+# is the reason `euclid-algebra` and `euclid-matrix` went stale in their own repositories. A cargo
+# *feature* needs a crate to hang off, so "optional matrix and tensor" cannot mean a feature here;
+# it means a consumer depends on `euclid-tensor` when it wants tensors and does not when it does
+# not. That is a stronger guarantee than a default-off feature, because there is no manifest in
+# which the dependency is present-but-inactive.
 #
-# Note that euclid-algebra is a *second root*, not a leaf of euclid-numeric.
-# Algebraic structure needs nothing from analysis, so the two foundations sit
-# side by side and meet only in euclid-scalar — the one member with two parents.
-#
-# Four members are not plain contract crates: two are *carrier* tiers —
-# concrete types implementing the contracts above — and two are *content*:
-#
-#   `euclid-quantity` is the concrete f64 unit carrier. It is the one member that is not
-#   dependency-free: it carries `bytemuck` (Pod/Zeroable storage wrappers) and
-#   `serde`. That property is per-crate, not per-workspace — a consumer taking
-#   `euclid-numeric` or `euclid-units` still gets no third-party edges. Only a
-#   consumer that asks for `euclid-quantity` pays for them.
-#
-#   `euclid-scalar` is the concrete Copy scalar carrier: the `Real` and
-#   `Complex` numbers where the algebra tower and the numeric analysis surface
-#   fuse. It adds nothing third-party.
-#
-#   `euclid-algebra` is the abstract-algebra tower itself — the semiring/dioid
-#   trunk, the ring/field numeric branch, and the exact carriers (Rational,
-#   Zn/Zp, GaussianRational). Content rather than contract, and dependency-free.
-#   Through 0.3 it held the tower *and* the concrete tier above, which is why it
-#   used to depend on euclid-numeric and to import `Real`/`Complex` under
-#   `LazyReal`/`LazyComplex` aliases, dodging a collision with its own
-#   same-named traits. Splitting euclid-scalar out removed the dependency, the
-#   aliases and the collision together, and left the two goals in two crates.
-#
-#   `euclid-matrix` is the matrix extensions beyond the rank contract — the SPD,
-#   triangular-solve, QR, eigen and SVD traits plus the algorithms written once
-#   over them. It names no backend: a backend supplies the concrete tensor type
-#   these monomorphize on. euclid 0.2 deliberately shed linear-algebra content
-#   from the tensor contract, and that decision is preserved here — it is a
-#   separate crate, not something merged back into euclid-tensor. What changed
-#   is only the repository boundary, not the crate boundary.
-#
-# oresme, euclid-algebra and euclid-matrix lived in their own repositories
-# until they were folded back here (euclid-scalar was carved out of
-# euclid-algebra later, and was never its own repository),
-# and in every case the split was historical rather than architectural: each
-# exists to implement or extend euclid's contracts, each depended on nothing but
-# euclid crates, and each cost git dependency edges plus a second merge to
-# coordinate any change that crossed the boundary. euclid-algebra and
-# euclid-matrix had additionally gone stale — both still named the `euclid`
-# facade crate that 0.3 removed, so neither resolved against euclid's own main
-# branch at all.
-#
-# All three were folded in under their original repository names (`napier`,
-# `frobenius`, `oresme`) to keep each fold itself near-zero-risk, then renamed
-# into the `euclid-*` scheme once it had settled: napier -> euclid-algebra and
-# frobenius -> euclid-matrix together, then oresme -> euclid-quantity on its own
-# because it is by far the heaviest consumed (~550 call sites across the fleet)
-# and a rename that size is worth isolating.
-#
-# Every member now follows the scheme. The fleet convention is that a
-# mathematician's name earns a *repository*, never a crate inside one — a crate
-# is `<repo>-<role>` — so a `euclid-*` member carrying a mathematician's name
-# was always a leftover from its own repository rather than a naming choice.
-#
-# euclid-utils is a dev-only member: the four contract crates use it under
-# [dev-dependencies] for shared test helpers, and it is publish = false, so it never
-# reaches a consumer. The carrier and content crates (euclid-quantity,
-# euclid-scalar, euclid-algebra, euclid-matrix) do not take it.
-#
-# euclid-stability is the second dev-only member, on the same footing. Two responsibilities,
-# which is what the name says and what `euclid-property` (its name through 0.4) did not:
-#
-#   Numerical stability -- condition numbers, forward and two-stage error bounds, seam hunting at
-#   algorithm crossovers, ulp monotonicity scans, and accuracy budgets. A budget is the piece
-#   that closes a gap nothing else here can see: a property asserts a contract with headroom, so
-#   a kernel getting twice as inaccurate still passes it, and only a committed worst-case score
-#   notices. This half is numerical analysis rather than property testing.
-#
-#   Property testing -- the foundation the above searches over. It is why a `conformance`
-#   module's laws can be run twice: once over the fixed ConformanceSample that proves a tier is
-#   satisfiable, once over generated input that hunts the representation invariants underneath.
-#   It replaces proptest, which deny.toml bans: the fleet's generators are mostly dependent (a
-#   rank bounding the axes that index it), which is proptest's documented weak spot, and
-#   generating from a replayable choice tape re-derives such a bound on every shrink candidate
-#   instead. Note there is no `Arbitrary` here, deliberately -- a generator is declared, in the
-#   same spirit as ConformanceSample, which is also why "property testing" named the wrong half:
-#   that tradition is type-driven, and this crate's weight is not.
+# These two are out of `default-members` so the bare commands skip them. Note the scope of that:
+# `--workspace` overrides it, so all six checks in CONTRIBUTING.md still cover all nine members.
+# It shortens the inner loop; it is not a coverage boundary.
+default-members = [
+    "crates/euclid-algebra",
+    "crates/euclid-scalar",
+    "crates/euclid-units",
+    "crates/euclid-stability",
+    "crates/euclid-random",
+    "crates/euclid-quantity",
+    "crates/euclid-utils",
+]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Raymond Mead"]
@@ -118,45 +42,14 @@ rust-version = "1.95"
 repository = "https://github.com/urban-fabric/euclid"
 
 [workspace.dependencies]
-euclid-numeric = { version = "0.5.0", path = "crates/euclid-numeric" }
-# The algebra tower that `euclid-scalar` fuses with the analysis surface above.
-# Declared here now that a member depends on it; it was deliberately absent while
-# nothing in the workspace did.
-euclid-algebra = { version = "0.5.0", path = "crates/euclid-algebra" }
-# The dimension contracts `euclid-quantity` implements. Declared here now that a member
-# crate depends on it rather than only consumers outside the workspace.
-euclid-units = { version = "0.5.0", path = "crates/euclid-units" }
-# The rank-n Tensor contract that `euclid-matrix` extends.
-euclid-tensor = { version = "0.5.0", path = "crates/euclid-tensor" }
-# `euclid-quantity`, `euclid-scalar` and `euclid-matrix` are deliberately absent: an entry here is
-# for a dependency some *member* takes, and all three are leaves of the graph
-# above — they implement or extend the contract crates and nothing in the
-# workspace depends on them back. The folds left entries behind, which cargo
-# reports as `unused_workspace_dependencies`. Re-add one only when a member
-# actually names it; a consumer outside the workspace does not need it here.
-# Dev-only shared helpers; never a runtime dependency of a published crate.
-euclid-utils = { version = "0.5.0", path = "crates/euclid-utils" }
-# Dev-only property-test engine. Eight of the nine other members take it: euclid-numeric to
-# search for worst-case numerical error, euclid-algebra/-units/-tensor/-random for the generated
-# companion to each fixed conformance suite, euclid-quantity for conversion round trips,
-# euclid-scalar to check the two same-named tiers it fuses agree, and euclid-utils because the
-# measuring instrument is worth measuring. Only euclid-matrix does not, and cannot: its traits
-# are backend primitives with no carrier here to run a law against, generated or fixed.
-# Unlike euclid-utils it is not purely dev-only: the five contract crates take it as an
-# *optional* dependency enabled by their `conformance` feature, because the generated laws they
-# export are written against it. A consumer that only binds the contract never sees it; one that
-# turns on `conformance` is asking for the test surface and gets the engine with it.
-euclid-stability = { version = "0.5.0", path = "crates/euclid-stability" }
+euclid-algebra = { version = "0.6.0", path = "crates/euclid-algebra" }
+euclid-scalar = { version = "0.6.0", path = "crates/euclid-scalar" }
+euclid-units = { version = "0.6.0", path = "crates/euclid-units" }
+euclid-tensor = { version = "0.6.0", path = "crates/euclid-tensor" }
+euclid-utils = { version = "0.6.0", path = "crates/euclid-utils" }
+euclid-stability = { version = "0.6.0", path = "crates/euclid-stability" }
 
 [workspace.lints.rust]
-# euclid is mostly trait surface, so a doc comment is the deliverable rather than a courtesy —
-# which makes an undocumented public item a missing *product*, not a missing nicety. Denied here
-# so that stays true by construction.
-#
-# One documented exception, and it is narrow: `DType` and `Dimension` allow it on their variant
-# lists, where `/// Length.` above `Length` is noise and the grouping comments already carry the
-# structure. Nothing else is excepted — `euclid-quantity` carried a crate-wide allow for 270
-# items until they were written.
 missing_docs = "deny"
 unsafe_code = "deny"
 unreachable_pub = "deny"
@@ -165,8 +58,4 @@ unreachable_pub = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
-# `mod_module_files`, not `self_named_module_files` -- the two are opposites and
-# only the name distinguishes them. This one denies `mod.rs`; the other one
-# demanded it, which is how the workspace ended up requiring the layout the
-# fleet had standardised away from.
 mod_module_files = "deny"

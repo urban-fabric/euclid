@@ -62,19 +62,10 @@
 //! later. Neither law materialises a diagonal matrix: scaling columns is a broadcast and an
 //! elementwise multiply, which is portable and avoids an `n × n` of mostly zeros.
 //!
-//! # Nothing here has ever been executed
+//! # Backend coverage
 //!
-//! Said plainly, because it bears on how much the suites above are worth. euclid ships no
-//! concrete tensor, so no carrier in this repository can satisfy these traits, so no law body in
-//! this file has ever run. `--all-features` type-checks them, which for generic trait code is a
-//! real check and catches a law that does not compose, and it is not the same as a law that is
-//! *correct*.
-//!
-//! The precedent is not hypothetical: `euclid-tensor`'s own 3-cycle law was malformed at rank ≥ 4
-//! for as long as its reference sample stopped at rank 3, and it was found the first time a
-//! generated sample reached rank 4. Every law in this file is in that state permanently. Treat a
-//! failure here as a hypothesis about your backend *or* about the law, and read the law before
-//! changing your code.
+//! A rank-zero eager fixture exercises the residual helper. The solve and factorization
+//! laws need a backend implementing the corresponding matrix primitives.
 //!
 //! # Tolerance
 //!
@@ -92,7 +83,7 @@
 //! two forms are concatenated, and an outer comment resolves intra-doc links in the *parent's*
 //! scope, so a link to a function in here would silently fail from there.
 
-use euclid_numeric::{Compare, Element, Real};
+use euclid_scalar::{Compare, Element, Real};
 use euclid_tensor::Tensor;
 
 use crate::{
@@ -100,7 +91,7 @@ use crate::{
     TransposeMode, Triangle, TriangularSolve,
 };
 
-/// Assert that two tensors agree elementwise to within a relative tolerance.
+/// Assert that two tensors agree to within a scaled Frobenius tolerance.
 ///
 /// Exposed because a backend writing its own laws over these traits wants the same residual
 /// convention the suites use, rather than inventing a second one.
@@ -109,11 +100,10 @@ use crate::{
 /// degrades to absolute near zero and to relative away from it — a purely relative check is
 /// meaningless where a residual passes through zero, which for a correct solve is most of it.
 ///
-/// This doc comment used to describe a *max* norm — `max|got − want| ≤ tolerance · max(1,
-/// max|want|)` — while the body computed the Frobenius norm it always has. The two differ by up
-/// to a factor of `√(elements)`, so a backend choosing a tolerance from the old wording was
-/// choosing it for the wrong norm and getting a stricter check than it bargained for. Frobenius
-/// is the right choice and the code was right; only the description was wrong.
+/// # Panics
+///
+/// Panics on a shape mismatch, an invalid tolerance, a non-finite residual or reference,
+/// or a residual outside the allowed bound.
 pub fn assert_close<M>(got: &M, want: &M, tolerance: f64, law: &str, what: &str)
 where
     M: MatrixTensor,
@@ -122,24 +112,97 @@ where
 {
     let shape = got.shape();
     assert_eq!(shape, want.shape(), "{what}: {law} — shape mismatch");
+    assert!(
+        tolerance.is_finite() && tolerance >= 0.0,
+        "{what}: {law} — tolerance must be finite and nonnegative"
+    );
+    if shape.contains(&0) {
+        return;
+    }
 
-    // Name every axis rather than passing an empty slice. `Tensor::sum` does define the empty
-    // case as "reduce over every axis", so this is no longer load-bearing for correctness — it
-    // is kept because being explicit costs nothing and because the rank-0 case (which
-    // `determinant_laws` hits) then goes through the same path as every other rank instead of
-    // relying on reduce-all being the identity there.
     let axes: Vec<usize> = (0..shape.len()).collect();
+    let yes = <<M::RealPart as Compare>::Mask as Element>::one();
+    let mut error = (got.clone() - want.clone()).magnitude();
+    let mut reference = want.magnitude();
+    let mut absolute_floor = <M::RealPart as Element>::one();
+    let mut error_max = Tensor::max(error.clone(), &axes);
+    let mut reference_max = Tensor::max(reference.clone(), &axes);
+    if tolerance == 0.0 {
+        // A zero tolerance needs exact equality even when scaling would erase a subnormal.
+        let error_sum = error.sum(&axes);
+        assert_eq!(
+            Compare::eq(&error_sum, &M::RealPart::zero()),
+            yes,
+            "{what}: {law} — nonzero residual"
+        );
+        return;
+    }
+    if Real::max(error_max.clone(), reference_max.clone()).is_finite() != yes {
+        // For finite inputs, quarter scaling leaves room for subtraction and
+        // the magnitude even with four components at the format boundary.
+        absolute_floor = M::RealPart::scalar(0.25);
+        let factor = M::from_real(absolute_floor.clone());
+        let scaled_want = want.clone() * factor.clone();
+        error = (got.clone() * factor - scaled_want.clone()).magnitude();
+        reference = scaled_want.magnitude();
+        error_max = Tensor::max(error.clone(), &axes);
+        reference_max = Tensor::max(reference.clone(), &axes);
+    }
 
-    let err = (got.clone() - want.clone()).norm_sqr().sum(&axes).sqrt();
-    let scale = want.clone().norm_sqr().sum(&axes).sqrt();
-    let one = <M::RealPart as Element>::one();
-    let tol = <M::RealPart as Real>::scalar(tolerance);
-    let bound = Real::max(scale, one) * tol;
+    let error_norm = normalized_frobenius(error, &error_max, &shape, &axes);
+    let reference_norm = normalized_frobenius(reference, &reference_max, &shape, &axes);
     assert_eq!(
-        err.le(&bound),
-        <<M::RealPart as Compare>::Mask as Element>::one(),
+        error_norm.is_finite(),
+        yes,
+        "{what}: {law} — non-finite residual"
+    );
+    assert_eq!(
+        reference_norm.is_finite(),
+        yes,
+        "{what}: {law} — non-finite reference"
+    );
+    assert_eq!(
+        scaled_residual_within(
+            (error_max, error_norm),
+            (reference_max, reference_norm),
+            absolute_floor,
+            M::RealPart::scalar(tolerance),
+        ),
+        yes,
         "{what}: {law} — residual exceeded tolerance {tolerance:e}"
     );
+}
+
+fn scaled_residual_within<T: Real>(
+    (error_max, error_norm): (T, T),
+    (reference_max, reference_norm): (T, T),
+    absolute_floor: T,
+    tolerance: T,
+) -> T::Mask {
+    let common = Real::max(
+        Real::max(error_max.clone(), reference_max.clone()),
+        absolute_floor.clone(),
+    );
+    let error = (error_max / common.clone()) * error_norm;
+    let reference = (reference_max / common.clone()) * reference_norm;
+    error.le(&(Real::max(reference, absolute_floor / common) * tolerance))
+}
+
+#[cfg(test)]
+mod tests;
+
+/// Norm after division by the largest magnitude. This keeps the squares in range.
+fn normalized_frobenius<T: Tensor + Real>(
+    magnitude: T,
+    max: &T,
+    shape: &[usize],
+    axes: &[usize],
+) -> T {
+    let divisor = T::select(&Compare::eq(max, &T::zero()), T::one(), max.clone());
+    (magnitude / divisor.broadcast_in_dim(shape, &[]))
+        .square()
+        .sum(axes)
+        .sqrt()
 }
 
 /// [`SpdSolve`]: applying the solve must undo the system.

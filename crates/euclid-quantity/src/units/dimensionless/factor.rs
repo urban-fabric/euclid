@@ -166,7 +166,7 @@ impl euclid_units::LinearQuantity for Factor {}
 
 impl euclid_units::Dimensionless for Factor {
     fn unit() -> Self {
-        Self::IDENTITY
+        Default::default()
     }
 
     fn times(self, other: Self) -> Self {

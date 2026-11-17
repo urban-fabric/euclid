@@ -1,4 +1,4 @@
-use euclid_numeric::{Compare, Real};
+use euclid_scalar::{Compare, Real};
 
 use super::{Mask, Quantity};
 

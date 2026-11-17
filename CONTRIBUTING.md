@@ -134,7 +134,7 @@ The last one is not redundant with `cargo test --doc`: that runs doctests, while
 this resolves **intra-doc links**. Nothing else catches a `[`foo`](path)` whose
 path has gone stale, and a broken link is worse than a missing one — it silently
 points somewhere plausible. `--document-private-items` is needed because most of
-`euclid-numeric` is `pub(crate)`, so the default doc build never looks at it.
+`euclid-scalar` is `pub(crate)`, so the default doc build never looks at it.
 
 `cargo deny check` is the sixth and the only one that looks *outside* the
 workspace — advisories, licences, the shape of the dependency graph, and where
@@ -156,6 +156,240 @@ worth knowing before a dependency change:
   and a comment in a README cannot stop a transitive pull.
 
 It needs the advisory database, so it is the one check that wants a network.
+
+## The Seventh Check, Run Deliberately: `cargo mutants`
+
+The six above ask whether the code passes its tests. **`cargo mutants` asks the
+question underneath: would the tests notice if the code were wrong?** It changes
+one function body at a time — a `+` to a `-`, a return value to a default — and
+re-runs the suite. A mutant the suite still passes is a line nothing is pinning.
+
+That is a different instrument from coverage, and the difference is not academic.
+`euclid-stability`'s `compensated_sum` was executed by three tests and pinned by
+none of them: they asserted a *band* on a derived condition number, so the sign of
+the Kahan correction could be flipped and all 1,169 workspace tests stayed green.
+Coverage called that function covered, and it was. It simply was not checked.
+
+A full run takes hours. Enumerate with `cargo mutants --workspace --list` and keep each
+shard's report on the same immutable revision and toolchain. Set `wrapper` to the absolute
+path of the local fixture-isolation `mutants.py` and run from the repository root.
+
+```sh
+revision=$(git rev-parse HEAD)
+mkdir -p target/mutation-audits
+audit=$(mktemp -d "$PWD/target/mutation-audits/full.XXXXXX")
+mkdir -p "$audit/checkout/.audit-tools" "$audit/tmp"
+git archive "$revision" | tar -x -C "$audit/checkout"
+cp "$wrapper" "$audit/checkout/.audit-tools/mutants.py"
+printf '%s\n' "$revision" > "$audit/revision"
+
+(
+    cd "$audit/checkout" || exit 1
+    TMPDIR="$audit/tmp" CARGO_INCREMENTAL=1 CARGO_PROFILE_TEST_DEBUG=0 \
+        python3 -B .audit-tools/mutants.py --workspace --jobs 4 \
+        --shard 1/8 --output "$audit/shard-1"
+)
+```
+
+Use `--shard 2/8` through `8/8` with distinct output directories. Omit the shard option
+for one report covering the whole workspace. For a focused run, select `-p euclid-stability`,
+`-f crates/euclid-scalar/src/kernels/gamma.rs`, or `--in-diff` with a saved diff.
+Each mutant uses the all-features workspace suite by default.
+
+To audit a helper without exclusions or unrelated property searches, pair the mutated
+source file with the helper's unit-test module. For example, from an isolated audit checkout:
+
+```sh
+cargo mutants --no-config --all-features --test-workspace false -p euclid-scalar \
+    -f crates/euclid-scalar/src/math/continued_fraction.rs \
+    -- math::continued_fraction::tests
+```
+
+The scoped run checks the helper's own contract. Follow it with a workspace run to
+check how the helper is used by its callers. For shared scalar steps, use direct
+boundary cases for comparisons and exact identities where the expected value is representable.
+Keep distribution and precision-specific thresholds with their callers.
+Write algebraic steps against the narrowest scalar trait that supplies their operations so
+they can also be used by expression carriers. Document the validity range and truncation
+error when using an approximation. Check floating-point rounding separately from the
+algebraic identity with exact rationals, closed forms, or a higher-precision reference.
+
+cargo-mutants reuses worker checkouts. The wrapper restores regression tapes and accuracy
+budgets before and after each scenario so a failing mutant's saved fixtures cannot affect
+the next one. Use fresh worker copies for each measured scenario if the wrapper is unavailable.
+Use a scratch filesystem that can hold the workers' build outputs. Preserve each report
+before running again with the same output path because cargo-mutants rotates the previous report.
+Use `--iterate` on the same revision, toolchain, shard and output path to resume. It skips
+previously caught and unviable mutants. Keep those outcomes and reconcile their union with the
+original catalog to track coverage.
+
+### Diagnose timeouts
+
+Each report keeps timeouts in `mutants.out/timeout.txt`, separately from survivors in
+`missed.txt`. Use `outcomes.json` to identify the phase and saved patch for each timeout.
+
+```sh
+report="$audit/shard-1/mutants.out"
+jq -r '.outcomes[] | select(.summary == "Timeout") |
+    [.scenario.Mutant.name,
+     (.phase_results | map(select(.process_status == "Timeout") | .phase) | join(",")),
+     .scenario.Mutant.file,
+     .diff_path] | @tsv' "$report/outcomes.json"
+```
+
+For a test-phase timeout, set `source_path` and `diff_path` from the row for the mutant. First
+run the unmodified tests with Nextest's `mutation-replay` profile on an otherwise idle machine
+to check the per-test limit. Apply the patch in that fresh checkout and repeat. Nextest reports
+the names of tests that time out and assertions that fail. Use a fresh checkout for each replay.
+
+```sh
+profile="$PWD/.config/nextest.toml"
+replay=$(mktemp -d "$audit/timeout.XXXXXX")
+git archive "$(cat "$audit/revision")" | tar -x -C "$replay"
+(
+    cd "$replay" || exit 1
+    cargo nextest run --config-file "$profile" -P mutation-replay --workspace --all-features \
+        --no-fail-fast || exit 1
+    patch --batch --forward "$source_path" < "$report/$diff_path" || exit 1
+    cargo nextest run --config-file "$profile" -P mutation-replay --workspace --all-features \
+        --no-fail-fast
+)
+```
+
+For a build-phase timeout, use the build command and log in `outcomes.json` and replay
+with a longer build deadline. A timeout that reproduces only with a mutation is evidence
+of a progress or performance regression. Keep that outcome distinct from an assertion
+failure and from a surviving mutant.
+
+Configuration lives in **`.cargo/mutants.toml`**, and that path is not a
+preference — it is the only location cargo-mutants reads. A `mutants.toml` at the
+repository root is *silently ignored*: the run looks normal and simply applies none
+of the exclusions. Pass `--config` if you ever need it elsewhere.
+
+The current `exclude_re` list is empty. Prefer a direct test of the affected rule or a
+simpler expression whose behavior is easier to verify. If an equivalent substitution needs
+an exclusion, put a regex in `.cargo/mutants.toml` that names the exact operator and function.
+Record the invariant that makes the substitution equivalent. This keeps future changes to
+the same function visible.
+
+The current survivor list, the diagnosis behind each cluster, and what closing it needs are
+tracked in **[MUTANTS.md](MUTANTS.md)** rather than re-derived from a report each time. Most of
+what survives is one or two structural causes repeated, which a list of line numbers hides.
+
+A surviving mutant can indicate a missing assertion or an equivalent substitution. Check
+reachability and mathematical invariants, then test distinguishing inputs with an independent
+reference. Keep reusable reference generators alongside the tests they support. A differential
+check should detect known defects as well as reproduce the expected result on the original code.
+
+### Organizing property tests
+
+Keep public laws in the owning crate's `conformance` module. A generated sample calls the same
+law function as a fixed sample; deliberately broken carriers check that the law rejects a defect.
+Kernel accuracy, conditioning and stability properties live with the numeric implementation.
+
+The generated numeric suites have one entry point, `tests/properties.rs`, with children under
+`tests/properties/`: `identities`, `conditioning`, `stability` and `gamma`. The first two are split
+again by the question they ask. Run them with:
+
+```sh
+cargo test -p euclid-scalar --test properties
+EUCLID_STABILITY_SOAK=25 cargo test -p euclid-scalar --test properties gamma
+```
+
+Keep existing property names and regression/budget paths when moving tests. Persisted tapes are
+evidence, so moving a source file must not discard that evidence. Files containing tests stay under
+400 lines; helpers and related cases belong in a directory with an index explaining the split.
+
+**A sweep over magnitudes ends at the format's limit, or says where it stopped and why.** This is
+the one rule here that was written from a defect rather than from taste. `beta_reg` returned `NaN`
+for every `x` above `a + b = 5.64e102`, and the suite had been sweeping the exact identity
+`I_½(a, a) = ½` over `a = 1e7 … 1e100` — reaching the branch, on an unimpeachable instrument, and
+stopping two and a half decades short. `1e100` is a round number, not a boundary; `f64` runs to
+`1.8e308`. Its sibling `gamma_large_shape` sweeps to `1e300` and had no such hole, from the same
+template. Use `f64::MAX`, or the value that provably saturates, or leave a comment.
+
+**A property guarding a threshold branch requires coverage on both sides of it.** `classify!` with
+`Config::require(label, percent)` already fails a run whose cases never reach a labelled region,
+and `generate::float::notable()` already draws `f64::MAX`, `f64::MIN`, both subnormals and `2^53`.
+Nothing was missing when the above slipped through — nothing *required* the label. Where a kernel
+switches algorithms at a constant, label the two sides and require both, so a generator that
+drifts away from the crossover fails instead of quietly testing one branch twice.
+
+The engine's own tests are split under `src/{runner,relation,numeric,machine}/tests/`.
+[The QuickCheck design review](crates/euclid-stability/README.md#lessons-from-quickcheck) explains
+which framework distinctions the suite pins: accepted cases versus attempts, bounded shrinking,
+replay, and dependent input validity. Study the design without adding a second property engine.
+
+Runner tests in `structured`, `exploration` and `health` cover typed results, discards,
+finite-domain completeness and failure-preserving replay. Generator tests in `composition`
+and `single_precision` cover the extended domains. Use `run` when checking returned evidence;
+reserve `check` for tests of libtest panic reporting. Exercise a rejecting control as well as
+an accepting property, so a no-op engine cannot satisfy the test.
+
+**A test that swaps the panic hook must not run concurrently with one that drives the engine.**
+Both are process-global: a vacuity suite replaces the hook with a silent one so an expected panic
+prints no backtrace, and `euclid-stability` installs its own hook to record panic *locations*,
+which it uses as a failure's identity when confirming a shrunk counterexample reproduces the same
+failure. Overlap those on libtest's thread pool and a rejection test reports `unstable property:
+counterexample did not reproduce the same case and failure` instead of the law that broke — a
+flake that passes in isolation and fails in the full-workspace run. Both `vacuity.rs` files hold
+one `Mutex` across either kind of body; copy that if you add a third.
+
+Use the isolated mutation workflow above with
+`-f crates/euclid-stability/src/runner/failure.rs` to measure failure handling.
+
+### Reference values come from a committed generator
+
+An accuracy test needs something to be accurate *against*, and for the special functions that
+means a high-precision value computed outside euclid and pasted in. The convention, which is
+newer than most of this file:
+
+**Commit the generator with the owning crate's accuracy tests.** Readers need to be able to
+re-derive the fixtures and check the precision claim. `/bin/` is reserved for local tools.
+
+```sh
+python3 -B crates/euclid-scalar/tests/references/extreme_shapes.py
+```
+
+Three rules, each paid for:
+
+- **It validates itself before it emits, and exits non-zero otherwise.** Against closed forms it
+  shares no code with — `I_x(1,1) = x`, `I_x(a,1) = xᵃ`, `Γ(n) = (n−1)!`, and so on. This is not
+  ceremony: the `I_x(2,3)` expectation was first written with `B(2,3)⁻¹ = 6` instead of `12`, and
+  the check caught it before any reference was taken from the harness. MUTANTS.md records an
+  investigation that nearly concluded the opposite of the truth because its harness reimplemented
+  the thing it was meant to be independent of.
+- **The table names its generator and the command that reproduces it.** Byte-for-byte: the
+  emitter prints Rust rows, so regenerating and pasting should produce no diff.
+- **Provenance includes the exact argument.** Evaluate the reference at `Decimal(x)` for the
+  `f64` the test will actually pass, not at the real-valued expression `x` came from. Where a
+  function is steep this dominates — the incomplete beta's density is `≈3568` at `a = b = 1e7`,
+  so one ulp of `x` is worth `4e-13` of probability, which is `44×` the kernel's own error there.
+
+**No arbitrary-precision arithmetic in Rust.** References are computed in Python and pasted in.
+The membership rule keeps a bignum library out of the workspace, and an oracle module here would
+be a second implementation of the thing under test.
+
+### Soak runs
+
+`euclid-stability` fixes its seed by default, deliberately — a property that fails
+on one seed in ten is a property that fails, and a drifting seed turns that finding
+into a flake. To search harder on purpose:
+
+```sh
+EUCLID_STABILITY_SOAK=100 cargo test        # every property, a hundred times the cases
+EUCLID_STABILITY_SEED=0x1234 cargo test     # the same effort down a different path
+EUCLID_STABILITY_STATS=1 cargo test         # what the generators actually produced
+```
+
+A multiplier rather than an absolute count, because the suites choose their case
+counts deliberately and an absolute override would flatten considered numbers into
+one. Unset, these change nothing.
+
+A soak that trips an accuracy budget has **found something**: searching harder
+reached a worse input than the committed baseline, so the recorded number is now
+known to be optimistic. Re-record it with `EUCLID_STABILITY_RECORD=1` only once
+you have decided the kernel is acceptable there.
 
 **A git `pre-push` hook will not help you here.** `jj` does not run git hooks, so
 a `.git/hooks/pre-push` script is silently skipped on `jj git push` — exactly when
@@ -196,7 +430,7 @@ is held to the same bar.
 A release is a **tag**, and consumers pin it. Three steps, in this order:
 
 1. **Bump** `version` in `[workspace.package]` at the root, in its own commit or
-   as part of the change that broke something. All ten crates share it, so they
+   as part of the change that broke something. All nine crates share it, so they
    version together. Minor for a breaking change, patch otherwise — see
    [RELEASES](RELEASES.md#what-counts-as-breaking) for where that line is, and
    note it is wider than "the signature changed".
@@ -400,7 +634,7 @@ README's [data-structure section][ds].
   library: the same formula would produce different answers on different
   interfaces.
 - **New numeric function** — add it to the accuracy, stability, and identity
-  suites in `euclid-numeric/src/tests/`. A function that is merely *plausible* in
+  suites in `euclid-scalar/src/tests/`. A function that is merely *plausible* in
   the normal range is not enough; see below.
 
   **Give its error a score and a budget.** This is the one habit that separates a
@@ -447,11 +681,11 @@ README's [data-structure section][ds].
 ## Numerical Work
 
 Numeric changes carry risk that ordinary review does not catch, so they get their
-own bar. The suites in `euclid-numeric/src/tests/` are organized by the property
+own bar. The suites in `euclid-scalar/src/tests/` are organized by the property
 under test rather than by the function under test, so one function is exercised
 from several directions at once.
 
-**The module header of `euclid-numeric/src/tests.rs` is the authoritative
+**The module header of `euclid-scalar/src/tests.rs` is the authoritative
 index** — every suite, what question it answers, and the house rules on file size
 and tolerances. Read it before adding a suite, and update it when you do. It
 lives there rather than here because a list in two places is a list that goes

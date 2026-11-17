@@ -8,7 +8,7 @@ It is the **carrier** tier of euclid: the other euclid crates own the
 carrier-generic numeric, tensor, and unit *contracts*, and euclid-quantity
 supplies the concrete `f64` unit/storage types that implement them. It names the
 two tiers it builds on directly — `euclid-units` for the dimension contracts and
-the `Dimension`/`dim` vocabulary these units implement, and `euclid-numeric` for
+the `Dimension`/`dim` vocabulary these units implement, and `euclid-scalar` for
 the interval kernels `euclid_quantity::ops::Interval` delegates its arithmetic
 to.
 

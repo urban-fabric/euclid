@@ -102,7 +102,7 @@ impl<Q: LinearQuantity<Repr = f64> + Copy, Space> Point<Q, Space> {
 
     /// The position halfway between two positions.
     pub fn midpoint(self, other: Self) -> Self {
-        self.lerp(other, 0.5)
+        Self::from_raw_in_space(self.raw().midpoint(other.raw()))
     }
 }
 

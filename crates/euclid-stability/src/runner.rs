@@ -8,8 +8,8 @@
 //! - **Rejection.** The generator produced a case the property does not claim to cover. Draw
 //!   again. Tracked against a budget, because a generator rejecting most of what it makes is
 //!   testing a fraction of its case count — and the only way to notice is to be told.
-//! - **Overrun.** A tape did not feed the generator to completion. Only reachable while
-//!   shrinking, where it means "this candidate is incomplete", never "the property holds".
+//! - **Overrun.** A tape or generation budget did not feed the generator to completion.
+//!   It means "this candidate is incomplete", never "the property holds".
 //! - **Cap reached.** Shrinking stopped on its probe budget rather than at a fixpoint, so the
 //!   reported case may not be minimal. Said out loud, since a reader otherwise assumes minimal.
 //!
@@ -23,12 +23,12 @@
 //!
 //! The panic hook is silenced for the duration of the search, because shrinking deliberately
 //! re-runs the failing property hundreds of times and the default hook would print hundreds of
-//! backtraces. The final minimised case is re-run once with the hook restored, so the
-//! backtrace a reader sees is the one for the small input.
+//! backtraces. `run` returns the final failure and its location; `check` then panics with
+//! that report outside the probe, so libtest receives one failure report.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Once;
 
 use crate::generate::{DrawError, Gen};
 use crate::rng::SplitMix64;
@@ -36,35 +36,41 @@ use crate::shrink::{self, Probe};
 use crate::source::Source;
 use crate::{budget, persist, stats, target};
 
-/// A property's verdict on one case.
-pub type Outcome = Result<(), Failure>;
+mod execute;
+mod failure;
+mod result;
 
-/// A property did not hold.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Failure {
-    /// What went wrong, as the `check!` that fired describes it.
-    pub message: String,
-    /// Where it fired.
-    pub location: &'static str,
-}
-
-impl Failure {
-    /// A failure with a message and a source location.
-    #[must_use]
-    pub fn new(message: impl Into<String>, location: &'static str) -> Self {
-        Self {
-            message: message.into(),
-            location,
-        }
-    }
-}
+pub use execute::run;
+pub use result::{
+    Counterexample, Exploration, Failure, FailureKind, Outcome, RunError, RunErrorKind, RunReport,
+};
 
 /// How hard to search.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Cases to try before declaring the property held.
+    /// Cases that must actually **run** before the property is declared to hold.
+    ///
+    /// Run, not attempted. A rejected case does not spend one of these — see
+    /// [`max_rejects`](Self::max_rejects) for why that distinction is the whole point.
     pub cases: usize,
     /// Rejections tolerated across the whole run before giving up and saying so.
+    ///
+    /// # This is a budget on *extra attempts*, not on cases
+    ///
+    /// It used to be neither, and the bug is worth recording because it made the diagnostic this
+    /// field exists for unreachable. The search ran `for case in 0..cases` and counted a
+    /// rejection as a spent case, so `rejects <= cases` held by construction — and with the
+    /// default `cases: 256` against `max_rejects: 4096`, the budget could never be exceeded and
+    /// the "gave up after N rejected cases" report could never fire.
+    ///
+    /// Worse, the thing it was meant to catch happened silently instead. A generator rejecting
+    /// nine cases in ten ran **19 of 256 cases** and passed green, which is precisely the
+    /// "testing far less than its case count suggests" failure the module docs promise to
+    /// report.
+    ///
+    /// So the search now draws until `cases` have *run*, and this bounds the rejections it will
+    /// tolerate on the way. QuickCheck's `tests` versus `max_tests` split, which is the one idea
+    /// that crate has that this one was missing.
     pub max_rejects: usize,
     /// Longest tape a generator may consume for one case.
     pub max_tape: usize,
@@ -85,6 +91,10 @@ pub struct Config {
     /// that a later run scoring higher fails. `None` disables the check. See
     /// [`crate::budget`].
     pub budget: Option<String>,
+    /// Opt-in edge-first or complete finite-domain exploration. Random preserves existing tapes.
+    pub exploration: Exploration,
+    /// Repeat each counterexample this many times before and after shrinking (at least two).
+    pub replay_checks: usize,
 }
 
 impl Default for Config {
@@ -101,11 +111,34 @@ impl Default for Config {
             // fifty-fifty split keeps a fresh draw coming while still concentrating effort.
             targeted_fraction: 0.5,
             budget: None,
+            exploration: Exploration::Random,
+            replay_checks: 2,
         }
     }
 }
 
 impl Config {
+    /// Try known complete edge tapes before random cases.
+    #[must_use]
+    pub fn edges_first(mut self) -> Self {
+        self.exploration = Exploration::EdgesFirst;
+        self
+    }
+
+    /// Enumerate every known finite case; error if the domain is unknown or exceeds `cases`.
+    #[must_use]
+    pub fn exhaustive(mut self) -> Self {
+        self.exploration = Exploration::Exhaustive;
+        self
+    }
+
+    /// Set the stability replay count for counterexamples, with a minimum of two.
+    #[must_use]
+    pub fn replay_checks(mut self, count: usize) -> Self {
+        self.replay_checks = count;
+        self
+    }
+
     /// Set the case count.
     #[must_use]
     pub fn cases(mut self, cases: usize) -> Self {
@@ -117,6 +150,18 @@ impl Config {
     #[must_use]
     pub fn regressions(mut self, path: impl Into<String>) -> Self {
         self.regressions = Some(path.into());
+        self
+    }
+
+    /// Set how many rejections to tolerate before giving up and reporting.
+    ///
+    /// Rarely worth setting. The default is generous because a rejection now costs an extra
+    /// draw rather than a case, so the budget is a guard against a generator that can never
+    /// satisfy its own filter rather than a tuning knob. See
+    /// [`max_rejects`](Self::max_rejects).
+    #[must_use]
+    pub fn max_rejects(mut self, max_rejects: usize) -> Self {
+        self.max_rejects = max_rejects;
         self
     }
 
@@ -152,214 +197,149 @@ impl Config {
     }
 }
 
+/// Multiply every property's case count, for a deliberate soak run.
+///
+/// `EUCLID_STABILITY_SOAK=100 cargo test` searches a hundred times as hard.
+pub const SOAK: &str = "EUCLID_STABILITY_SOAK";
+
+/// Replace every property's base seed, for a soak down a different path.
+pub const SEED: &str = "EUCLID_STABILITY_SEED";
+
+/// Apply the soak overrides to a configuration.
+///
+/// # Why a multiplier rather than an absolute count
+///
+/// QuickCheck's `QUICKCHECK_TESTS` sets the case count outright, and that does not transfer
+/// here: euclid's suites choose their own counts deliberately — 400 for the `Real` identities,
+/// 600 where a climb needs room — and an absolute override would flatten considered numbers into
+/// one. A multiplier composes with them instead, so `SOAK=100` means "a hundred times whatever
+/// this property decided it needed".
+///
+/// # On determinism
+///
+/// [`Config::seed`] is fixed by default and the crate docs are emphatic about why: a property
+/// that fails on one seed in ten is a property that fails, and letting the seed drift per run
+/// turns that finding into a flake. These overrides do not weaken that. Unset — which is every
+/// ordinary `cargo test` — they change nothing, and a suite that passes today still passes
+/// tomorrow. Set, they are a soak someone asked for by name.
+///
+/// A soak that trips an accuracy [`budget`] has **found something**: searching
+/// harder reached a worse input than the committed baseline, and the recorded number is now
+/// known to be optimistic. That is a real finding about the kernel rather than an artefact of
+/// the longer run, so it is reported as a failure like any other.
+fn with_overrides(config: &Config) -> Config {
+    // Bound before borrowing, so the `String`s outlive the `&str`s handed on.
+    let soak = std::env::var(SOAK).ok();
+    let seed = std::env::var(SEED).ok();
+    apply_overrides(config, soak.as_deref(), seed.as_deref())
+}
+
+/// The override logic, separated from reading the environment.
+///
+/// Split out purely so it can be tested: a test that sets a process-wide variable races every
+/// other test in the binary, and libtest gives no way to serialise them. Taking the raw strings
+/// as arguments makes the interesting part — what a malformed, zero or missing value does — an
+/// ordinary pure function.
+///
+/// That mattered immediately. Mutation testing found the `factor > 0` guard below unpinned by the
+/// first version of these tests, which only checked the *unset* path. A relaxation to `>= 0`
+/// accepts `SOAK=0`, which multiplies the case count to zero and turns every property in the
+/// workspace into the "never exercised" failure.
+fn apply_overrides(config: &Config, soak: Option<&str>, seed: Option<&str>) -> Config {
+    let mut config = config.clone();
+
+    if let Some(factor) = soak
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|factor| *factor > 0)
+    {
+        config.cases = config.cases.saturating_mul(factor);
+        // The rejection budget has to scale with the case count or a soak turns every filtered
+        // generator into a spurious "gave up" report.
+        config.max_rejects = config.max_rejects.saturating_mul(factor);
+    }
+
+    if let Some(seed) = seed.and_then(|raw| parse_seed(raw.trim())) {
+        config.seed = seed;
+    }
+
+    config
+}
+
+/// Parse a seed as decimal, or as hex behind an `0x` prefix.
+fn parse_seed(raw: &str) -> Option<u64> {
+    raw.strip_prefix("0x")
+        .or_else(|| raw.strip_prefix("0X"))
+        .map_or_else(
+            || raw.parse::<u64>().ok(),
+            |hex| u64::from_str_radix(hex, 16).ok(),
+        )
+}
+
 /// Run `property` over cases drawn from `generator`.
 ///
 /// Panics with a formatted report if the property fails, which is how a test harness learns
 /// about it. On success it returns normally, having reported nothing.
 ///
+/// Honours the [`SOAK`] and [`SEED`] environment overrides.
+///
 /// # Panics
 /// If the property fails, or if every case was rejected.
+#[allow(clippy::panic)]
 pub fn check<T: 'static + core::fmt::Debug>(
     name: &str,
     config: &Config,
     generator: &Gen<T>,
-    mut property: impl FnMut(T) -> Outcome,
+    property: impl FnMut(T) -> Outcome,
 ) {
-    // Persisted regressions first. A counterexample that cost a random search to find should
-    // be the first thing tried on every subsequent run, not rediscovered by luck.
-    let persisted = config
-        .regressions
-        .as_deref()
-        .map(persist::load)
-        .unwrap_or_default();
-    let mut stale: Vec<Stale> = Vec::new();
-    let mut current: Vec<(Vec<u64>, Option<String>)> = Vec::new();
-
-    for entry in persisted {
-        let (verdict, rendering) = replay_rendered(generator, &mut property, &entry.tape);
-        if let Verdict::Failed(failure) = verdict {
-            report(
-                name,
-                config,
-                &entry.tape,
-                &failure,
-                generator,
-                &mut property,
-                true,
-            );
-        }
-        // Only this property's own lines are its business. A regressions file holds a whole
-        // suite, and a sibling property with a different generator renders the same tape
-        // differently — so comparing across properties would report staleness that is not
-        // there, and refreshing would delete the sibling's regressions. Every tape is still
-        // *replayed* above, which is cheap and occasionally catches a case that breaks two laws.
-        if !entry.belongs_to(name) {
-            continue;
-        }
-        current.push((entry.tape.clone(), rendering.clone()));
-
-        // A tape that no longer produces a case at all, or that produces a different one than
-        // was recorded, has stopped being the regression it was committed as.
-        let drifted = match (&entry.rendering, &rendering) {
-            (Some(recorded), Some(now)) if recorded != now => Some(now.clone()),
-            (Some(_), None) => Some("<no longer produces a case>".to_string()),
-            _ => None,
-        };
-        if let Some(now) = drifted {
-            stale.push(Stale {
-                tape: persist::encode(&entry.tape),
-                recorded: entry.rendering.clone().unwrap_or_default(),
-                now,
-            });
-        }
-    }
-
-    if !stale.is_empty()
-        && let Some(path) = config.regressions.as_deref()
-    {
-        report_stale(name, path, &stale, &current);
-    }
-
-    stats::reset();
-
-    let mut rejects = 0usize;
-    let mut reasons: Vec<&'static str> = Vec::new();
-    let mut climber = Climber::new(config);
-    // One source for the whole search, restarted per case. A tape is a `Vec<u64>` that grows
-    // from empty to a dozen-odd entries, so constructing one per case meant an allocation and
-    // several reallocations every time; reusing the buffer makes that once per property.
-    let mut source = Source::generating(config.seed, config.max_tape);
-
-    for case in 0..config.cases {
-        let seed = config
-            .seed
-            .wrapping_add(case as u64)
-            .wrapping_mul(0x2545_F491);
-
-        // Either a fresh draw, or a perturbation of the best-scoring tape found so far. The
-        // climb only engages once the property has actually reported a score.
-        match climber.propose(case, seed) {
-            Some(tape) => source.restart_replaying(&tape),
-            None => source.restart_generating(seed, config.max_tape),
-        }
-
-        match generator.draw(&mut source) {
-            Err(DrawError::Overrun) => {
-                rejects += 1;
-                reasons.push("tape exhausted");
-            }
-            Err(DrawError::Rejected(rejected)) => {
-                rejects += 1;
-                reasons.push(rejected.reason);
-            }
-            Ok(value) => {
-                target::clear();
-                let outcome = run_quietly(&mut property, value);
-                stats::count_case();
-
-                // The tape is materialised only when something is going to keep it: a failure
-                // to report, or a score good enough to climb from. Taking it eagerly cost an
-                // allocation and a copy on **every** case, and the overwhelming majority of
-                // cases pass without setting a new best — so the copy was thrown away. This is
-                // the whole of the engine's per-case allocation on the happy path.
-                let score = target::reported();
-                if outcome.is_err() || climber.would_improve(score) {
-                    let tape = source.consumed();
-                    climber.observe(&tape, score);
-
-                    if let Err(failure) = outcome {
-                        report(
-                            name,
-                            config,
-                            &tape,
-                            &failure,
-                            generator,
-                            &mut property,
-                            false,
-                        );
-                    }
-                }
+    match run(name, config, generator, property) {
+        Ok(report) => {
+            if std::env::var_os("EUCLID_STABILITY_STATS").is_some() {
+                eprintln!(
+                    "{name}: {}{}\n  best target score: {:?}",
+                    report.statistics(),
+                    rejection_summary(report.rejected, report.attempts),
+                    report.best_score
+                );
             }
         }
-
-        assert!(
-            rejects <= config.max_rejects,
-            "{name}: gave up after {rejects} rejected cases (budget {}). \
-             The generator is producing mostly inputs the property excludes, so the case count \
-             is misleading. Narrow the generator instead of assuming inside the property. \
-             Reasons seen: {:?}",
-            config.max_rejects,
-            dedup(&reasons)
-        );
+        Err(error) => panic!("{error}"),
     }
+}
 
-    assert!(
-        rejects < config.cases,
-        "{name}: every one of {} cases was rejected, so the property was never exercised. \
-         Reasons seen: {:?}",
-        config.cases,
-        dedup(&reasons)
-    );
-
-    if std::env::var_os("EUCLID_STABILITY_STATS").is_some() {
-        let climbed = climber.best_score().map_or_else(String::new, |best| {
-            format!("\n  best target score: {best:e}")
-        });
-        eprintln!("{name}: {}{climbed}", stats::report());
+/// The rejection rate, for the stats dump.
+///
+/// A free function rather than an inline `format!`, for the same reason
+/// [`apply_overrides`] is one: the block it belongs to only runs when
+/// `EUCLID_STABILITY_STATS` is set, and no test here can set an environment variable —
+/// `std::env::set_var` is `unsafe` as of the 2024 edition and the workspace denies
+/// `unsafe_code`. Inline, the arithmetic was unreachable by any test and mutation testing found
+/// five separate corruptions of it surviving. Extracted, it is an ordinary pure function.
+///
+/// Worth printing even when the run is well inside its budget. A generator rejecting 90% is now
+/// *correct* — the search simply draws until `cases` have run — but it is paying ten draws per
+/// case to get there, and that is a generator worth narrowing.
+fn rejection_summary(rejects: usize, attempts: usize) -> String {
+    if rejects == 0 {
+        return String::new();
     }
-
-    // Coverage last, so a genuine failure is reported in preference to a coverage shortfall —
-    // a property that fails has more urgent news than one whose generator was narrow.
-    let unmet = stats::unmet(&config.requirements);
-    // A property that applied *no* labels at all almost never means "the generator is too
-    // narrow". It means the requirement belongs to a sibling property that shares this one's
-    // block-level `#![config(...)]`, which is the single most common mistake with this feature
-    // and cost three debugging rounds before the hint was added.
-    let shared_block_hint = if stats::collected().is_empty() {
-        "\n\nThis property applied no labels at all. If the requirement came from a shared \
-         `#![config(...)]` on a `property!` block, it is being imposed on a property that does \
-         not use it — move this property into its own block, or give it the label."
-    } else {
-        ""
-    };
-    assert!(
-        unmet.is_empty(),
-        "{name}: the generator did not produce the required coverage, so this property passed \
-         over input that never reached the cases it is meant to check.\n{}\n\n{}{shared_block_hint}",
-        unmet
-            .iter()
-            .map(|(label, required, actual)| format!(
-                "  {label:?}: required {required:.2}% of cases, got {actual:.2}%"
-            ))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        stats::report()
-    );
-
-    // The accuracy baseline last of all. A coverage shortfall has to be reported first: the
-    // worst score found over input that never reached the interesting region is not a number
-    // worth comparing against anything, so enforcing the budget before coverage would be
-    // enforcing it on a measurement already known to be unrepresentative.
-    if let Some(path) = config.budget.as_deref() {
-        enforce_budget(name, path, climber.best_score());
-    }
+    #[allow(clippy::cast_precision_loss)]
+    let rate = (rejects as f64) * 100.0 / (attempts as f64);
+    format!("\n  rejected: {rejects} of {attempts} draws ({rate:.1}%)")
 }
 
 /// Compare the run's worst score against its committed baseline.
 ///
-/// # Panics
-/// If the score rose above the baseline, or if the property never reported one.
-#[allow(clippy::panic)]
-fn enforce_budget(name: &str, path: &str, best: Option<f64>) {
+/// Returns an error if the score rose above the baseline, or none was reported.
+fn enforce_budget(name: &str, path: &str, best: Option<f64>) -> Result<(), String> {
     let Some(best) = best else {
-        panic!(
+        return Err(format!(
             "{name}: a budget file is configured but the property never called target(), so \
              there is no score to record and nothing is being protected.\n  \
              budget: {path}\n\n\
              Either report a score — target(observed_error) — or drop .budget() from the config. \
              A budget over a property with no score is the one configuration that looks like \
              protection and provides none."
-        );
+        ));
     };
 
     let (verdict, previous) = budget::evaluate(path, name, best);
@@ -382,7 +362,7 @@ fn enforce_budget(name: &str, path: &str, best: Option<f64>) {
             } else {
                 format!(" ({:+.0}%)", (best / baseline - 1.0) * 100.0)
             };
-            panic!(
+            return Err(format!(
                 "property regressed: {name}\n  \
                  worst target() score rose from {baseline:e} to {best:e}{change}\n  \
                  recorded in: {path}\n\n\
@@ -393,9 +373,10 @@ fn enforce_budget(name: &str, path: &str, best: Option<f64>) {
                  worst case, which is a legitimate new baseline. If that is what happened, \
                  re-record with {}=1 and commit the new number.",
                 budget::RECORD
-            );
+            ));
         }
     }
+    Ok(())
 }
 
 /// Hill-climbs towards a higher [`target`](crate::target()) score.
@@ -489,21 +470,16 @@ impl Climber {
     /// Whether `score` would become the new best, so the caller knows if the tape is worth
     /// materialising.
     ///
-    /// Deliberately separate from [`observe`](Self::observe) and cheap: it reads two `Option`s
-    /// and compares a float, which is what lets the search skip copying the tape for every case
-    /// that is not an improvement. `observe` re-checks the same condition rather than trusting
-    /// this one, so the two cannot disagree about which tape is stored.
     fn would_improve(&self, score: Option<f64>) -> bool {
-        score
-            .filter(|s| s.is_finite())
-            .is_some_and(|score| self.best_score.is_none_or(|best| score > best))
+        self.improving_score(score).is_some()
+    }
+
+    fn improving_score(&self, score: Option<f64>) -> Option<f64> {
+        score.filter(|s| s.is_finite() && self.best_score.is_none_or(|best| *s > best))
     }
 
     fn observe(&mut self, tape: &[u64], score: Option<f64>) {
-        let Some(score) = score.filter(|s| s.is_finite()) else {
-            return;
-        };
-        if self.best_score.is_none_or(|best| score > best) {
+        if let Some(score) = self.improving_score(score) {
             self.best_score = Some(score);
             self.best_tape = Some(tape.to_vec());
         }
@@ -512,6 +488,7 @@ impl Climber {
 
 enum Verdict {
     Held,
+    Generation(Failure),
     Failed(Failure),
     /// Carries no reason: during replay the reason is not reported anywhere, because a
     /// rejection while shrinking only means "discard this candidate". The search path tracks
@@ -529,10 +506,13 @@ struct Stale {
 
 /// Report tapes whose renderings no longer match, or refresh the file if asked to.
 ///
-/// # Panics
-/// If any tape has gone stale and this is not a recording run.
-#[allow(clippy::panic)]
-fn report_stale(name: &str, path: &str, stale: &[Stale], current: &[(Vec<u64>, Option<String>)]) {
+/// Returns an error if any tape has gone stale and this is not a recording run.
+fn report_stale(
+    name: &str,
+    path: &str,
+    stale: &[Stale],
+    current: &[(Vec<u64>, Option<String>)],
+) -> Result<(), String> {
     if budget::recording() {
         persist::refresh(path, name, current);
         eprintln!(
@@ -542,10 +522,10 @@ fn report_stale(name: &str, path: &str, stale: &[Stale], current: &[(Vec<u64>, O
              `--test-threads=1` if a suite has several properties sharing this file.",
             stale.len()
         );
-        return;
+        return Ok(());
     }
 
-    panic!(
+    Err(format!(
         "stale regressions: {name}\n{}\n  in: {path}\n\n\
          A tape is a sequence of choices, not a value, so it only means anything for the \
          generator that consumed it. These tapes still decode, but they now produce different \
@@ -565,206 +545,64 @@ fn report_stale(name: &str, path: &str, stale: &[Stale], current: &[(Vec<u64>, O
             .collect::<Vec<_>>()
             .join("\n"),
         budget::RECORD
-    );
+    ))
 }
 
-/// Rebuild a value from `tape`, note what it renders as, and run the property on it.
-///
-/// Separate from [`replay`] because rendering allocates and formats, which is wasted work on the
-/// search's hot path — this one runs once per committed tape and once on the minimised case,
-/// where the cost is irrelevant and the string is the point.
-fn replay_rendered<T: 'static + core::fmt::Debug>(
-    generator: &Gen<T>,
-    property: &mut impl FnMut(T) -> Outcome,
-    tape: &[u64],
-) -> (Verdict, Option<String>) {
-    let mut source = Source::replaying(tape.to_vec());
-    match generator.draw(&mut source) {
-        Err(DrawError::Overrun) => (Verdict::Overrun, None),
-        Err(DrawError::Rejected(_)) => (Verdict::Rejected, None),
-        Ok(value) => {
-            let rendering = persist::render(&value);
-            let verdict = match run_quietly(property, value) {
-                Ok(()) => Verdict::Held,
-                Err(failure) => Verdict::Failed(failure),
-            };
-            (verdict, Some(rendering))
+/// Run one property case with panic reporting suppressed during probes.
+fn run_quietly<T>(property: &mut impl FnMut(T) -> Outcome, value: T) -> Outcome {
+    quietly("inside the property", || property(value)).and_then(core::convert::identity)
+}
+
+fn quietly<T>(location: &'static str, body: impl FnOnce() -> T) -> Result<T, Failure> {
+    install_hook_once();
+    let previous = PROBING.with(|flag| flag.replace(true));
+    let previous_site = PANIC_SITE.with(|site| site.replace(None));
+    let outcome = panic::catch_unwind(AssertUnwindSafe(body));
+    let site = PANIC_SITE.with(|site| site.replace(previous_site));
+    PROBING.with(|flag| flag.set(previous));
+    outcome.map_err(|payload| {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "panicked".into());
+        Failure {
+            kind: FailureKind::Panic,
+            ..Failure::new(format!("panicked: {message}"), location)
+                .with_identity(site.unwrap_or_else(|| location.into()))
         }
-    }
+    })
 }
 
-/// Rebuild a value from `tape` and run the property on it.
-///
-/// A free function rather than a closure, so the shrinker and the search can both borrow
-/// `property` without one of them holding it for the whole run.
-fn replay<T: 'static>(
-    generator: &Gen<T>,
-    property: &mut impl FnMut(T) -> Outcome,
-    source: &mut Source,
-    tape: &[u64],
-) -> Verdict {
-    source.restart_replaying(tape);
-    match generator.draw(source) {
-        Err(DrawError::Overrun) => Verdict::Overrun,
-        Err(DrawError::Rejected(_)) => Verdict::Rejected,
-        Ok(value) => match run_quietly(property, value) {
-            Ok(()) => Verdict::Held,
-            Err(failure) => Verdict::Failed(failure),
-        },
-    }
-}
-
-/// Shrink, persist, and panic with the report.
-///
-/// The `panic` lint is allowed here, and only here, because panicking is this function's
-/// *purpose* rather than a failure to handle an error. A `#[test]` reports a failure by
-/// unwinding; there is no other channel to libtest, and the return type `!` says so. The
-/// workspace denies `panic` to stop a library from aborting a consumer's process over a
-/// recoverable condition, which is not what this is.
-#[allow(clippy::panic)]
-fn report<T: 'static + core::fmt::Debug>(
-    name: &str,
-    config: &Config,
-    tape: &[u64],
-    original: &Failure,
-    generator: &Gen<T>,
-    property: &mut impl FnMut(T) -> Outcome,
-    was_persisted: bool,
-) -> ! {
-    // One source for every probe in this minimisation. `replay` used to take the tape by
-    // value, so each probe handed it a fresh `Vec` — one allocation and copy per probe, and a
-    // minimisation spends hundreds to thousands of them.
-    let mut scratch = Source::replaying(Vec::new());
-    let (minimal, cost) = shrink::minimise(tape.to_vec(), |candidate| {
-        match replay(generator, property, &mut scratch, candidate) {
-            Verdict::Failed(_) => Probe::StillFails,
-            _ => Probe::Discard,
-        }
-    });
-
-    // Re-run the minimal case so the message a reader sees describes the *small* input rather
-    // than whatever the search happened to stumble on first, and render it while we have it —
-    // the rendering goes on the saved line and into the report.
-    let (verdict, rendering) = replay_rendered(generator, property, &minimal);
-    let final_failure = match verdict {
-        Verdict::Failed(failure) => failure,
-        _ => original.clone(),
-    };
-
-    if !was_persisted && let Some(path) = config.regressions.as_deref() {
-        persist::save(path, &minimal, name, rendering.as_deref());
-    }
-
-    let saved = match (&config.regressions, was_persisted) {
-        (Some(path), false) => format!("\n  saved to:   {path}"),
-        (Some(path), true) => format!("\n  replayed:   {path}"),
-        (None, _) => String::new(),
-    };
-    let truncated = if cost.hit_the_cap() {
-        "\n  note:       shrinking hit its probe budget, so this may not be minimal"
-    } else {
-        ""
-    };
-    // Reused probes are reported because they are the difference between the budget bounding
-    // search effort and bounding loop iterations: a shrink that says "900 probes, 400 reused"
-    // explored 900 distinct candidates on a budget that used to stop at 1,300 iterations.
-    let reused = if cost.reused == 0 {
-        String::new()
-    } else {
-        format!(", {} reused", cost.reused)
-    };
-
-    let case = match &rendering {
-        Some(rendering) => format!("\n  case:       {rendering}"),
-        None => String::new(),
-    };
-
-    panic!(
-        "property failed: {name}\n  \
-         {}\n  at:         {}{case}\n  \
-         shrank:     {} -> {} tape entries in {} probes{reused}\n  \
-         tape:       {}{saved}{truncated}",
-        final_failure.message,
-        final_failure.location,
-        tape.len(),
-        minimal.len(),
-        cost.probes,
-        persist::encode(&minimal),
-    );
-}
-
-/// Install a panic hook that stays quiet only while [`PROBING`] is set.
-///
-/// The flag is the whole design, and the first attempt at this got it wrong in a way worth
-/// recording: installing a hook that suppressed *everything* also suppressed the final report,
-/// so a failing property printed only `FAILED` with no message. The engine's own tests did not
-/// catch it, because they read the panic payload through `catch_unwind` and the payload was
-/// always correct — it was only the printing that was lost. A hook must therefore distinguish
-/// "a probe is running" from "we are reporting", and that is what the flag does.
 fn install_hook_once() {
-    static INSTALLED: AtomicBool = AtomicBool::new(false);
-
-    // A relaxed load on the already-installed path, which is every case after the first. The
-    // `swap` below is a sequentially-consistent read-modify-write, and running one per case made
-    // the hook check a measurable share of the engine's per-case floor — for a flag that is
-    // false exactly once in the life of the process. Relaxed is sufficient because the only
-    // thing ordered against it is `set_hook`, which takes its own lock.
-    if INSTALLED.load(Ordering::Relaxed) {
-        return;
-    }
-
-    if !INSTALLED.swap(true, Ordering::SeqCst) {
+    static INSTALLED: Once = Once::new();
+    INSTALLED.call_once(|| {
         let previous = panic::take_hook();
         panic::set_hook(Box::new(move |info| {
             let probing = PROBING.with(Cell::get);
-            if !probing || std::env::var_os("EUCLID_STABILITY_VERBOSE").is_some() {
+            if probing {
+                PANIC_SITE.with(|site| {
+                    *site.borrow_mut() = info.location().map(|where_| {
+                        format!("{}:{}:{}", where_.file(), where_.line(), where_.column())
+                    })
+                });
+            }
+            if forward_panic(probing, || {
+                std::env::var_os("EUCLID_STABILITY_VERBOSE").is_some()
+            }) {
                 previous(info);
             }
         }));
-    }
+    });
+}
+
+fn forward_panic(probing: bool, verbose: impl FnOnce() -> bool) -> bool {
+    !probing || verbose()
 }
 
 thread_local! {
-    /// Whether a candidate case is currently being probed, in which case a panic is expected
-    /// and its backtrace is noise — shrinking re-runs a failing property hundreds of times.
     static PROBING: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Run the property with probe panics suppressed, converting a panic into a failure.
-fn run_quietly<T>(property: &mut impl FnMut(T) -> Outcome, value: T) -> Outcome {
-    install_hook_once();
-    PROBING.with(|probing| probing.set(true));
-    let outcome = catch(property, value);
-    PROBING.with(|probing| probing.set(false));
-    outcome
-}
-
-fn catch<T>(property: &mut impl FnMut(T) -> Outcome, value: T) -> Outcome {
-    match panic::catch_unwind(AssertUnwindSafe(|| property(value))) {
-        Ok(outcome) => outcome,
-        Err(payload) => {
-            let message = payload
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_string())
-                .or_else(|| payload.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "panicked".to_string());
-            Err(Failure::new(
-                format!("panicked: {message}"),
-                "inside the property",
-            ))
-        }
-    }
-}
-
-fn dedup(reasons: &[&'static str]) -> Vec<&'static str> {
-    let mut seen: Vec<&'static str> = Vec::new();
-    for reason in reasons {
-        if !seen.contains(reason) {
-            seen.push(reason);
-        }
-    }
-    seen.truncate(4);
-    seen
+    static PANIC_SITE: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]

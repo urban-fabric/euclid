@@ -1,6 +1,6 @@
 use super::ToyTensor;
 use crate::Tensor;
-use euclid_numeric::{Boolean, Element};
+use euclid_scalar::{Boolean, Element};
 
 #[derive(Clone, Debug, PartialEq)]
 struct ToyBooleanTensor {

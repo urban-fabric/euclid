@@ -1,4 +1,4 @@
-use euclid_numeric::{Boolean, Integer, Real};
+use euclid_scalar::{Boolean, Integer, Real};
 
 use super::RandomKey;
 

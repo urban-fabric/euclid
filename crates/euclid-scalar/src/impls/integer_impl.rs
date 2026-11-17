@@ -1,0 +1,147 @@
+//! `i32`/`i64`/`i128` implementations of the integer tier — [`Element`] and [`Integer`]. The
+//! trait *definition* lives in [`integer`](crate::Integer); this holds the concrete
+//! carrier impls (each width-matched to the real it casts into: `i32 → f32`, `i64`/`i128 → f64`).
+
+use crate::math::discrete;
+use crate::{Element, Integer};
+
+impl Integer for i32 {
+    type Real = f32;
+    #[inline]
+    fn from_i64(x: i64) -> Self {
+        x as i32
+    }
+    #[inline]
+    fn from_real(r: f32) -> Self {
+        r.round() as i32
+    }
+    #[inline]
+    fn to_real(&self) -> f32 {
+        *self as f32
+    }
+    #[inline]
+    fn signum(self) -> Self {
+        i32::signum(self)
+    }
+    #[inline]
+    fn abs(self) -> Self {
+        i32::abs(self)
+    }
+    #[inline]
+    fn div_rem(self, rhs: Self) -> (Self, Self) {
+        (self.div_euclid(rhs), self.rem_euclid(rhs))
+    }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        discrete::gcd(self.abs(), other.abs())
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        discrete::lcm(self, other, Integer::gcd).abs()
+    }
+}
+
+impl Integer for i64 {
+    type Real = f64;
+    #[inline]
+    fn from_i64(x: i64) -> Self {
+        x
+    }
+    #[inline]
+    fn from_real(r: f64) -> Self {
+        r.round() as i64
+    }
+    #[inline]
+    fn to_real(&self) -> f64 {
+        *self as f64
+    }
+    #[inline]
+    fn signum(self) -> Self {
+        i64::signum(self)
+    }
+    #[inline]
+    fn abs(self) -> Self {
+        i64::abs(self)
+    }
+    #[inline]
+    fn div_rem(self, rhs: Self) -> (Self, Self) {
+        (self.div_euclid(rhs), self.rem_euclid(rhs))
+    }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        discrete::gcd(self.abs(), other.abs())
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        discrete::lcm(self, other, Integer::gcd).abs()
+    }
+}
+
+impl Integer for i128 {
+    type Real = f64;
+    #[inline]
+    fn from_i64(x: i64) -> Self {
+        x as i128
+    }
+    #[inline]
+    fn from_real(r: f64) -> Self {
+        r.round() as i128
+    }
+    #[inline]
+    fn to_real(&self) -> f64 {
+        *self as f64
+    }
+    #[inline]
+    fn signum(self) -> Self {
+        i128::signum(self)
+    }
+    #[inline]
+    fn abs(self) -> Self {
+        i128::abs(self)
+    }
+    #[inline]
+    fn div_rem(self, rhs: Self) -> (Self, Self) {
+        (self.div_euclid(rhs), self.rem_euclid(rhs))
+    }
+    #[inline]
+    fn gcd(self, other: Self) -> Self {
+        discrete::gcd(self.abs(), other.abs())
+    }
+    #[inline]
+    fn lcm(self, other: Self) -> Self {
+        discrete::lcm(self, other, Integer::gcd).abs()
+    }
+}
+
+impl Element for i32 {
+    #[inline]
+    fn zero() -> Self {
+        Default::default()
+    }
+    #[inline]
+    fn one() -> Self {
+        1
+    }
+}
+
+impl Element for i64 {
+    #[inline]
+    fn zero() -> Self {
+        Default::default()
+    }
+    #[inline]
+    fn one() -> Self {
+        1
+    }
+}
+
+impl Element for i128 {
+    #[inline]
+    fn zero() -> Self {
+        Default::default()
+    }
+    #[inline]
+    fn one() -> Self {
+        1
+    }
+}

@@ -115,3 +115,35 @@ fn an_unlabelled_run_still_reports_its_case_count() {
     assert!(text.contains('7'), "{text}");
     assert!(text.contains("no labels"), "{text}");
 }
+
+/// A requirement is a floor, so meeting it **exactly** counts as meeting it.
+///
+/// `Config::require("subnormal", 5.0)` reads as "at least 5% of cases", and the boundary is where
+/// that reading is decided. Mutation testing relaxed the comparison in `unmet` from `<` to `<=`
+/// and nothing failed, because every existing coverage test clears its requirement with room to
+/// spare — so a suite whose generator landed on precisely its stated minimum would have started
+/// failing with no code change and no test to explain why.
+#[test]
+fn a_requirement_met_exactly_is_met() {
+    reset();
+
+    // Four cases, two of them labelled: exactly 50%.
+    for _ in 0..2 {
+        label("half");
+    }
+    for _ in 0..4 {
+        count_case();
+    }
+    assert_eq!(share("half"), 50.0, "precondition: the share must be exact");
+
+    assert!(
+        unmet(&[("half".to_string(), 50.0)]).is_empty(),
+        "a requirement of 50% must be satisfied by exactly 50%"
+    );
+    // And a hair above the achieved share is genuinely unmet.
+    assert_eq!(
+        unmet(&[("half".to_string(), 50.001)]).len(),
+        1,
+        "a requirement above the achieved share must be reported"
+    );
+}

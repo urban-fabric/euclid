@@ -163,6 +163,9 @@ impl TensorSpec {
     /// bug. A rank-0 spec gives `Some(1)`, the empty product, which is what makes a scalar
     /// behave as one element in a generic size calculation.
     pub fn num_elements(&self) -> Option<usize> {
+        if self.shape.contains(&0) {
+            return Some(0);
+        }
         self.shape
             .iter()
             .try_fold(1usize, |acc, &dim| acc.checked_mul(dim))
@@ -207,7 +210,7 @@ pub trait Cast: Sized {
 
 #[cfg(test)]
 mod tests {
-    use super::{DType, TensorSpec};
+    use super::{DType, HasTensorSpec, TensorSpec};
 
     #[test]
     fn dtype_classification_is_small_and_backend_neutral() {
@@ -261,6 +264,41 @@ mod tests {
         assert_eq!(spec.rank(), 3);
         assert_eq!(spec.num_elements(), Some(24));
         assert!(!spec.is_scalar());
+        assert_eq!(spec.into_shape(), vec![2, 3, 4]);
         assert!(TensorSpec::new(DType::I64, []).is_scalar());
+    }
+
+    #[test]
+    fn element_count_is_invariant_under_permuting_empty_axes() {
+        for shape in [[0, usize::MAX, 2], [usize::MAX, 0, 2], [usize::MAX, 2, 0]] {
+            assert_eq!(TensorSpec::new(DType::F64, shape).num_elements(), Some(0));
+        }
+        assert_eq!(
+            TensorSpec::new(DType::F64, [usize::MAX, 2]).num_elements(),
+            None
+        );
+        assert_eq!(TensorSpec::new(DType::F64, []).num_elements(), Some(1));
+    }
+
+    #[test]
+    fn default_metadata_combines_the_reported_shape_and_dtype() {
+        struct Metadata(Option<DType>, Vec<usize>);
+        impl HasTensorSpec for Metadata {
+            fn dtype(&self) -> Option<DType> {
+                self.0
+            }
+
+            fn shape(&self) -> Vec<usize> {
+                self.1.clone()
+            }
+        }
+        for shape in [vec![], vec![1], vec![0, 2], vec![3, 4, 5]] {
+            let expected = TensorSpec::new(DType::U16, shape.clone());
+            assert_eq!(
+                Metadata(Some(DType::U16), shape.clone()).spec(),
+                Some(expected)
+            );
+            assert_eq!(Metadata(None, shape).spec(), None);
+        }
     }
 }

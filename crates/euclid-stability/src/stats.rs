@@ -46,22 +46,77 @@
 //! that says "the fast path ran" is a coverage measurement wearing the wrong hat — it will
 //! silently start passing when the code changes. Say what the case *was*.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
 thread_local! {
     /// Labels applied during the current property run, with counts.
     static LABELS: RefCell<BTreeMap<&'static str, usize>> = const { RefCell::new(BTreeMap::new()) };
-    /// Cases that have been *counted*, which is the denominator for a coverage share. Not the
-    /// configured case count: rejected cases never ran the body and must not dilute coverage.
+    /// Whether labels are being staged for a property case; discard its labels on rejection.
+    static ACTIVE: Cell<bool> = const { Cell::new(false) };
+    /// Labels applied so far, deduplicated within a case.
+    static PENDING: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    /// Accepted cases, the coverage denominator. Assumption rejections do not contribute.
     static COUNTED: RefCell<usize> = const { RefCell::new(0) };
 }
 
 /// Tag the case currently running. Prefer the [`classify!`](crate::classify) macro.
 pub fn label(name: &'static str) {
-    LABELS.with(|labels| {
-        *labels.borrow_mut().entry(name).or_insert(0) += 1;
-    });
+    if ACTIVE.with(Cell::get) {
+        PENDING.with(|pending| {
+            let mut pending = pending.borrow_mut();
+            if !pending.contains(&name) {
+                pending.push(name);
+            }
+        });
+    } else {
+        LABELS.with(|labels| *labels.borrow_mut().entry(name).or_insert(0) += 1);
+    }
+}
+
+pub(crate) fn begin_case() {
+    PENDING.with(|pending| pending.borrow_mut().clear());
+    ACTIVE.with(|active| active.set(true));
+}
+
+pub(crate) fn finish_case(accepted: bool) {
+    ACTIVE.with(|active| active.set(false));
+    if accepted {
+        count_case();
+        PENDING.with(|pending| {
+            LABELS.with(|labels| {
+                let mut labels = labels.borrow_mut();
+                for label in pending.borrow().iter() {
+                    *labels.entry(*label).or_insert(0) += 1;
+                }
+            })
+        });
+    }
+    PENDING.with(|pending| pending.borrow_mut().clear());
+}
+
+#[derive(Clone)]
+pub(crate) struct State {
+    labels: BTreeMap<&'static str, usize>,
+    counted: usize,
+    active: bool,
+    pending: Vec<&'static str>,
+}
+
+pub(crate) fn snapshot() -> State {
+    State {
+        labels: collected(),
+        counted: cases_counted(),
+        active: ACTIVE.with(Cell::get),
+        pending: PENDING.with(|pending| pending.borrow().clone()),
+    }
+}
+
+pub(crate) fn restore(state: State) {
+    LABELS.with(|labels| *labels.borrow_mut() = state.labels);
+    COUNTED.with(|counted| *counted.borrow_mut() = state.counted);
+    ACTIVE.with(|active| active.set(state.active));
+    PENDING.with(|pending| *pending.borrow_mut() = state.pending);
 }
 
 /// Note that one case ran to completion, labelled or not.
@@ -72,6 +127,8 @@ pub(crate) fn count_case() {
 /// Clear the collector. Called at the start of each property, since the thread is reused across
 /// properties within a test binary and counts must not leak between them.
 pub(crate) fn reset() {
+    ACTIVE.with(|active| active.set(false));
+    PENDING.with(|pending| pending.borrow_mut().clear());
     LABELS.with(|labels| labels.borrow_mut().clear());
     COUNTED.with(|counted| *counted.borrow_mut() = 0);
 }

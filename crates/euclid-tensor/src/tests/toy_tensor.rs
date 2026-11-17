@@ -1,7 +1,7 @@
 use crate::Tensor;
 use core::ops::{Add, Mul, Neg, Sub};
-use euclid_numeric::ControlFlow;
-use euclid_numeric::{Compare, Element};
+use euclid_scalar::ControlFlow;
+use euclid_scalar::{Compare, Element};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ToyTensor(pub(super) f64);

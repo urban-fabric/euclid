@@ -1,25 +1,17 @@
 //! The fusion itself, over generated values: the three tiers must describe **the same number**.
 //!
-//! This crate adds almost no behaviour. It names a trait that is
-//! [`euclid_algebra::OrderedField`] + [`euclid_numeric::Real`] + `Copy`, pins the associated
-//! constants, and supplies three `bool` predicates — and `f64`/`f32` satisfy all of it by
-//! delegating to `core`. So there is no algorithm here to search for a worst case in, and this
-//! suite is correspondingly short. It is not a smaller version of the kernel suites; it is a
-//! different question.
+//! `HostReal` adds `euclid_algebra::OrderedField`, `Copy`, associated constants and host
+//! predicates to the backend-neutral `Real`. This suite checks agreement between those tiers;
+//! numerical kernel properties live separately under `tests/properties/`.
 //!
-//! The question it does answer is the one the crate exists to raise. Two of the three tiers
-//! define **the same operation under the same name**: `euclid_numeric::Real::is_finite` returns
-//! a `Mask`, this crate's `Real::is_finite` returns a host `bool`, and the crate docs say the
-//! distinction between them is now "carried by the crate name rather than by an import
-//! rename". A name that resolves by path is only safe if the two paths agree about the value,
-//! and nothing in the type system says they do: they are separate trait methods with separate
-//! implementations that happen to be written against the same primitive today. A decimal or
-//! interval carrier implementing both would have two real chances to disagree.
+//! `Real::is_finite` returns a carrier mask, while `HostReal::is_finite` returns a host `bool`.
+//! They are separate methods with separate implementations. A carrier implementing both can
+//! disagree, so their values must be checked independently of how the methods are named.
 //!
 //! So the properties below are **agreement** properties — the "two implementations agree"
 //! relation, applied where two tiers overlap:
 //!
-//! - lifting: `Real::from_f64` against `euclid_numeric::Real::scalar`, which its default body
+//! - lifting: `HostReal::from_f64` against `euclid_scalar::Real::scalar`, which its default body
 //!   claims to be a spelling of
 //! - finiteness: the analysis tier's mask predicates against the concrete tier's `bool` ones,
 //!   over input that is deliberately *not* finite
@@ -38,7 +30,7 @@
 //! and `2.5` and never does.
 
 use euclid_algebra::HasZero;
-use euclid_scalar::Real;
+use euclid_scalar::HostReal;
 use euclid_stability::relation::Exact;
 use euclid_stability::{Config, Gen, check, check_eq, classify, generate, property, relation};
 
@@ -81,7 +73,7 @@ fn label(x: f64) -> &'static str {
 property! {
     #![config(settings("scalar-lifting"))]
 
-    /// `Real::from_f64` is a spelling of `euclid_numeric::Real::scalar`, at both widths.
+    /// `HostReal::from_f64` is a spelling of `euclid_scalar::Real::scalar`, at both widths.
     ///
     /// The default body says so, and a carrier is free to override it — so this checks the
     /// claim rather than the body. At `f32` it is also the statement that the lift narrows the
@@ -92,15 +84,15 @@ property! {
         relation::agree(
             "from_f64 / scalar at f64",
             x,
-            <f64 as Real>::from_f64,
-            <f64 as euclid_numeric::Real>::scalar,
+            <f64 as HostReal>::from_f64,
+            <f64 as euclid_scalar::Real>::scalar,
             &Exact,
         )?;
         relation::agree(
             "from_f64 / scalar at f32",
             x,
-            <f32 as Real>::from_f64,
-            <f32 as euclid_numeric::Real>::scalar,
+            <f32 as HostReal>::from_f64,
+            <f32 as euclid_scalar::Real>::scalar,
             &Exact,
         )?;
     }
@@ -126,19 +118,19 @@ property! {
         // `Mask` is `bool` for a host float, so the two are directly comparable here. A
         // deferred carrier would collapse its mask first; the claim is the same.
         check_eq!(
-            <f64 as Real>::is_finite(x),
-            euclid_numeric::Real::is_finite(&x),
+            <f64 as HostReal>::is_finite(x),
+            euclid_scalar::Real::is_finite(&x),
             "the two is_finite disagree on {x:?}"
         );
         check_eq!(
-            <f64 as Real>::is_nan(x),
-            euclid_numeric::Real::is_nan(&x),
+            <f64 as HostReal>::is_nan(x),
+            euclid_scalar::Real::is_nan(&x),
             "the two is_nan disagree on {x:?}"
         );
 
         // And the pair is exhaustive and exclusive: every value is finite, infinite or NaN.
-        let finite = <f64 as Real>::is_finite(x);
-        let nan = <f64 as Real>::is_nan(x);
+        let finite = <f64 as HostReal>::is_finite(x);
+        let nan = <f64 as HostReal>::is_nan(x);
         check!(
             !(finite && nan),
             "{x:?} is reported both finite and NaN"
@@ -159,22 +151,22 @@ property! {
         classify!("a smaller", a < b);
 
         check_eq!(
-            euclid_numeric::Real::min(a, b),
+            euclid_scalar::Real::min(a, b),
             f64::min(a, b),
             "min disagrees on ({a:?}, {b:?})"
         );
         check_eq!(
-            euclid_numeric::Real::max(a, b),
+            euclid_scalar::Real::max(a, b),
             f64::max(a, b),
             "max disagrees on ({a:?}, {b:?})"
         );
 
         // `clamp` needs an ordered interval; build one from the pair rather than filtering.
         let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-        let mid = (lo + hi) * <f64 as Real>::HALF;
+        let mid = (lo + hi) * <f64 as HostReal>::HALF;
         for x in [lo, hi, mid, lo - 1.0, hi + 1.0] {
             check_eq!(
-                euclid_numeric::Real::clamp(x, lo, hi),
+                euclid_scalar::Real::clamp(x, lo, hi),
                 f64::clamp(x, lo, hi),
                 "clamp({x:?}, {lo:?}, {hi:?}) disagrees"
             );
@@ -192,7 +184,7 @@ property! {
 
         if x != 0.0 {
             check_eq!(
-                <f64 as Real>::is_sign_negative(x),
+                <f64 as HostReal>::is_sign_negative(x),
                 x < <f64 as HasZero>::ZERO,
                 "the sign predicate and the order disagree on the nonzero {x:?}"
             );
@@ -205,7 +197,7 @@ property! {
             "both signed zeros must equal the additive identity"
         );
         check!(
-            <f64 as Real>::is_sign_negative(-0.0) && !<f64 as Real>::is_sign_negative(0.0),
+            <f64 as HostReal>::is_sign_negative(-0.0) && !<f64 as HostReal>::is_sign_negative(0.0),
             "the sign bit must distinguish the two zeros the order cannot"
         );
     }

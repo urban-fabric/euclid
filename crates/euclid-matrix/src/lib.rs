@@ -6,7 +6,7 @@
 //! decompositions ([`QrDecomposition`] / [`HermitianEigendecomposition`] /
 //! [`SingularValueDecomposition`] / [`GeneralSolve`] / [`Determinant`]). A backend
 //! (ramanujan eagerly, `maxwell`/XLA compiled) implements these for its concrete tensor type.
-//! Depends on **only `euclid-tensor` and `euclid-numeric`**, and on nothing third-party.
+//! Depends on **only `euclid-tensor` and `euclid-scalar`**, and on nothing third-party.
 //!
 //! # Vocabulary only
 //!
@@ -49,7 +49,7 @@
 #[cfg(feature = "conformance")]
 pub mod conformance;
 
-use euclid_numeric::{NormedDivisionAlgebra, Real};
+use euclid_scalar::{NormedDivisionAlgebra, Real};
 use euclid_tensor::Tensor;
 
 /// The real field of a tensor's elements — its norms, log-determinant, and Mahalanobis

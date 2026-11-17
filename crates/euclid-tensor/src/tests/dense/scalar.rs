@@ -6,7 +6,7 @@
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-use euclid_numeric::{Compare, Element, NormedDivisionAlgebra, Real};
+use euclid_scalar::{Compare, Element, NormedDivisionAlgebra, Real};
 
 use super::Dense;
 
@@ -48,7 +48,7 @@ impl Element for Dense {
 
 /// Masks are `0.0`/`1.0` tensors, so this carrier is single-dtype like a numeric array
 /// backend: `Mask == Self`.
-impl euclid_numeric::Boolean for Dense {
+impl euclid_scalar::Boolean for Dense {
     fn and(&self, other: &Self) -> Self {
         self.zip(other, |x, y| f64::from(x != 0.0 && y != 0.0))
     }
@@ -123,7 +123,7 @@ impl Compare for Dense {
 
 /// `Semiring` and `Ring` are blanket-implemented over their operators, but `Arithmetic` is
 /// not, so a division-bearing carrier opts in explicitly.
-impl euclid_numeric::Arithmetic for Dense {}
+impl euclid_scalar::Arithmetic for Dense {}
 
 impl NormedDivisionAlgebra for Dense {
     type RealPart = Self;

@@ -1,45 +1,162 @@
-//! # euclid-scalar — the concrete `Copy` number line.
+//! # euclid-scalar
 //!
-//! Where euclid's two abstract foundations meet on an actual machine number:
-//! `euclid-algebra`'s **structure** (which tier a carrier reaches) and
-//! `euclid-numeric`'s **analysis** (what operations a formula may use). Fusing them and adding
-//! `Copy` yields the ordinary real and complex number — implemented by `f64`/`f32`.
+//! Scalar contracts, host traits, primitive implementations and numerical kernels — the
+//! scalar foundation of the euclid workspace. Depends on `euclid-algebra`, with no third-party
+//! production dependencies.
 //!
-//! - [`Real`] = [`euclid_algebra::OrderedField`] + [`euclid_numeric::Real`] + `Copy`, plus the
-//!   associated constants (`PI`/`EPSILON`/`INFINITY`/…) and the `bool`-returning predicates
-//!   (`is_finite`/`is_nan`/`is_sign_negative`).
-//! - [`Complex`] = [`euclid_algebra::AlgebraicallyClosedField`] + [`euclid_numeric::Complex`]
-//!   with a [`Real`] real part + `Copy`, plus the complex transcendentals. Implemented by
-//!   `jacobi::Complex{32,64}`.
+//! A formula written against these traits can run on ordinary `f64`/`f32` values and on
+//! consumer-defined expression, graph, tensor, or unit-aware carriers. This crate defines the
+//! operations a formula may use; it does not define storage layout, execution runtime, array
+//! allocation, or a random-number engine.
 //!
-//! ## When to bind this instead of `euclid-numeric`
+//! `f64`/`f32` implement the real and interpolation traits; `i32`/`i64`/`i128` implement
+//! [`Integer`]; `u32`/`u64`/`u128` implement [`Natural`]; and `bool` implements [`Boolean`].
 //!
-//! Prefer [`euclid_numeric::Real`] — it is the wider bound, and a formula written against it
-//! runs on expression handles, graph nodes and tensor elements as well as on `f64`.
+//! ## Usage Rules
 //!
-//! Bind *this* crate only when a kernel genuinely needs the real number line itself: `Copy`,
-//! host `bool` from a predicate, and associated constants rather than lifted literals. Eager
-//! geometry, matrix and physics kernels qualify. A `Tensor` or columnar `Expr` backend does not
-//! — it stays entirely on euclid-numeric's contract tier and never depends on this crate.
+//! - Choose the narrowest trait bound that contains the operations a formula needs.
+//! - Treat generic values as `Clone`, not `Copy`.
+//! - Lift host literals with methods such as [`Real::scalar`] and [`Real::scalar_like`].
+//! - Comparisons return masks, consumed by [`Compare::select`] or [`Compare::if_then_else`].
+//!   Nothing here returns a scalar `bool` from a generic comparison.
 //!
-//! ## Why it is a separate crate
+//! ## The Workspace
 //!
-//! Until 0.4 this tier lived inside `euclid-algebra`, which therefore owned two goals at once:
-//! the abstract tower and the concrete number. The symptom was a name collision — it had to
-//! import euclid's `Real`/`Complex` as `LazyReal`/`LazyComplex` to keep them apart from its own
-//! same-named traits, so the crate documented the workaround instead of the boundary.
+//! The sibling crates build on this one and never on each other:
 //!
-//! Splitting them removes the aliases. `euclid_numeric::Real` is the contract,
-//! `euclid_scalar::Real` is the concrete number, and the distinction is now carried by the
-//! crate name rather than by an import rename. It also leaves `euclid-algebra` with no
-//! dependencies at all: algebraic structure needs nothing from analysis, and this crate is the
-//! only one that needs both.
+//! - `euclid-tensor` — the rank-graded `Tensor` contract (a vector is a rank-1 tensor, a matrix
+//!   a rank-2 tensor) and backend-neutral dtype/spec metadata.
+//! - `euclid-units` — physical-dimension contracts over any [`Real`] carrier.
+//! - `euclid-random` — explicit-key random sampler contracts.
+//!
+//! ## Example
+//!
+//! ```
+//! use euclid_scalar::Real;
+//!
+//! // Written once, against the trait — no mention of any concrete number type.
+//! fn standard_normal_logpdf<T: Real>(x: T) -> T {
+//!     let x2 = x.square();
+//!     -(T::half() * x2) - T::half_ln_tau()
+//! }
+//!
+//! // The same function, two different carriers.
+//! let wide: f64 = standard_normal_logpdf(0.0_f64);
+//! let narrow: f32 = standard_normal_logpdf(0.0_f32);
+//!
+//! let expected = -0.5 * (2.0 * std::f64::consts::PI).ln();
+//! assert!((wide - expected).abs() < 1e-12);
+//! assert!((narrow as f64 - expected).abs() < 1e-6);
+//! ```
+//!
+//! Nothing in `standard_normal_logpdf` names `f64` or `f32`, so a carrier the consumer
+//! defines — an expression handle, a graph node, a tensor element, a unit-aware wrapper —
+//! is accepted on the same bound without editing the formula.
+//!
+//! ## Trait Tiers
+//!
+//! The traits are grouped by the structure they require:
+//!
+//! - [`Element`]: the canonical constants `0` and `1` every carrier defines directly — the
+//!   tier booleans, naturals, integers, and the real/complex/quaternion division algebras all
+//!   unify into, so any of them can be a `Tensor` element.
+//! - [`Semiring`] and [`Natural`]: `+`, `*`, identities, natural-number lifting,
+//!   Euclidean division, and count combinatorics.
+//! - [`Ring`] and [`Integer`]: subtraction, negation, signed integer lifting,
+//!   Euclidean division, and conversion to real carriers.
+//! - [`Arithmetic`]: division on top of the ring operations.
+//! - [`Real`]: real analysis, lifted constants, square/powers, rounding/sign
+//!   operations, comparison-free selectors, masks, special functions, and stable log-domain
+//!   helpers.
+//! - [`NormedDivisionAlgebra`], [`Complex`], and [`Quaternion`]: conjugation,
+//!   magnitude, real part, and complex/quaternionic construction.
+//! - [`Boolean`] and [`Compare`]: mask algebra, comparisons, `select`, and carrier-level
+//!   control flow.
+//! - [`Interpolate`]: scalar-parameterized interpolation (`lerp`/`midpoint`), kept opt-in
+//!   rather than blanket-implemented over the algebra tiers.
+//! - [`ControlFlow`]: the explicit graph conditional/loop contract for carriers that can
+//!   represent them.
+//!
+//! ## Host scalar traits
+//!
+//! [`HostReal`] and [`HostComplex`] add eager `Copy` requirements to [`Real`] and
+//! [`Complex`]. They fuse the analysis surface with the `euclid-algebra` field traits,
+//! associated constants and host predicates. Bind `Real` for backend-neutral formulas and
+//! `HostReal` when a kernel requires ordinary scalar control flow and values.
+//!
+//! ## Constants
+//!
+//! [`constants`] holds the mathematical constants `core` does not provide — the
+//! Euler–Mascheroni constant, the golden ratio, Apéry's and Catalan's constants, the omega and
+//! lemniscate constants, and others. A carrier-generic formula lifts the common ones through
+//! [`Real`] (`T::pi()`, `T::euler_gamma()`); concrete `f64`/`f32` code reaches into
+//! [`constants`] for the full catalogue. Every value there is verified against an identity
+//! rather than trusted as transcribed digits.
+//!
+//! ## Where Things Live
+//!
+//! The source is laid out by **role**, not by function family, because the distinction this
+//! crate exists to maintain is the one between a contract and an implementation of it:
+//!
+//! | | what it holds | public? |
+//! |---|---|---|
+//! | this file | crate documentation and the public re-exports | yes |
+//! | `traits.rs`, `traits/` | backend-neutral scalar contracts | via root re-exports |
+//! | `host.rs`, `host/` | eager `HostReal` / `HostComplex` refinements | via root re-exports |
+//! | [`constants`] | the constant catalogue | yes |
+//! | `impls/` | the `f64`/`f32`/`i*`/`u*`/`bool` `impl` blocks | no — exports nothing |
+//! | `kernels/` | the concrete scalar algorithms those impls forward to | no |
+//! | `tests/` | the trait-surface test suites, organized by question asked | no |
+//!
+//! Two consequences worth knowing before navigating it.
+//!
+//! **The contracts are a small part of the source.** `kernels/` and `tests/` are four-fifths of the
+//! crate between them, and that ratio is deliberate: a trait that promises `erf` is accurate to
+//! `1e-15` is only worth as much as the evidence behind it. Someone reading for the *contract*
+//! should stay in the files above and never need to open `kernels/`.
+//!
+//! **One function is therefore spread across several files.** `erf` is declared on [`Real`],
+//! forwarded in `impls/real_f64.rs`, computed in `kernels/erf/`, and tested from four
+//! directions in `tests/`. That is the cost of the role-based split, paid knowingly — the
+//! alternative, a directory per function holding its own trait method, would scatter the trait
+//! itself and make the contract impossible to read in one sitting.
+//!
+// Three public modules, and each is here for the same reason: it is a genuine *namespace*
+// rather than a single item, so flattening it into the crate root would read worse.
+// `constants::f64::CATALAN`, `compensated::sum` and `interval::contains` all say what they
+// are; a bare `sum` or `contains` at the root would not.
 
-mod complex;
-mod real;
+// Plain comments, not `///`: a doc comment here would be concatenated with the module
+// file's own `//!` header and the whole block resolved in *this* module's scope, which
+// silently breaks every link that referred to an item inside the submodule. Each module
+// documents itself in its own file.
+//
+//   compensated  accurate reductions: compensated summation and dot products
+//   constants    the constant catalogue, `constants::f64::CATALAN` and friends
+//   interval     one-dimensional closed-interval predicates over any `Real`
+#[cfg(any(feature = "conformance", test))]
+pub mod conformance;
 
-pub use complex::Complex;
-pub use real::Real;
+pub mod compensated;
+pub mod constants;
+pub mod interval;
+
+// Trait and host modules have one public path through the root re-exports.
+mod host;
+mod impls;
+mod math;
+#[cfg(test)]
+mod tests;
+mod traits;
+
+/// Concrete numerical algorithms used by the primitive implementations.
+pub(crate) mod kernels;
+
+pub use host::{HostComplex, HostReal};
+pub use traits::{
+    Arithmetic, Boolean, Compare, Complex, ControlFlow, Element, Integer, Interpolate, Natural,
+    NormedDivisionAlgebra, Quaternion, Real, Ring, Semiring,
+};
 
 // The README's examples, compiled.
 //

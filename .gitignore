@@ -1,2 +1,18 @@
+# rust
 target/
-.idea/
+
+# cargo-mutants
+mutants.out
+mutants.out.old
+
+# editors
+.agents
+.aws
+.codex
+.claude
+.idea
+CLAUDE.md
+
+# tools
+__pycache__/
+/bin/

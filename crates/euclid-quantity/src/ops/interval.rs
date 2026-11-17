@@ -15,7 +15,7 @@
 //! fully unbounded interval (`-inf, +inf`) rather than a misleadingly finite band.
 //!
 //! The predicates and set operations are **not** implemented here: they delegate to
-//! [`euclid_numeric::interval`], the carrier-generic kernels, so `[lo, hi]` means the
+//! [`euclid_scalar::interval`], the carrier-generic kernels, so `[lo, hi]` means the
 //! same thing in euclid-quantity as it does everywhere else in euclid. This type's job is the
 //! part the kernels deliberately leave out — holding the bounds as typed quantities
 //! rather than a loose `(lo, hi)` pair, and carrying the dimensional cross-products.
@@ -28,7 +28,7 @@
 
 use core::ops::{Add, Div, Mul, Neg, Sub};
 
-use euclid_numeric::interval as kernels;
+use euclid_scalar::interval as kernels;
 
 use crate::{LengthMeters, LinearQuantity, SpeedMs, TimeSeconds};
 
@@ -96,12 +96,12 @@ impl<Q: LinearQuantity<Repr = f64> + Copy> Interval<Q> {
 
     /// The centre of the interval.
     pub fn midpoint(self) -> Q {
-        Q::from_raw(0.5 * (self.lo.raw() + self.hi.raw()))
+        Q::from_raw(self.lo.raw().midpoint(self.hi.raw()))
     }
 
     /// Half the width: the symmetric `±` tolerance around the midpoint.
     pub fn radius(self) -> Q {
-        Q::from_raw(0.5 * (self.hi.raw() - self.lo.raw()))
+        Q::from_raw(self.hi.raw().midpoint(-self.lo.raw()))
     }
 
     /// The full width `hi - lo`.
@@ -167,6 +167,7 @@ impl<Q: LinearQuantity<Repr = f64> + Copy> Interval<Q> {
 ///
 /// This is exact for monotone-per-argument operations such as multiplication,
 /// where the extremes of the product always sit at endpoint combinations.
+/// Equal corners retain the first value's signed zero.
 fn corner_bounds(a: (f64, f64), b: (f64, f64), op: impl Fn(f64, f64) -> f64) -> (f64, f64) {
     let corners = [op(a.0, b.0), op(a.0, b.1), op(a.1, b.0), op(a.1, b.1)];
     let mut lo = corners[0];
@@ -402,5 +403,16 @@ mod tests {
         let speed = distance / time;
         assert_eq!(speed.lo(), SpeedMs::new(f64::NEG_INFINITY));
         assert_eq!(speed.hi(), SpeedMs::new(f64::INFINITY));
+    }
+
+    #[test]
+    fn corner_bounds_keep_the_first_signed_zero_on_ties() {
+        for first in [0.0_f64, -0.0] {
+            let (lo, hi) = super::corner_bounds((1.0, 2.0), (3.0, 4.0), |a, b| {
+                if (a, b) == (1.0, 3.0) { first } else { -first }
+            });
+            assert_eq!(lo.to_bits(), first.to_bits());
+            assert_eq!(hi.to_bits(), first.to_bits());
+        }
     }
 }

@@ -62,6 +62,9 @@ thread_local! {
 /// Higher is worse. Called more than once in a case, the largest value wins — so a property
 /// checking several things can report each one's error without tracking the maximum itself.
 pub fn target(score: f64) {
+    if !score.is_finite() {
+        return;
+    }
     SCORE.with(|current| {
         let best = match current.get() {
             Some(previous) if previous >= score => previous,
@@ -74,6 +77,10 @@ pub fn target(score: f64) {
 /// The score the case just reported.
 pub(crate) fn reported() -> Option<f64> {
     SCORE.with(Cell::get)
+}
+
+pub(crate) fn restore(score: Option<f64>) {
+    SCORE.with(|current| current.set(score));
 }
 
 /// Forget the previous case's score.
@@ -113,5 +120,19 @@ mod tests {
         assert_eq!(reported(), Some(-5.0));
         target(-1.0);
         assert_eq!(reported(), Some(-1.0));
+    }
+
+    #[test]
+    fn non_finite_scores_neither_create_nor_erase_evidence() {
+        clear();
+        for score in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            target(score);
+        }
+        assert_eq!(reported(), None);
+        target(-3.0);
+        for score in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            target(score);
+            assert_eq!(reported(), Some(-3.0));
+        }
     }
 }

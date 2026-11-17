@@ -17,7 +17,7 @@
 //!   whether a reduced axis is removed or kept at length 1, is a convention each backend picks.
 //!   A suite that asserted either would fail a correct backend that chose the other.
 //! - **Broadcast, gather and scatter semantics are not checked**, for the same reason.
-//! - **Numeric results are not checked.** That is `euclid-numeric`'s subject; here the question
+//! - **Numeric results are not checked.** That is `euclid-scalar`'s subject; here the question
 //!   is whether the *structure* holds.
 //!
 //! What is left is the part the contract does fix: shape algebra, and the operations that must
@@ -28,6 +28,12 @@
 //!
 //! Gated behind the `conformance` feature, so a consumer pays nothing unless it asks, and always
 //! compiled under `cfg(test)` so this crate's own suites exercise the same code a backend calls.
+//!
+//! The [`generated`] submodule sits behind a **second** feature, `conformance-generated`, which
+//! enables this one and additionally pulls the property engine. The division: these functions
+//! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
+//! the laws should take; the generated search is tooling for locating where a carrier fails
+//! them, and costs a dependency.
 //!
 //! These docs are the module's own (`//!`), with no outer `///` on the `mod` declaration: the
 //! two forms are concatenated, and an outer comment resolves intra-doc links in the *parent's*
@@ -307,9 +313,9 @@ where
 /// and a shape — so euclid generates the shape and the data and the backend supplies nothing. The
 /// `Real` bound comes from `from_host` itself and is why this covers real tensors and not boolean
 /// ones; a boolean carrier should run the fixed suite.
-#[cfg(any(feature = "conformance", test))]
+#[cfg(any(feature = "conformance-generated", test))]
 pub mod generated {
-    use euclid_numeric::Real;
+    use euclid_scalar::Real;
     use euclid_stability::{Config, Gen, check, classify, generate};
 
     use super::{shape_laws, structural_laws, tensor_laws};
@@ -356,11 +362,26 @@ pub mod generated {
         })
     }
 
+    /// Build the carriers for one generated case.
+    ///
+    /// # Panics
+    /// If `parts` is empty, or if it yields no carriers.
+    ///
+    /// The assertion is the point. A law suite over an empty sample asserts nothing and reports
+    /// a clean pass, and mutation testing found this function replaceable with `vec![]` —
+    /// returning no tensors at all — with every generated law in the crate still green. The
+    /// generator is `vec(shaped_data(), 1, 3)`, so a case can never legitimately be empty; if one
+    /// is, the sample construction is broken rather than the laws being satisfied.
     fn sample<T: Tensor + Real>(parts: &[(Vec<usize>, Vec<f64>)]) -> Vec<T> {
-        parts
+        let xs: Vec<T> = parts
             .iter()
             .map(|(shape, data)| T::from_host(data, shape))
-            .collect()
+            .collect();
+        assert!(
+            !xs.is_empty(),
+            "the generated sample is empty, so the laws below would pass vacuously"
+        );
+        xs
     }
 
     fn has_repeated_extents(shape: &[usize]) -> bool {

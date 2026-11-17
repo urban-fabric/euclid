@@ -71,6 +71,12 @@
 //! for it, and always compiled under `cfg(test)` so this crate's own suites exercise the same
 //! code a backend calls.
 //!
+//! The [`generated`] submodule sits behind a **second** feature, `conformance-generated`, which
+//! enables this one and additionally pulls the property engine. The division: these functions
+//! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
+//! the laws should take; the generated search is tooling for locating where a carrier fails
+//! them, and costs a dependency.
+//!
 //! # Seeds, not generated input
 //!
 //! You supply the seeds. These functions generate nothing, so a failure is reproducible from the
@@ -78,7 +84,7 @@
 //! five seeds including `0` is plenty; the laws run over every pair, and `0` is worth including
 //! because a multiplicative mixing function that forgets to handle it degenerates there.
 
-use euclid_numeric::Element;
+use euclid_scalar::{Element, Integer, Real};
 
 use crate::RandomSampler;
 
@@ -240,7 +246,7 @@ where
 {
     let zero = R::Real::zero();
     let one = R::Real::one();
-    let two = one.clone() + one.clone();
+    let two = R::Real::scalar(2.0);
 
     for &s in seeds {
         let k = R::key(s);
@@ -274,7 +280,7 @@ where
 
         // randint respects its half-open interval
         let lo = R::Int::zero();
-        let hi = R::Int::one() + R::Int::one() + R::Int::one();
+        let hi = R::Int::from_i64(3);
         let n = R::randint(&k, SCALAR, lo.clone(), hi.clone());
         assert!(
             n >= lo && n < hi,
@@ -312,7 +318,7 @@ where
 ///
 /// So the generator deduplicates by construction. That is the knowledge this module exists to
 /// ship.
-#[cfg(any(feature = "conformance", test))]
+#[cfg(any(feature = "conformance-generated", test))]
 pub mod generated {
     use euclid_stability::{Config, Gen, check, classify, generate};
 
@@ -390,5 +396,20 @@ pub mod generated {
             sampler_bound_laws::<R>(&xs, what);
             Ok(())
         });
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn generated_search_requires_seed_coverage() {
+        let config = settings();
+        assert!(config.cases >= 300);
+        for label in ["contains zero", "a high-bit seed"] {
+            assert!(
+                config
+                    .requirements
+                    .iter()
+                    .any(|(name, floor)| name == label && *floor > 0.0)
+            );
+        }
     }
 }

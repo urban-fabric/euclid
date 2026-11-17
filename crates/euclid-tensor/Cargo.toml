@@ -13,15 +13,42 @@ readme = "README.md"
 # The structural half of the Tensor contract, as functions a backend can check against.
 # Off by default; always compiled under `cfg(test)` so our own suites exercise the same
 # code a consumer calls.
-conformance = ["dep:euclid-stability"]
+conformance = []
+
+# The generated search over the same laws, which needs the property engine.
+#
+# Split out so that `conformance` costs nothing: a consumer taking the fixed laws now
+# resolves, downloads and compiles no engine at all. Verified with
+# `cargo tree -p <crate> --edges normal --features conformance`, which shows zero
+# `euclid-stability` edges where it previously showed one.
+#
+# The division is the honest one. The fixed laws are the *contract* — a carrier author
+# runs them to find out whether their impl is sound — while the search is *tooling for
+# locating where it fails*, and only the first needs to travel with the published
+# artifact.
+#
+# # This is hygiene, not a publishing fix
+#
+# Stated plainly because the first attempt at this assumed otherwise. `euclid-stability`
+# is `publish = false`, and `cargo publish` on this crate still fails:
+#
+#     error: no matching package named `euclid-stability` found
+#
+# Measured, by removing one table at a time: **an optional `[dependencies]` entry blocks
+# publishing even with its feature off**, and **a versioned `[dev-dependencies]` entry
+# blocks it too** — cargo resolves both from the registry at publish time. Only a
+# *path-only* dev-dependency is stripped. So publishing needs `euclid-stability` itself
+# published, or absent from both tables; the split alone does not get there. See
+# `crates/euclid-stability/README.md#where-this-goes-next`.
+conformance-generated = ["conformance", "dep:euclid-stability"]
 
 [dependencies]
 # The property/stability engine, now an **optional runtime dependency** rather than dev-only,
-# enabled by the `conformance` feature. That feature's whole shape is "test surface a consumer
+# enabled by the `conformance-generated` feature. That feature's whole shape is "test surface a consumer
 # opts into and otherwise pays nothing for", and the generated laws are that surface — so the
 # engine travels with them. A consumer that only binds the contract never sees it.
 euclid-stability = { workspace = true, optional = true }
-euclid-numeric.workspace = true
+euclid-scalar.workspace = true
 
 [dev-dependencies]
 # The stability and property engine, for the generated companion to the fixed conformance

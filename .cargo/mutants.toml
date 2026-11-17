@@ -1,0 +1,72 @@
+# cargo-mutants: the test-strength gate.
+#
+# The six checks in CONTRIBUTING.md ask "does the code pass its tests". This asks the question
+# underneath: **would the tests notice if the code were wrong?** It answers by changing a function
+# body — a `+` to a `-`, a return value to a default — and re-running the suite. A mutant the
+# suite still passes is a line nothing is pinning.
+#
+# That is a different instrument from coverage, and the difference is the reason this file exists.
+# `compensated_sum` in euclid-stability was executed by three tests and pinned by none of them:
+# they asserted a *band* on a derived quantity, so the sign of the Kahan correction could be
+# flipped and the whole 1,169-test workspace suite stayed green. Coverage reported that function
+# as covered, and it was. It just was not checked.
+#
+# The local `bin/mutants.py` wrapper restores evidence files between scenarios, so a saved
+# failure from one mutant cannot contaminate the next. The wrapper lives outside the release tree.
+#
+#     cargo mutants --in-diff <(git diff origin/main)   # what this branch changed
+#     cargo mutants -p euclid-stability                 # one crate
+#     cargo mutants -f crates/euclid-scalar/src/kernels/gamma.rs   # one file
+#     cargo mutants --shard 1/8                         # a slice, for splitting across runs
+#
+# # This is not a seventh local check
+#
+# CONTRIBUTING.md says there is no CI by choice, because the suite takes well under a second. A
+# full mutation run covers thousands of sites across the workspace, each needing a rebuild
+# and a test run. That is hours, not seconds, so it does not belong in the pre-push loop.
+#
+# Treat it the way `cargo deny check` is treated — the check with an unusual cost that runs
+# deliberately rather than constantly. `--in-diff` is the exception and is worth running on a
+# branch that touches a kernel: it mutates only the lines the diff added, which is minutes.
+#
+# # Why exclusions live here and not in attributes
+#
+# `#[mutants::skip]` would add a `mutants` dependency to the numerical crates. Keep any future
+# exclusions in this file and explain the invariant that makes each substitution equivalent.
+
+# ---------------------------------------------------------------------------
+
+# Keep all generated mutations visible by default.
+exclude_re = []
+
+# ---------------------------------------------------------------------------
+
+# Timeouts.
+#
+# Preserve timeouts separately so the saved patches can be replayed with per-test deadlines.
+# See the mutation replay profile and CONTRIBUTING.md.
+minimum_test_timeout = 20
+
+# `cargo test --all-features`, matching the fourth and fifth checks in CONTRIBUTING.md. Without
+# this, the `conformance` features are off and the generated laws the contract crates export are
+# never compiled, so every mutant inside one reads as unviable.
+additional_cargo_args = ["--all-features"]
+
+# Run the **whole workspace's** tests against each mutant, not just the tests of the crate the
+# mutant lives in.
+#
+# Not a performance knob — a correctness one, and the default gets the wrong answer here. Without
+# it a mutant in `euclid-stability` is judged by that crate's own 242 tests, and everything the
+# other nine crates check is invisible. `two_stage_error_bound` is the clearest case: nothing in
+# `euclid-stability` calls it, and two property suites in `euclid-scalar` are built on it, so it
+# read as completely unpinned when it was not.
+#
+# That cuts both ways and the other direction matters more. `euclid-stability` *is* the test
+# engine, so a mutation in it can only be caught by a test that fails because the engine stopped
+# detecting something — and most of those tests live in the crates being tested, not here. The
+# question worth answering is "would anything in this repository notice", and this is the setting
+# that asks it.
+#
+# The cost is real but small: 1,204 tests per mutant instead of 242, against a suite that takes
+# about three seconds.
+test_workspace = true

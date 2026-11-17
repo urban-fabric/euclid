@@ -1,4 +1,4 @@
-use euclid_numeric::{Element, Real};
+use euclid_scalar::{Element, Real};
 
 use super::ScalarQuantity;
 
@@ -69,7 +69,7 @@ pub trait LinearQuantity: ScalarQuantity {
     }
 
     /// Scale by a host literal, lifted into the carrier via
-    /// [`scalar_like`](euclid_numeric::Real::scalar_like) so the carrier can preserve any needed
+    /// [`scalar_like`](euclid_scalar::Real::scalar_like) so the carrier can preserve any needed
     /// context.
     #[inline]
     fn scaled(self, k: f64) -> Self {

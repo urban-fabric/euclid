@@ -79,10 +79,15 @@ struct ReadmeExamples;
 
 // The **workspace** README's examples, compiled here because no crate owns that file.
 //
-// Its remaining live examples need `euclid-numeric` and `euclid-units`, and this is the only
+// Its remaining live examples need `euclid-scalar` and `euclid-units`, and this is the only
 // member that depends on both — which is the whole reason it landed here rather than somewhere
 // more obviously appropriate. If that stops being true, move this item; do not delete it, or the
 // front page of the repository goes back to being unverified prose.
+//
+// `cfg(doctest)` is also what keeps the workspace README's `[Apache License](LICENSE)` link from
+// being resolved as an intra-doc link. A crate-level `#![doc = include_str!]` of this same file
+// fails `cargo doc -D warnings` for that reason; a doctest-only item compiles the examples
+// without asking rustdoc to resolve the prose's relative links.
 //
 // The two illustrative fragments in it are marked ```rust,ignore for the same reason as above.
 #[cfg(doctest)]
