@@ -156,61 +156,27 @@ impl Natural for u128 {
     fn div_rem(self, rhs: Self) -> (Self, Self) {
         (self / rhs, self % rhs)
     }
+    // The combinatorial four delegate to the same `u128` host bodies the `u64` carrier
+    // reaches, rather than restating them here. They were restated once, and the copy drifted:
+    // it differenced `ln_binomial` straight off `ln_gamma` where the shared body uses the
+    // exact small sum, and its `binomial` carried the `f64` accumulator whose intermediate
+    // rounds a factor of `k` below `2^53`. Two carriers of one contract answering the same
+    // combinatorial question differently is the disagreement `conformance` exists to prevent.
     #[inline]
     fn ln_factorial(&self) -> f64 {
-        if *self <= 20 {
-            let mut sum = 0.0;
-            for k in 2..=*self {
-                sum += (k as f64).ln();
-            }
-            sum
-        } else {
-            let n = *self as f64;
-            crate::kernels::gamma::ln_gamma(n + 1.0)
-        }
+        crate::kernels::host::factorial::ln_factorial_u128(*self)
     }
     #[inline]
     fn factorial(&self) -> f64 {
-        if *self <= 20 {
-            let mut acc = 1.0;
-            for k in 2..=*self {
-                acc *= k as f64;
-            }
-            acc
-        } else {
-            self.ln_factorial().exp()
-        }
+        crate::kernels::host::factorial::factorial_u128(*self)
     }
     #[inline]
     fn ln_binomial(&self, k: &Self) -> f64 {
-        if k > self {
-            return f64::NEG_INFINITY;
-        }
-        let n = *self as f64;
-        let k = *k as f64;
-        crate::kernels::gamma::ln_gamma(n + 1.0)
-            - crate::kernels::gamma::ln_gamma(k + 1.0)
-            - crate::kernels::gamma::ln_gamma(n - k + 1.0)
+        crate::kernels::host::factorial::ln_binomial_u128(*self, *k)
     }
     #[inline]
     fn binomial(&self, k: &Self) -> f64 {
-        // Multiplicative recurrence (exact within `2^53`), mirroring the host `binomial`;
-        // the previous `exp(lnΓ).round()` lost the low digits past `2^53`.
-        if k > self {
-            return 0.0;
-        }
-        let n = *self;
-        let k = (*k).min(n - *k);
-        let mut acc = 1.0_f64;
-        let mut i: u128 = 1;
-        while i <= k {
-            acc = acc * (n - k + i) as f64 / i as f64;
-            if acc.is_infinite() {
-                return f64::INFINITY;
-            }
-            i += 1;
-        }
-        acc.round()
+        crate::kernels::host::factorial::binomial_u128(*self, *k)
     }
     #[inline]
     fn gcd(self, other: Self) -> Self {

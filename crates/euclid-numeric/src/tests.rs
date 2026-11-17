@@ -56,12 +56,19 @@
 //! |-------|-------|
 //! | [`f32`] | is the separate single-precision implementation as good? |
 //! | [`real_surface`], [`masks`], [`discrete`], [`control_flow`] | does a formula written *once* against a trait tier run on every carrier at that tier? |
+//! | [`discrete_carriers`] | does *every* carrier of a discrete tier honour the contract, or only the one the suites instantiate? |
 //!
-//! That last row is the one that justifies the crate's existence: [`real_surface`] covers the
+//! The second row is the one that justifies the crate's existence: [`real_surface`] covers the
 //! analysis tier, [`masks`] the comparison/selection tier, [`discrete`] the semiring and ring
 //! tiers, and [`control_flow`] the conditional/loop contract. Each writes a formula with no
 //! mention of a concrete number type and then runs it on several, which is the property a
 //! consumer-defined carrier depends on.
+//!
+//! [`discrete_carriers`] asks the narrower question those miss. Running a formula on three
+//! widths proves it *compiles* and agrees at the values sampled; it does not ask each width the
+//! whole of its contract. Mutation testing found 103 survivors across `impls/natural_impl.rs`
+//! and `impls/integer_impl.rs` for exactly that reason — the suites had settled on `u64`/`i64`
+//! and the other four widths rode along — and one of them was a real defect.
 //!
 //! # House rules
 //!
@@ -77,6 +84,31 @@
 
 use super::*;
 
+/// A relative-tolerance comparison in a carrier's *own* real surface.
+///
+/// Shared by the carrier-conformance suites ([`discrete_carriers`], [`real_carriers`]), which
+/// all have the same problem: the expectation is known as an `f64`, and it has to be checked
+/// against whichever precision the carrier under test actually carries.
+///
+/// `|got − want| ≤ tol · max(1, |want|)`, the mixed criterion used throughout this crate —
+/// purely relative is wrong where a quantity passes through zero, purely absolute is wrong where
+/// it is large. `Mask = bool` is what pins this to the host carriers; an array carrier would
+/// need the mask reduced first.
+fn agrees<T>(got: &T, want: f64, tol: f64, what: &str, law: &str)
+where
+    T: Real<Mask = bool> + core::fmt::Debug,
+{
+    let expected = T::scalar(want);
+    let scale = expected.abs();
+    let unit = T::one();
+    let denominator = if scale.gt(&unit) { scale } else { unit };
+    let difference = (got.clone() - expected.clone()).abs();
+    assert!(
+        difference.le(&(T::scalar(tol) * denominator)),
+        "{what}: {law} — got {got:?}, want {want}",
+    );
+}
+
 mod accuracy;
 mod compensated;
 mod conformance_suites;
@@ -84,6 +116,7 @@ mod constants;
 mod control_flow;
 mod conventions;
 mod discrete;
+mod discrete_carriers;
 mod edge_cases;
 mod f32;
 mod identities;
@@ -91,6 +124,7 @@ mod masks;
 mod normal_family;
 mod poles;
 mod quantiles;
+mod real_carriers;
 mod real_surface;
 mod relationships;
 mod representation;

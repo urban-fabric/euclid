@@ -1,7 +1,8 @@
 //! Native `f32` error-function family — the single-precision port of its parent [`super`],
 //! which it sits beside rather than in a mirrored tree. `erf`/`erfc` reduce to the regularized
-//! incomplete gamma `P(½, x²)`; `erf_inv` uses Giles's rational approximation plus one Newton
-//! step. Evaluated in `f32` throughout.
+//! incomplete gamma `P(½, x²)`; `erf_inv` is Giles's rational approximation alone, **without**
+//! the Newton step its `f64` peer takes — see [`erf_inv`], where that difference is measured.
+//! Evaluated in `f32` throughout.
 //!
 //! Keeping the two precisions in one directory is the point of the layout: the thresholds below
 //! are the *same derivation* as the `f64` ones with a different `ε`, so a change to one is
@@ -99,6 +100,33 @@ pub(crate) fn erfcx(x: f32) -> f32 {
 }
 
 /// The inverse error function: `erf_inv(erf(x)) = x` for `x ∈ (-1, 1)`.
+///
+/// Giles' single-precision rational approximation, and **nothing after it**.
+///
+/// # Why there is no Newton step, where the f64 peer has one
+///
+/// Because at `f32` it made the result eight times worse. Measured against the true inverse over
+/// 4,000 arguments in `(-1, 1)`: the bare seed is accurate to `2.4e-7` — about two `f32` ulps,
+/// which is as good as the format allows — and adding one Newton step took that to `1.9e-6`.
+///
+/// The reason is that the correction is `err / pdf` with `err = erf(result) - x`, and `erf` at
+/// `f32` carries its own error of several ulps. Dividing that by `2/√π · e^{-r²}`, which shrinks
+/// rapidly as `|r|` grows, amplifies it — so the step injects more noise than the seed had error.
+/// It is a refinement computed with an instrument coarser than the thing being refined.
+///
+/// Giles fitted these coefficients *for* `f32`, so there was nothing left to refine. The f64 peer
+/// is the opposite case: its coefficient table is coarser than `f64`, so its Newton step earns
+/// its place and stays.
+///
+/// In the far tail the step was not harmful, merely useless: beyond about `|p| = 0.997`,
+/// `e^{-r²}` underflows and the correction term is identically zero, so the two agreed to the
+/// last bit.
+///
+/// Found by mutation testing. Thirty-four mutants survived in this function — every seed
+/// coefficient and every operator in the Newton step — because the step scrambled the seed's
+/// precision and then contributed nothing reliable of its own, leaving no accuracy test able to
+/// tell any version from another. With the step gone the seed is directly observable and
+/// `the_f32_inverse_is_as_accurate_as_the_format_allows` pins it at `3e-7`.
 pub(crate) fn erf_inv(x: f32) -> f32 {
     if x <= -1.0 {
         return f32::NEG_INFINITY;
@@ -134,10 +162,7 @@ pub(crate) fn erf_inv(x: f32) -> f32 {
         p = 1.001_674 + p * w;
         p = 2.832_976_8 + p * w;
     }
-    let mut result = p * x;
-    let err = erf(result) - x;
-    result -= err / (2.0 / PI.sqrt() * (-result * result).exp());
-    result
+    p * x
 }
 
 #[cfg(test)]
@@ -165,6 +190,70 @@ mod tests {
     fn erf_inv_round_trips() {
         for &x in &[-0.9, -0.5, -0.1, 0.1, 0.3, 0.5, 0.8, 0.95] {
             agrees(erf(erf_inv(x)), x as f64, 1e-5);
+        }
+    }
+
+    /// **The inverse is accurate to about two `f32` ulps, and that is now checkable.**
+    ///
+    /// Compared against the f64 kernel, which is four orders of magnitude more accurate than
+    /// `f32` can represent and so serves as the truth here. Measured maximum over this sweep is
+    /// `2.4e-7`; the bound is `3e-7`.
+    ///
+    /// This is the test the Newton step made impossible. While the step was there the function
+    /// was accurate only to `1.9e-6`, and every one of its thirty-four internal mutants sat
+    /// inside that — the step destroyed the seed's precision and then added nothing of its own,
+    /// so no bound could separate a correct coefficient table from a damaged one. Removing it
+    /// improved the function eightfold and made its coefficients observable in the same move.
+    ///
+    /// A relative bound throughout, which is the right measure for an inverse whose range is
+    /// unbounded: near `|p| = 1` the answer is large and a relative claim is the only meaningful
+    /// one, and near zero `erf_inv(p) ≈ p·√π/2` stays well away from zero relative to `p`.
+    #[test]
+    fn the_f32_inverse_is_as_accurate_as_the_format_allows() {
+        let mut worst = 0.0_f64;
+        let mut at = 0.0_f64;
+        for i in 1..4000 {
+            #[allow(clippy::cast_precision_loss)]
+            let p = -0.999_f32 + 2.0 * 0.999_f32 * (i as f32) / 4000.0;
+            if p == 0.0 {
+                continue;
+            }
+            let truth = crate::kernels::erf::erf_inv(f64::from(p));
+            let gap = ((f64::from(erf_inv(p)) - truth) / truth).abs();
+            if gap > worst {
+                worst = gap;
+                at = f64::from(p);
+            }
+        }
+        assert!(
+            worst <= 3e-7,
+            "f32 erf_inv is accurate to {worst:.4e} (worst at p = {at}), budget 3e-7",
+        );
+
+        // The far tail, past the `w >= 5` crossover into the second coefficient table. The
+        // seed is the whole computation out here, since a Newton correction's `e^{-r²}` factor
+        // underflows to zero — which is why removing it changed nothing in this range.
+        for &(lo, hi, bound) in &[
+            (0.9966_f32, 0.99999_f32, 3e-7),
+            (0.99999, 0.999_999_94, 2e-7),
+        ] {
+            for i in 0..=1000 {
+                #[allow(clippy::cast_precision_loss)]
+                let p = lo + (hi - lo) * (i as f32) / 1000.0;
+                if p >= 1.0 {
+                    continue;
+                }
+                let truth = crate::kernels::erf::erf_inv(f64::from(p));
+                let gap = ((f64::from(erf_inv(p)) - truth) / truth).abs();
+                assert!(gap <= bound, "f32 erf_inv at p = {p} is off by {gap:.3e}");
+            }
+        }
+
+        // Both signs, since the seed is applied as `p(w)·x` and the sign rides on `x`.
+        for &p in &[0.5_f32, -0.5, 0.9, -0.9, 0.01, -0.01] {
+            let truth = crate::kernels::erf::erf_inv(f64::from(p));
+            let gap = ((f64::from(erf_inv(p)) - truth) / truth).abs();
+            assert!(gap <= 3e-7, "f32 erf_inv at p = {p} is off by {gap:.3e}");
         }
     }
 

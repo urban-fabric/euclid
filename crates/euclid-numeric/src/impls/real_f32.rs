@@ -459,9 +459,26 @@ impl Real for f32 {
         }
         // The Taylor series is better conditioned than sin(x)/x for small |x|, and avoids
         // the 0/0 form entirely.
+        //
+        // **Two terms, where the f64 body carries four.** This is not an oversight in either
+        // direction: below the `1e-2` crossover `x²` is at most `1e-4`, so the `x⁴/120` term
+        // is at most `8.3e-10` against a result near one — more than seventy times finer than
+        // `f32`'s `6e-8` resolution there, and the `x⁶/5040` term finer still. Carrying them
+        // changed **none of 3000 sampled results** across the branch, measured rather than
+        // argued; they are arithmetic that cannot reach the output.
+        //
+        // They were here because this body began as the f64 body with the type changed, which
+        // is the exact failure `euclid_stability::relation::precision_agrees` is documented to
+        // look for: "a polynomial fitted for f64 can be the wrong polynomial at f32". The two
+        // dead terms were also eight mutants no test could ever kill.
+        //
+        // The third term starts to matter above `|x| ≈ 0.03`. Raising the crossover is a
+        // defensible alternative — it would make every coefficient load-bearing — but it moves
+        // values, and both branches already sit within 1 ulp of the correctly-rounded result,
+        // so there is nothing to buy.
         if f32::abs(self) < 1e-2 {
             let x2 = self * self;
-            return 1.0 - x2 / 6.0 + x2 * x2 / 120.0 - x2 * x2 * x2 / 5040.0;
+            return 1.0 - x2 / 6.0;
         }
         f32::sin(self) / self
     }

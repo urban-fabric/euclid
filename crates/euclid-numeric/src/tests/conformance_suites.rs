@@ -63,9 +63,19 @@ fn both_float_widths_satisfy_the_mask_laws() {
 #[test]
 fn integer_and_natural_carriers_satisfy_the_mask_laws() {
     // The comparison tier is not float-specific, and the integer carriers reach it too.
-    laws::mask_laws(&[0_i64, 1, -1, 7], "i64");
+    //
+    // **All six widths, not a representative sample.** `Compare` is implemented once per
+    // carrier — six hand-written copies of the same eight methods — so a width left out of
+    // this list is a width nothing checks. Mutation testing made that concrete: `u32`,
+    // `u128` and `i128` were absent here and accounted for 62 surviving mutants across
+    // `boolean_impl/unsigned_compare.rs` and `boolean_impl/signed_compare.rs`, while the
+    // three widths named below had none. Adding a carrier to `impls/` means adding it here.
     laws::mask_laws(&[0_i32, 1, -1, 7], "i32");
+    laws::mask_laws(&[0_i64, 1, -1, 7], "i64");
+    laws::mask_laws(&[0_i128, 1, -1, 7], "i128");
+    laws::mask_laws(&[0_u32, 1, 7, 100], "u32");
     laws::mask_laws(&[0_u64, 1, 7, 100], "u64");
+    laws::mask_laws(&[0_u128, 1, 7, 100], "u128");
 }
 
 #[test]

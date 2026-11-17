@@ -160,6 +160,77 @@ exclude_re = [
     'Dimensionless for Factor>::unit -> Self with Default::default\(\)',
     'Temperature for TemperatureKelvin>::absolute_zero -> Self with Default::default\(\)',
 
+    # --- euclid-numeric: the `lcm` zero guard, which the fallthrough duplicates ----
+    #
+    # Both discrete tiers' `lcm` opens `if self == 0 || other == 0 { return 0 }`, and weakening
+    # that `||` to `&&` is undetectable on all six carriers.
+    #
+    # The guard exists for one reason: `gcd(0, 0)` is `0`, so `lcm(0, 0)` would divide by zero
+    # without it. That case still takes the early return under `&&`. Every *mixed* case — one
+    # operand zero, the other not — falls through instead, and computes
+    # `(0 / gcd) * other == 0` or `(self / self) * 0 == 0`, which is the same answer by a
+    # different route. All five zero-involving combinations were enumerated against both
+    # spellings rather than argued from the source.
+    #
+    # The pattern names the operator and the method, and `lcm` contains exactly one `||`, so
+    # nothing else of this shape can hide behind it. The *other* mutations of the same guard are
+    # real and are pinned by `the_u32_carrier_honours_the_natural_contract` and its five
+    # siblings: flipping either `==` to `!=` makes `lcm(4, 6)` return `0` instead of `12`.
+    'replace \|\| with && in <impl Natural for u(32|64|128)>::lcm',
+    'replace \|\| with && in <impl Integer for i(32|64|128)>::lcm',
+
+    # --- euclid-numeric: where `Default` is zero, and zero is the answer ----
+    #
+    # `Element::zero()` returns `0` and `Default::default()` for a machine integer *is* `0`, so
+    # this mutation is the identity on the six discrete carriers. There is no test that could
+    # fail, which is the definition of an equivalent mutant.
+    #
+    # Deliberately narrow: `one()` sits beside `zero()` in every one of these impls and the same
+    # mutation there is a *real* defect, returning `0` where `1` is required. It is pinned by
+    # the discrete-carrier suites, which check `one` as a multiplicative identity (`x · 1 = x`)
+    # rather than against the literal `1` — the formulation that notices.
+    #
+    # Scoped to the carriers actually measured. The float carriers' `zero()` is equivalent by
+    # the same argument, but `impls/real_f64.rs` and `impls/real_f32.rs` have not been through a
+    # run yet, and an exclusion written ahead of the measurement is how a real survivor gets
+    # hidden.
+    'replace <impl Element for (u|i)(32|64|128)>::zero -> Self with Default::default\(\)',
+
+    # --- euclid-numeric: the binomial `min`, which is a cost choice not a correctness one --
+    #
+    # `binomial_u32` reduces `k` with `k.min(n - k)` before the recurrence, and mutating that to
+    # `n + k` is undetectable.
+    #
+    # The reason is that the reduction is an *optimisation*. `binomial_exact` telescopes to
+    # `C(n, k)` for any `k <= n`, and `C(n, k) == C(n, n - k)`, so feeding it either symmetric
+    # half returns the same exact integer — taking the smaller one merely halves the iteration
+    # count. `n + k` always exceeds `k`, so the `min` then selects `k` and the answer is
+    # unchanged.
+    #
+    # What makes it unkillable *here specifically* is the width. The arguments are `u32` widened
+    # into `u128`, so `n + k` cannot overflow and there is no observable consequence left at all.
+    # The identical mutation in `binomial_u128` **is** killable, because there `n + k` can wrap,
+    # and it is pinned by `the_widest_u128_arguments_fall_back_rather_than_wrapping` — which is
+    # why this pattern names the `u32` entry point and not the shared core.
+    'replace - with \+ in binomial_u32',
+
+    # --- euclid-numeric: `sinc`'s crossover, where both branches are already right ----
+    #
+    # `sinc` switches from `sin(x)/x` to a Taylor series below `|x| < 1e-2`, and moving or
+    # narrowing that comparison is undetectable because **both branches are within 1 ulp of the
+    # correctly-rounded result on either side of it**. Measured across 3,000 arguments at each
+    # precision: the series, the direct quotient, and the truth all agree to 1 ulp throughout
+    # the crossover region.
+    #
+    # That is also why the f32 body now carries two Taylor terms where it used to carry four —
+    # see cause 7 in MUTANTS.md. The remaining coefficient (`x²/6`) *is* observable and *is*
+    # pinned, by `sinc_laws` either side of the boundary; only the comparison is free.
+    #
+    # The pattern names the operator and the function. `sinc` contains exactly one `<`, in this
+    # comparison, so nothing else of the shape can hide behind it.
+    'replace < with <= in <impl Real for f(32|64)>::sinc',
+    'replace < with == in <impl Real for f(32|64)>::sinc',
+
     # --- euclid-stability: an environment read with no logic in it ----------
     #
     # `budget::recording()` is `std::env::var_os(RECORD).is_some()` and nothing else, so the only
