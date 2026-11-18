@@ -29,7 +29,7 @@
 //! Gated behind the `conformance` feature, so a consumer pays nothing unless it asks, and always
 //! compiled under `cfg(test)` so this crate's own suites exercise the same code a backend calls.
 //!
-//! The [`generated`] submodule sits behind a **second** feature, `conformance-generated`, which
+//! The `generated` submodule sits behind a **second** feature, `conformance-generated`, which
 //! enables this one and additionally pulls the property engine. The division: these functions
 //! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
 //! the laws should take; the generated search is tooling for locating where a carrier fails

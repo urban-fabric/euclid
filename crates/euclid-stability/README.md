@@ -456,10 +456,8 @@ rather than left as a consequence.
 
 ### 2. References are the half this crate does not have
 
-It finds bad inputs. It has nothing to say about **what the right answer is** — and
-[MUTANTS.md](../../MUTANTS.md)'s first carry-forward lesson is "when deciding whether a mutant is
-equivalent, compute the right answer from an independent source", the step that found all three
-real defects. The most valuable technique the fleet documents has no support here at all.
+The engine finds inputs that violate a property. Accuracy checks need expected
+values from an independent source.
 
 Closing `BETA_EDGEWORTH_MIN` and checking the quantile solvers required independent Python
 `Decimal` references. The earlier tables name their local generator. The newer
@@ -470,9 +468,7 @@ scalar tests and uses MPFR and Decimal.
 - **A generator self-validates before it emits**, against closed forms it shares no code with,
   and exits nonzero otherwise. This is not ceremony: `qref.py` caught a factor-of-two error in
   its own *expected* value that way — `I_x(2,3)` written with `B(2,3)⁻¹ = 6` instead of `12` —
-  before a single reference was taken from it. An unvalidated harness is how
-  [the `erf_inv` investigation nearly ended with the wrong
-  answer](../../MUTANTS.md#6-a-refinement-step-computed-with-a-coarser-instrument-than-the-thing-it-refines).
+  before a single reference was taken from it.
 - **Provenance travels with the value**: what computed it, what it was validated against, at what
   working precision, and *at which exact double*. The last one is not pedantry — the beta's
   density is `≈3568`, so one ulp of `x` is worth `4e-13` of probability, and a reference computed

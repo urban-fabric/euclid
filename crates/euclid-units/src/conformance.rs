@@ -26,7 +26,7 @@
 //! for it, and always compiled under `cfg(test)` so this crate's own suites exercise the same
 //! code a carrier author calls.
 //!
-//! The [`generated`] submodule sits behind a **second** feature, `conformance-generated`, which
+//! The `generated` submodule sits behind a **second** feature, `conformance-generated`, which
 //! enables this one and additionally pulls the property engine. The division: these functions
 //! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
 //! the laws should take; the generated search is tooling for locating where a carrier fails
@@ -773,7 +773,11 @@ pub mod generated {
         });
     }
 
-    /// [`quantity_laws`] — the aggregate — over generated carriers, for a linear carrier.
+    /// [`quantity_laws`] over generated values for a linear carrier.
+    ///
+    /// The associativity check uses the absolute tolerance in the carrier's own unit.
+    /// Account for rounding at the largest generated magnitudes. The reference
+    /// `f64` length carrier uses a tolerance of `1e-9`.
     pub fn quantity_laws_generated<Q>(tolerance: &Q, what: &str)
     where
         Q: Quantity + LinearQuantity + Measure<Repr = f64> + PartialEq + core::fmt::Debug + 'static,

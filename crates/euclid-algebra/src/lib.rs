@@ -32,7 +32,7 @@
 //! That crate owns both backend-neutral scalar contracts and eager `HostReal`/`HostComplex`
 //! traits, alongside native implementations and numerical kernels. It depends on this
 //! algebraic tower; the algebraic tower does not depend on analysis.
-//! The optional `conformance` feature adds the independent property engine.
+//! The optional `conformance-generated` feature adds the independent property engine.
 
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 

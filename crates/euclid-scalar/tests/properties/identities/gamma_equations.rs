@@ -18,7 +18,7 @@
 //! failure. What is new here:
 //!
 //! - **`Γ(x)Γ(1−x) = π/sin(πx)` on the negative axis**, which nothing tested. This is the law
-//!   that pins `Γ` between its poles, where MUTANTS.md records `387` ulp of legitimate spread
+//!   that pins `Γ` between its poles, where the measured spread is `387` ulp
 //!   across the pole structure. The reference compensates for rounding of the angle before
 //!   applying the sine addition identity.
 //! - **`polygamma` at orders above one.** The fixed suite covers `digamma` and `trigamma`; the

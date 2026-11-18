@@ -62,10 +62,8 @@ mod tests {
     ///
     /// `log_ndtr`'s first branch is `(-0.5 * erfc(x/sqrt 2)).ln_1p()`, and replacing that `*`
     /// with `+` survived: the f32 suite tested `log_ndtr(-20)` and nothing above zero, so the
-    /// branch never ran. The f64 peer has the same shape and is covered by a generated property;
-    /// this is the inherited-nothing asymmetry MUTANTS.md records for `Interpolate` and the
-    /// `NormedDivisionAlgebra` tier, in the one family where the branch is only reachable from
-    /// one side of the origin.
+    /// branch never ran. The generated `f64` property exercises the separate double-precision
+    /// implementation.
     ///
     /// It matters for the reason the branch exists: above `x ~ 3.2` in `f32`, `Phi(x)` rounds to
     /// exactly `1` and `ln(Phi(x))` is `0`, losing a log-likelihood that is small but not zero.

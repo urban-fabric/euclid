@@ -175,9 +175,9 @@ fn the_separately_implemented_f32_kernels_agree_across_precisions() {
 
 /// Two kernels whose large budgets are a property of the *metric*, not of the code.
 ///
-/// Both have the structure MUTANTS.md records for `ln_gamma` at 1,514 ulp: a zero or a pole
-/// inside the swept range, where ulp spacing collapses towards zero while the function's
-/// derivative does not. `euclid_stability::numeric::seam_ratio` documents the same effect and
+/// Both have a zero or a pole inside the swept range, where ulp spacing collapses
+/// towards zero even with a large derivative. `euclid_stability::numeric::seam_ratio`
+/// documents the same effect and
 /// divides by an expected step to remove it.
 ///
 /// - `gamma` on the negative axis crosses a pole between every pair of consecutive negative
@@ -207,11 +207,9 @@ fn the_kernels_with_a_zero_in_range_agree_to_their_measured_seam() {
 /// # How this was found, and why the existing sweep missed it
 ///
 /// A full `euclid-scalar` mutation run put **45 survivors in one function** —
-/// `kernels/f32/gamma.rs::ln_rising_factorial`, 45 of that file's 79 — and a cluster that size
-/// in one small function is the design signal [MUTANTS.md](../../../../../../MUTANTS.md) records
-/// twice over. A `panic!()` in the branch and a full-workspace run confirmed the cause: the
-/// integrated-digamma asymptotic, taken when `a > 1e2 && a + n > 1e2`, **was executed by zero
-/// tests**.
+/// `kernels/f32/gamma.rs::ln_rising_factorial`, 45 of that file's 79. A `panic!()` in the
+/// branch and a full-workspace run confirmed that no test reached the integrated-digamma
+/// asymptotic, taken when `a > 1e2 && a + n > 1e2`.
 ///
 /// Two things hid it, and both are generalisable:
 ///

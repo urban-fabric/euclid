@@ -16,9 +16,8 @@
 //!
 //! What a *generated* property adds is not a tighter tolerance but a **wider domain**. The fixed
 //! suite checks five values of `p`; the property below sweeps `1e-300` upward in log space, and
-//! six Newton steps from a bad seed do not converge everywhere. Whether that is enough to reach
-//! the seed is an empirical question this file does not presume to answer — it is measured, and
-//! the answer is recorded in MUTANTS.md rather than assumed here.
+//! six Newton steps from a bad seed do not converge everywhere. The seed also has a direct
+//! accuracy test in the normal kernel.
 //!
 //! # Two identities that are true and untestable, and the saturation behind both
 //!

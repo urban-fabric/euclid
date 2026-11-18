@@ -8,10 +8,8 @@
 //! with a constant** — `0.0`, `1.0`, `-1.0` — in both precisions, across sixteen survivors in
 //! `impls/real_f64_support.rs` and sixteen more in its f32 peer.
 //!
-//! The reason is cause 3 in [MUTANTS.md](../../../../../MUTANTS.md): a surface nothing
-//! instantiates. `real_laws` does not mention any of these five — zero occurrences in
-//! `conformance.rs` — and no test in the workspace called them either. They are the tier *above*
-//! the one the suites exercise, inherited rather than written, and so invisible.
+//! These tests cover the five inherited operations directly. The existing `real_laws` suite
+//! exercises the real-analysis tier.
 //!
 //! It is the same finding as `euclid-algebra`'s `f32_satisfies_the_tower_it_claims`, which
 //! records `div_rem` and `conjugate` being replaceable with `Default::default()` for the same

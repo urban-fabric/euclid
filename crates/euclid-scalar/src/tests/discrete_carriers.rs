@@ -18,13 +18,6 @@
 //! almost every one was at `u32`, `u128`, `i32` or `i128`, while `u64` and `i64` — the widths
 //! [`super::discrete`] and [`super::conformance_suites`] happened to sample — were well pinned.
 //!
-//! That is two of MUTANTS.md's structural causes at once:
-//!
-//! - **cause 1**, a covered body beside uncovered twins: before consolidation only one
-//!   `Natural::gcd` body was reached.
-//! - **cause 3**, a carrier beside the reference one: the same shape as `natural_impl`,
-//!   `integer_impl` and `boolean_impl` appearing in the original survivor census.
-//!
 //! One of those twins had drifted into a genuine defect rather than merely an untested one —
 //! `u128`'s hand-written `binomial`, recorded on
 //! [`binomial_exact`](crate::kernels::host::factorial) and pinned in that module's tests. It is
@@ -33,11 +26,8 @@
 //!
 //! # Where the expectations come from
 //!
-//! Every number in this module is sourced from outside the implementation. A test that reads
-//! its expectation off the code under test asserts only that the code is the code — the
-//! tautology MUTANTS.md records taking three tries to get right, and the trap a reference built
-//! from the kernel's own multiplicative recurrence would have fallen straight into, since it
-//! would have agreed with the off-by-one.
+//! Every expectation comes from an independent source. Using the kernel's
+//! multiplicative recurrence as a reference would have repeated the binomial off-by-one.
 //!
 //! | Operation | Independent source |
 //! |---|---|

@@ -25,7 +25,7 @@
 //! nothing for it, and always compiled under `cfg(test)` so this crate's own suites exercise
 //! the same code a carrier author calls.
 //!
-//! The [`generated`] submodule sits behind a **second** feature, `conformance-generated`, which
+//! The `generated` submodule sits behind a **second** feature, `conformance-generated`, which
 //! enables this one and additionally pulls the property engine. The division: these functions
 //! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
 //! the laws should take; the generated search is tooling for locating where a carrier fails
@@ -609,7 +609,7 @@ where
 /// operations, and "build me one from a number" is not part of being one — `Zp<7>` and a
 /// polynomial ring have nothing in common to build *from*.
 ///
-/// So the carrier supplies its own generator, through [`generated::GeneratedSample`]. That is
+/// So the carrier supplies its own generator through `generated::GeneratedSample`. That is
 /// the same
 /// division of labour [`ConformanceSample`] already uses, with a generator in place of a list.
 ///

@@ -156,10 +156,8 @@ mod tests {
 
     /// The upper quantile needs the symmetric route, and `ndtri_lower` alone will not do near 1.
     ///
-    /// Found by the differential harness above, after MUTANTS.md had filed
-    /// `replace > with == in ndtri` as an equivalent mutant on the argument that `ndtri_lower`
-    /// solves correctly for `p > 0.5` too. It does, until it does not: at `p = 1 - ulp(1)` the
-    /// direct solve returns `8.1824` where the answer is `8.2095`, wrong in the second decimal.
+    /// At `p = 1 - ulp(1)`, a direct solve through `ndtri_lower` returns about `8.1824`.
+    /// The symmetric route returns about `8.2095`.
     ///
     /// The reason is the one `log_ndtr`'s upper branch exists for. Newton's residual is
     /// `ln Phi(x) - ln p`, and near `x = 8.2` both terms are about `-1e-16`, so the residual is
@@ -349,11 +347,8 @@ mod tests {
 
     /// `tail_start_from_log` must be a *good* seed, which nothing checked because Newton hides it.
     ///
-    /// Eleven mutants lived in this five-line function and every one of them survived the whole
-    /// workspace suite. They are [cause 8](../../../MUTANTS.md): the output cannot see the seed,
-    /// because six Newton steps on `ln Phi(x) = ln p` converge from a guess that is merely in the
-    /// right region, so perturbing the asymptotic inversion — `*` to `/`, `-` to `+`, `/` to `%`
-    /// — changes which point the iteration starts from and not where it ends.
+    /// Six Newton steps on `ln Phi(x) = ln p` can converge from a rough guess in the
+    /// right region. Checking the final quantile can therefore miss an inaccurate seed.
     ///
     /// A generated property was tried first and killed none of them, which is the useful part of
     /// the record: it swept `p` from `1e-300` in log space with a `1e-14` bound on the round

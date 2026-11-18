@@ -19,16 +19,11 @@ rather than a push:
   nothing else, because a pinned consumer has exactly one question
 - a release is a tag, cut after the merge — see [Releasing](#releasing)
 
-**Not 1.0, and not soon.** 1.0 is a promise that the surface will not break
-without a major bump, and two things have to close first: `euclid-matrix`'s
-twelve traits have never been executed by any carrier (no tensor exists here to
-satisfy them, and the boundary forbids shipping one), and the generated half of
-the conformance strategy is still internal to this repository. Pinning works
-today and is the point; 1.0 is a separate claim.
-
-`euclid-quantity`'s 270 undocumented public items were the third, and are
-written — `missing_docs` is now denied with no crate-wide exception anywhere in
-the workspace.
+**1.0 is a separate commitment.** It promises a compatible public surface
+until the next major version. The matrix conformance laws still need to run
+against a downstream tensor carrier. Euclid exposes generated conformance laws
+through the `conformance-generated` feature and requires documentation for
+public items across the workspace.
 
 ## Version Control: Jujutsu
 
@@ -157,129 +152,7 @@ worth knowing before a dependency change:
 
 It needs the advisory database, so it is the one check that wants a network.
 
-## The Seventh Check, Run Deliberately: `cargo mutants`
-
-The six above ask whether the code passes its tests. **`cargo mutants` asks the
-question underneath: would the tests notice if the code were wrong?** It changes
-one function body at a time — a `+` to a `-`, a return value to a default — and
-re-runs the suite. A mutant the suite still passes is a line nothing is pinning.
-
-That is a different instrument from coverage, and the difference is not academic.
-`euclid-stability`'s `compensated_sum` was executed by three tests and pinned by
-none of them: they asserted a *band* on a derived condition number, so the sign of
-the Kahan correction could be flipped and all 1,169 workspace tests stayed green.
-Coverage called that function covered, and it was. It simply was not checked.
-
-A full run takes hours. Enumerate with `cargo mutants --workspace --list` and keep each
-shard's report on the same immutable revision and toolchain. Set `wrapper` to the absolute
-path of the local fixture-isolation `mutants.py` and run from the repository root.
-
-```sh
-revision=$(git rev-parse HEAD)
-mkdir -p target/mutation-audits
-audit=$(mktemp -d "$PWD/target/mutation-audits/full.XXXXXX")
-mkdir -p "$audit/checkout/.audit-tools" "$audit/tmp"
-git archive "$revision" | tar -x -C "$audit/checkout"
-cp "$wrapper" "$audit/checkout/.audit-tools/mutants.py"
-printf '%s\n' "$revision" > "$audit/revision"
-
-(
-    cd "$audit/checkout" || exit 1
-    TMPDIR="$audit/tmp" CARGO_INCREMENTAL=1 CARGO_PROFILE_TEST_DEBUG=0 \
-        python3 -B .audit-tools/mutants.py --workspace --jobs 4 \
-        --shard 1/8 --output "$audit/shard-1"
-)
-```
-
-Use `--shard 2/8` through `8/8` with distinct output directories. Omit the shard option
-for one report covering the whole workspace. For a focused run, select `-p euclid-stability`,
-`-f crates/euclid-scalar/src/kernels/gamma.rs`, or `--in-diff` with a saved diff.
-Each mutant uses the all-features workspace suite by default.
-
-To audit a helper without exclusions or unrelated property searches, pair the mutated
-source file with the helper's unit-test module. For example, from an isolated audit checkout:
-
-```sh
-cargo mutants --no-config --all-features --test-workspace false -p euclid-scalar \
-    -f crates/euclid-scalar/src/math/continued_fraction.rs \
-    -- math::continued_fraction::tests
-```
-
-The scoped run checks the helper's own contract. Follow it with a workspace run to
-check how the helper is used by its callers. For shared scalar steps, use direct
-boundary cases for comparisons and exact identities where the expected value is representable.
-Keep distribution and precision-specific thresholds with their callers.
-Write algebraic steps against the narrowest scalar trait that supplies their operations so
-they can also be used by expression carriers. Document the validity range and truncation
-error when using an approximation. Check floating-point rounding separately from the
-algebraic identity with exact rationals, closed forms, or a higher-precision reference.
-
-cargo-mutants reuses worker checkouts. The wrapper restores regression tapes and accuracy
-budgets before and after each scenario so a failing mutant's saved fixtures cannot affect
-the next one. Use fresh worker copies for each measured scenario if the wrapper is unavailable.
-Use a scratch filesystem that can hold the workers' build outputs. Preserve each report
-before running again with the same output path because cargo-mutants rotates the previous report.
-Use `--iterate` on the same revision, toolchain, shard and output path to resume. It skips
-previously caught and unviable mutants. Keep those outcomes and reconcile their union with the
-original catalog to track coverage.
-
-### Diagnose timeouts
-
-Each report keeps timeouts in `mutants.out/timeout.txt`, separately from survivors in
-`missed.txt`. Use `outcomes.json` to identify the phase and saved patch for each timeout.
-
-```sh
-report="$audit/shard-1/mutants.out"
-jq -r '.outcomes[] | select(.summary == "Timeout") |
-    [.scenario.Mutant.name,
-     (.phase_results | map(select(.process_status == "Timeout") | .phase) | join(",")),
-     .scenario.Mutant.file,
-     .diff_path] | @tsv' "$report/outcomes.json"
-```
-
-For a test-phase timeout, set `source_path` and `diff_path` from the row for the mutant. First
-run the unmodified tests with Nextest's `mutation-replay` profile on an otherwise idle machine
-to check the per-test limit. Apply the patch in that fresh checkout and repeat. Nextest reports
-the names of tests that time out and assertions that fail. Use a fresh checkout for each replay.
-
-```sh
-profile="$PWD/.config/nextest.toml"
-replay=$(mktemp -d "$audit/timeout.XXXXXX")
-git archive "$(cat "$audit/revision")" | tar -x -C "$replay"
-(
-    cd "$replay" || exit 1
-    cargo nextest run --config-file "$profile" -P mutation-replay --workspace --all-features \
-        --no-fail-fast || exit 1
-    patch --batch --forward "$source_path" < "$report/$diff_path" || exit 1
-    cargo nextest run --config-file "$profile" -P mutation-replay --workspace --all-features \
-        --no-fail-fast
-)
-```
-
-For a build-phase timeout, use the build command and log in `outcomes.json` and replay
-with a longer build deadline. A timeout that reproduces only with a mutation is evidence
-of a progress or performance regression. Keep that outcome distinct from an assertion
-failure and from a surviving mutant.
-
-Configuration lives in **`.cargo/mutants.toml`**, and that path is not a
-preference — it is the only location cargo-mutants reads. A `mutants.toml` at the
-repository root is *silently ignored*: the run looks normal and simply applies none
-of the exclusions. Pass `--config` if you ever need it elsewhere.
-
-The current `exclude_re` list is empty. Prefer a direct test of the affected rule or a
-simpler expression whose behavior is easier to verify. If an equivalent substitution needs
-an exclusion, put a regex in `.cargo/mutants.toml` that names the exact operator and function.
-Record the invariant that makes the substitution equivalent. This keeps future changes to
-the same function visible.
-
-The current survivor list, the diagnosis behind each cluster, and what closing it needs are
-tracked in **[MUTANTS.md](MUTANTS.md)** rather than re-derived from a report each time. Most of
-what survives is one or two structural causes repeated, which a list of line numbers hides.
-
-A surviving mutant can indicate a missing assertion or an equivalent substitution. Check
-reachability and mathematical invariants, then test distinguishing inputs with an independent
-reference. Keep reusable reference generators alongside the tests they support. A differential
-check should detect known defects as well as reproduce the expected result on the original code.
+## Property and numerical tests
 
 ### Organizing property tests
 
@@ -335,9 +208,6 @@ counterexample did not reproduce the same case and failure` instead of the law t
 flake that passes in isolation and fails in the full-workspace run. Both `vacuity.rs` files hold
 one `Mutex` across either kind of body; copy that if you add a third.
 
-Use the isolated mutation workflow above with
-`-f crates/euclid-stability/src/runner/failure.rs` to measure failure handling.
-
 ### Reference values come from a committed generator
 
 An accuracy test needs something to be accurate *against*, and for the special functions that
@@ -356,9 +226,7 @@ Three rules, each paid for:
 - **It validates itself before it emits, and exits non-zero otherwise.** Against closed forms it
   shares no code with — `I_x(1,1) = x`, `I_x(a,1) = xᵃ`, `Γ(n) = (n−1)!`, and so on. This is not
   ceremony: the `I_x(2,3)` expectation was first written with `B(2,3)⁻¹ = 6` instead of `12`, and
-  the check caught it before any reference was taken from the harness. MUTANTS.md records an
-  investigation that nearly concluded the opposite of the truth because its harness reimplemented
-  the thing it was meant to be independent of.
+  the check caught it before any reference was taken from the harness.
 - **The table names its generator and the command that reproduces it.** Byte-for-byte: the
   emitter prints Rust rows, so regenerating and pasting should produce no diff.
 - **Provenance includes the exact argument.** Evaluate the reference at `Decimal(x)` for the
@@ -439,12 +307,13 @@ A release is a **tag**, and consumers pin it. Three steps, in this order:
    written a week later is an entry written from the diff.
 3. **Merge, then tag.** The tag goes on `main` *after* the squash merge, not on
    your local commit — the squash creates a new commit that does not exist until
-   the merge, so a tag cut beforehand points at something that never lands:
+   the merge. After fetching, confirm `origin/main` is the reviewed squash-merge
+   commit before tagging it.
 
    ```sh
-   jj git fetch
-   jj bookmark set v0.6.0 -r main@origin   # or: git tag v0.6.0 origin/main
-   jj git push --bookmark v0.6.0
+   jj git fetch --remote origin
+   git tag -a v0.6.0 origin/main -m "Euclid 0.6.0"
+   git push origin refs/tags/v0.6.0
    ```
 
    Getting this backwards is the one mistake the ordering exists to prevent, and
@@ -461,27 +330,16 @@ euclid is **layer 1** of a stratified fleet — see
 [euclid is layer 1](README.md#euclid-is-layer-1) for the map.
 
 Being the floor means a breaking change here is the most expensive kind that
-exists in the fleet: it is the only one every other repository has to absorb, and
-they have to absorb it *in layer order*, because cargo resolves one version of a
-package per build graph. Nothing above can move until everything below it has.
+exists in the fleet. Migrate in layer order so crates that exchange Euclid
+types share the same tag. Cargo can resolve multiple refs, each with its own
+type and trait identities.
 
-**That is six sequential migrations**, on the current graph — layer 2 (`bayes`,
-`hausdorff`, `cayley`), then `abel`, then `sierpinski` and `galois`, then
-`dirichlet` and `weierstrass`, then `cantor`. Not six repositories; six *waves*,
-each of which cannot start until the previous one lands.
+Start with direct consumers such as `bayes`, `hausdorff`, and `cayley`.
+Then migrate their dependents and check each build graph with
+`cargo tree --duplicates`.
 
-The current chain is not hypothetical. `galois` is pinned to euclid `0.3.0` and
-its own manifest records the migration as "blocked outside this repository":
-`hausdorff-base` requires `^0.3.0`, so bumping `galois` alone fails resolution on
-hausdorff's requirement rather than on its own. That is the layering working as
-intended — the failure is loud and at the bottom — but it means a euclid release
-is the start of a multi-repository sequence rather than an event.
-
-The practical consequence for this repository: **prefer additive change, and
-batch what must break.** Two breaking releases cost the fleet two six-wave
-propagations; one release carrying both costs it one. That asymmetry is the
-strongest argument available for holding a breaking change back until there is
-another to travel with it.
+Prefer additive changes and batch breaking changes that can ship together.
+Each breaking release requires another migration pass through its dependents.
 
 ### No CHANGELOG — RELEASES is not one
 

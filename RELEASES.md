@@ -159,6 +159,16 @@ interval bounds can now have a finite midpoint, and opposite-sign bounds can hav
 radius even when their full width overflows. Point midpoints preserve the smallest subnormal
 when both positions are equal to it.
 
+**Several scalar kernels change results near floating-point boundaries.** `Real::ldexp`
+rounds once into the subnormal range. `Real::ln_exp_m1` preserves the small result near
+`ln(2)`, and the `f64` exponential integral `Real::exp_int_ei` preserves finite results past
+the overflow point of plain exponentiation. For example, `exp_int_ei(710.0)` is about
+`3.1509156882062014e305`.
+
+**`euclid_utils::assert_exact` now compares bits.** Opposite signs of zero compare unequal.
+NaNs with identical bits compare equal. The endpoints returned by `sweep` also preserve
+their original bits, including the sign of zero.
+
 ## 0.5.0
 
 **`euclid-property` is now `euclid-stability`.** Rename the dependency and the import

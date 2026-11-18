@@ -97,9 +97,8 @@ fn midpoint_does_not_overflow_on_opposite_extremes() {
 /// `Interpolate` at `f32`, which is a **separate body** and was riding along untested.
 ///
 /// Three mutants lived here: `midpoint` replaceable with `Default::default()`, and `lerp`'s
-/// subtraction replaceable with an addition. The test above covers `f64` only, and the f32 impl
-/// is its own `impl` block — cause 3 in [MUTANTS.md](../../../../../MUTANTS.md), the same reason
-/// the `NormedDivisionAlgebra` tier and the f32 rising factorial went unchecked.
+/// subtraction replaceable with an addition. The test above exercises `f64`, while `f32`
+/// has its own implementation.
 ///
 /// `lerp` is `self + (target − self) · t`, so the endpoints and the halfway point are what pin
 /// the sign: with `−` flipped to `+`, `lerp(a, b, 1)` becomes `a + (b + a)` rather than `b`.

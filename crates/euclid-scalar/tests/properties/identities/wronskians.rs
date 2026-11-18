@@ -20,10 +20,6 @@
 //!   identity (see below), so the check runs out to `1e12` and `1e15` where nothing has ever
 //!   been transcribed.
 //!
-//! This family had **no generated property at all** before this file: 8 Airy and 14 Bessel
-//! methods on `Real`, none of them named in any property. `kernels/airy*` holds 1,060 mutants
-//! and MUTANTS.md did not mention Airy once.
-//!
 //! # The exponentials cancel, which is what makes the scaled forms usable here
 //!
 //! The scaled variants are defined with reciprocal factors —
@@ -34,9 +30,8 @@
 //! Aiᵉ·Biᵉ′ − Aiᵉ′·Biᵉ = e^{ζ}Ai·e^{−ζ}Bi′ − e^{ζ}Ai′·e^{−ζ}Bi = Ai·Bi′ − Ai′·Bi = 1/π
 //! ```
 //!
-//! The scaled identity is therefore the *same* identity, with no overflow anywhere — and it
-//! pins the scaled family, which is a parallel implementation and so exactly the shape
-//! MUTANTS.md records as its worst-performing cause.
+//! The exponential factors cancel, so the same identity exercises the separate scaled
+//! implementation without overflow across the tested range.
 //!
 //! # Where the tolerances come from
 //!
@@ -190,9 +185,8 @@ property! {
     /// pointwise only while their phase can be resolved, which the trait documents as failing
     /// near `1e11`. Measured, the residual is `5.9e-16` to `1e8` and `9.9e-12` by `1.2e11`.
     ///
-    /// Stopping at `1e8` is the choice MUTANTS.md's fourth carry-forward warns about — a sweep
-    /// that ends at a round number — so the reason is recorded rather than implied: past here
-    /// the identity would still hold mathematically while the kernel stops claiming to.
+    /// The test stops at `1e8` to stay in the range where the measured residual supports
+    /// the tolerance below.
     fn the_bessel_jy_wronskian_is_minus_two_over_pi_x(
         x in generate::float::in_range(1e-8, 1e8),
     ) {

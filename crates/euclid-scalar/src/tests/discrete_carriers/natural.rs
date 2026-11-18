@@ -23,10 +23,7 @@ where
 
     // --- the identities, from their algebraic definitions ------------------------------
     //
-    // `one` is checked as a *multiplicative identity* rather than against the literal `1`,
-    // which is what makes `one() -> Default::default()` fail: zero is not one. The
-    // corresponding `zero() -> Default::default()` is unkillable and excluded in
-    // `.cargo/mutants.toml` — `Default` for an unsigned integer *is* zero.
+    // Multiplying a nonzero value by `one()` catches an identity that returns zero.
     assert_eq!(n(7) + N::zero(), n(7), "{what}: x + 0 = x");
     assert_eq!(n(7) * N::one(), n(7), "{what}: x · 1 = x");
     assert_eq!(n(7) * N::zero(), N::zero(), "{what}: x · 0 = 0");

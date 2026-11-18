@@ -37,7 +37,7 @@
 //! Gated behind the `conformance` feature, so a consumer pays nothing unless it asks, and always
 //! compiled under `cfg(test)` so this crate's own suites exercise the same code a carrier calls.
 //!
-//! The [`generated`] submodule sits behind a **second** feature, `conformance-generated`, which
+//! The `generated` submodule sits behind a **second** feature, `conformance-generated`, which
 //! enables this one and additionally pulls the property engine. The division: these functions
 //! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
 //! the laws should take; the generated search is tooling for locating where a carrier fails
@@ -260,10 +260,9 @@ where
 ///
 /// # Sample requirements
 ///
-/// Values must be **finite** and **strictly positive** — the logarithm laws need `x > 0`, and
-/// the trig laws stay on the principal branch, so keep values in `(0, π/2)` if you want
-/// `atan(tan(x))` exercised. Include `1` and a value either side of it: that is where series
-/// crossovers live.
+/// Use values in `(0, π/2)`. The logarithm laws require positive inputs, and
+/// `atan(tan(x))` requires inputs on the principal branch. Include `1` and a value
+/// on either side to exercise series crossovers.
 pub fn real_laws<T>(xs: &[T], tolerance: f64, what: &str)
 where
     T: Real + PartialEq + core::fmt::Debug,
@@ -373,10 +372,9 @@ where
 /// literal and cannot be compared, so generating values that way would produce a sample the laws
 /// cannot evaluate.
 ///
-/// So the carrier supplies its own generator through [`generated::GeneratedSample`], and in doing
-/// so decides
-/// which of its values are legal to generate. That is the same division of labour
-/// [`ConformanceSample`] already uses, with a generator in place of a list.
+/// Implement `generated::GeneratedSample` on your carrier to supply values for the
+/// generated laws. The primitive carriers' test fixtures are crate-local. To check a
+/// primitive from another crate, supply your samples to the slice-taking laws.
 ///
 /// # What generation reaches that a fixed sample does not
 ///
@@ -399,9 +397,8 @@ pub mod generated {
     /// A carrier's own generator, declared once — the generated peer of
     /// [`ConformanceSample`](super::ConformanceSample).
     ///
-    /// Must honour the same sample requirements the slice-taking laws state: for
-    /// [`super::real_laws`] that means **finite and strictly positive**, since the
-    /// logarithm laws need `x > 0`, and values near `1` where the series crossovers live.
+    /// Follow the sample requirements of the slice-taking laws. For [`super::real_laws`],
+    /// generate values in `(0, π/2)`, including values near `1` to exercise series crossovers.
     pub trait GeneratedSample: Sized {
         /// Values to draw from.
         fn generator() -> Gen<Self>;

@@ -7,8 +7,8 @@
 //! Two of these exist because of a defect rather than a gap.
 //! `exactness_holds_wherever_the_answer_is_representable` pins the off-by-one that an `f64`
 //! accumulator produced inside the range the docs promised was exact, and
-//! `the_f32_companion_switches_branches_at_small` pins which side of `SMALL` each argument
-//! falls on — see MUTANTS.md.
+//! `the_f32_companion_switches_branches_at_small` checks the branch selected on each side of
+//! `SMALL`.
 
 use super::*;
 

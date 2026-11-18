@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Value tests over the dimension-contract web.
 //!
-//! The contract impls in the sibling modules compiling at all is the structural proof that
+//! Compiling the unit contract impls establishes that
 //! euclid-quantity's primary units form a coherent implementor set for euclid's mutually recursive
 //! contracts. These tests pin the *arithmetic*: that each `times_*`/`per_*` lands in the right
 //! unit with the right magnitude, that the bespoke relations (roots, reciprocals, trig) are

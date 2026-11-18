@@ -1,7 +1,8 @@
 # rust
 target/
 
-# cargo-mutants
+# local mutation investigations
+/.mutation-investigations/
 mutants.out
 mutants.out.old
 

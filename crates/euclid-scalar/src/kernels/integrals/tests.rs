@@ -334,10 +334,8 @@ fn every_crossover_leaves_no_step_at_ulp_resolution() {
 
 /// Knuth's two-sum, pinned by its defining identity rather than through a caller.
 ///
-/// This is the shape that made `.cargo/mutants.toml` exist, found again. All three of
-/// `two_sum`'s mutations survived the suite — `a + b` to `a - b`, to `a * b`, and the residual's
-/// `+` to `*` — because the function is **self-correcting in its total**: whatever the primary
-/// sum becomes, the residual absorbs the difference and `s + e` still reconstructs `a + b`. At
+/// A broken decomposition can still reconstruct the sum. If the primary sum changes
+/// from `a + b` to `a - b`, the residual can absorb the difference. At
 /// `(0.1, 0.2)` the mutated pair is `s = -0.1, e = 0.4` against the real `s = 0.30000000000000004,
 /// e = -2.78e-17`, and every downstream caller adds the two straight back together, so a test
 /// that checks only a sum cannot see it.

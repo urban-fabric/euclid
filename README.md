@@ -443,17 +443,11 @@ be.
 
 ### One ref per build graph
 
-Worth knowing before you bump, because it makes a euclid upgrade a *chain*
-rather than an independent edit. Cargo resolves one version of a package per
-build graph, so two crates in the same graph cannot pin different euclid tags —
-if your dependency also depends on euclid, you both move together.
-
-That is not a flaw to route around; it is the property that keeps the fleet
-honest, since two halves of one binary computing against two definitions of a
-length is precisely what euclid exists to prevent. The practical consequence is
-that an upgrade starts at the bottom: a consumer pinned to `^0.3` blocks
-everything above it until it moves, and bumping the top alone fails resolution
-on the requirement underneath rather than quietly tracking a reshaped surface.
+Pin the same Euclid tag throughout a dependency graph. Cargo can resolve
+multiple Git refs in one build, where each ref supplies distinct trait and type
+identities. A quantity or carrier from one ref cannot satisfy the corresponding
+type or trait from another. Upgrade the dependencies that expose Euclid types
+first, and check for duplicate Euclid packages with `cargo tree --duplicates`.
 
 ### euclid is layer 1
 

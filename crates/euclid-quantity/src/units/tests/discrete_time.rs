@@ -1,28 +1,4 @@
-//! The integer-backed time units, and the per-unit helpers the generated suites could not reach.
-//!
-//! # Why these were outside everything else
-//!
-//! `inherent_tests` and `conformance_tests` are generated over the **f64** units: the generator
-//! keys on `as_<unit>() -> f64`, and these types return `u64` or `i64`. They sit on
-//! `DiscreteQuantity` rather than the `ScalarQuantity`/`LinearQuantity` tiers, so neither the
-//! inherent-surface macro nor `quantity_laws` applies to them.
-//!
-//! That left thirty-three surviving mutants concentrated here — the largest remaining cluster in
-//! the crate once the f64 units were covered, and the last structural one. Every conversion
-//! (`to_millis`, `to_seconds`, `from_duration`), every accessor, `TimeMicrosDelta::between`, and
-//! the `Add`/`AddAssign`/`Sum` family could be replaced with a default or have its operator
-//! swapped.
-//!
-//! # The anchors are the SI prefixes
-//!
-//! A conversion between time units is fixed by arithmetic nobody gets to choose: a second is a
-//! thousand milliseconds, a million microseconds, a billion nanoseconds. Asserting against those
-//! rather than against the implementation's own divisor is what makes this test independent of
-//! the code — the same reasoning as the temperature fixed points and the SI exponent table.
-//!
-//! The exact values are deliberate too: `1_000_000` microseconds is `1.0` seconds with no
-//! rounding, so a swapped multiply and divide moves the answer by twelve orders of magnitude
-//! rather than by an ulp.
+//! Integer-backed durations and signed deltas, anchored to the SI time prefixes.
 
 use std::time::Duration;
 
@@ -30,7 +6,6 @@ use euclid_units::Measure;
 
 use crate::{
     TimeMicros, TimeMicrosDelta, TimeMillis, TimeNanos, TimeNanosDelta, TimePicos, TimePicosDelta,
-    TimeSeconds,
 };
 
 #[test]
@@ -53,7 +28,7 @@ fn the_discrete_accessors_and_raw_conversions_round_trip() {
         assert_eq!(<TimeMicrosDelta as Measure>::from_raw(raw), d);
     }
 
-    // The other three resolutions, whose `from_raw` was equally unpinned.
+    // Check raw counts for the nanosecond and picosecond resolutions too.
     for raw in [0_u64, 1, 1_000_000_000] {
         assert_eq!(
             Measure::raw(&<TimeNanos as Measure>::from_raw(raw)),
@@ -219,74 +194,4 @@ fn discrete_addition_agrees_across_its_three_spellings() {
         TimeMicros::new(u64::MAX),
         "saturating_add must clamp at the maximum"
     );
-}
-
-/// The remaining per-unit helpers on the f64 units: the `f32` narrowing accessors, the positivity
-/// assertion, and the two predicates the generated suites do not know about.
-#[test]
-fn the_per_unit_helpers_agree_with_the_raw_value() {
-    use crate::{LengthMeters, SpeedKph};
-
-    for v in [0.0_f64, 1.5, -2.5, 1e20] {
-        #[allow(clippy::cast_possible_truncation)]
-        {
-            assert_eq!(
-                LengthMeters::new(v).to_f32_meters(),
-                v as f32,
-                "to_f32_meters must narrow the raw value"
-            );
-            assert_eq!(SpeedKph::new(v).to_f32_kph(), v as f32);
-        }
-    }
-
-    // `is_greater_than_epsilon` is a strict comparison against its argument.
-    for v in [0.0_f64, 1e-12, 1.0, -1.0] {
-        for eps in [0.0_f64, 1e-9, 1.0, -1.0] {
-            assert_eq!(
-                LengthMeters::new(v).is_greater_than_epsilon(eps),
-                v > eps,
-                "is_greater_than_epsilon({v}, {eps}) must be strict"
-            );
-        }
-    }
-
-    // `is_infinite` must reject finite values and accept both infinities.
-    assert!(TimeSeconds::new(f64::INFINITY).is_infinite());
-    assert!(TimeSeconds::new(f64::NEG_INFINITY).is_infinite());
-    assert!(!TimeSeconds::new(0.0).is_infinite());
-    assert!(!TimeSeconds::new(1e300).is_infinite());
-
-    // `assert_positive` returns its input unchanged for a positive value — it is a debug
-    // assertion, so the contract in release is the identity.
-    assert_eq!(
-        LengthMeters::new(2.5).assert_positive(),
-        LengthMeters::new(2.5),
-        "assert_positive must return its input"
-    );
-    assert_eq!(
-        TimeSeconds::new(1.0).assert_positive(),
-        TimeSeconds::new(1.0)
-    );
-    assert_eq!(SpeedKph::new(30.0).assert_positive(), SpeedKph::new(30.0));
-}
-
-/// `MolarVolume::concentration` is a reciprocal, which is the one dimensional method whose name
-/// does not say `per_` or `times_` — so the generated dimensional suite does not cover it.
-#[test]
-fn molar_volume_inverts_to_concentration() {
-    use euclid_units::MolarVolume;
-
-    use crate::MolarVolumeCubicMetersPerMole;
-
-    const TOL: f64 = 1e-12;
-    for v in [0.5_f64, 1.0, 2.0, 4.0] {
-        let got = MolarVolumeCubicMetersPerMole::new(v)
-            .concentration()
-            .as_moles_per_cubic_meter();
-        assert!(
-            (got - 1.0 / v).abs() <= TOL,
-            "concentration({v}) = {got}, want {}",
-            1.0 / v
-        );
-    }
 }

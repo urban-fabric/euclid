@@ -551,10 +551,8 @@ fn the_real_laws_reject_an_error_that_only_just_exceeds_the_tolerance() {
 ///
 /// `Faulty<2000>` rounds `trunc` **down to an even integer**. That is idempotent, so every law
 /// the suite states still holds and the real suite accepts it — while `trunc(floor(1.5))` is
-/// `trunc(1)` is `0`, not `1`, so the mutated suite rejects it. Catching the mutant means
-/// asserting the *acceptance*, which is the direction MUTANTS.md flagged as the delicate one:
-/// "killing them needs a carrier that satisfies every law — otherwise the rejection test passes
-/// with and without the mutant and nothing is learned".
+/// `trunc(1)` is `0`, not `1`, so the altered suite rejects it. Assert acceptance of the
+/// lawful carrier to catch a check that imposes a stronger rule than the contract.
 #[test]
 fn the_real_laws_accept_a_lawful_carrier_whose_trunc_is_unusual() {
     // The premise: this carrier's `trunc` really is both idempotent and not the identity on

@@ -16,8 +16,7 @@
 //! `impls/real_f32.rs` was the largest single survivor file in the crate, and the residue after
 //! the cross-precision pass was concentrated exactly here: `sinc` 22, `ln_sub_exp` 15,
 //! `sin_cos_degrees` 11, `hypot3` 6, `two_product` 5, and a tail across the log-domain
-//! composites. That is MUTANTS.md's cause 1 — a covered body beside an uncovered twin — with the
-//! `f64` body being the covered one.
+//! composites. The existing assertions exercised the separate `f64` implementation.
 //!
 //! # Why these need values rather than budgets
 //!

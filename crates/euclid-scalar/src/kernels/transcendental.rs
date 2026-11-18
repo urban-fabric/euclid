@@ -43,9 +43,7 @@ const W_STEPS: u32 = 60;
 /// So these sixteen survivors are genuinely unreachable from outside, and the measurement says
 /// why: the Taylor branch is carried to `x = 3`, far past where `x − x² + 3x³/2` is a useful
 /// approximation, and `W_STEPS = 60` is generous enough to absorb the difference. Narrowing that
-/// regime — the large-`x` form is already better by `x ≈ 1` — would both save the iterations and
-/// make the seed observable. That is a change to the kernel on cost grounds rather than
-/// correctness, so it is recorded in MUTANTS.md rather than made here.
+/// regime could reduce iterations. The large-`x` form gives a closer seed by `x ≈ 1`.
 fn lambert_seed(x: f64) -> f64 {
     if x < NEG_INV_E + 1e-3 {
         // Branch-point series: p = sqrt(2(1 + e x)).

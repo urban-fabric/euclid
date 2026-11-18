@@ -23,8 +23,7 @@
 //! any error the pair share. Measured at `f32` it reports a residual of `5.0e-7` for a function
 //! whose true error was `1.9e-6`, nearly four times larger.
 //!
-//! What that gap was hiding is recorded on
-//! [`erf_inv`](crate::kernels::erf::f32) and as cause 6 in MUTANTS.md: the Newton step was making
+//! In [`erf_inv`](crate::kernels::erf::f32), the Newton step was making
 //! the f32 kernel **eight times less accurate** than its bare seed, because it divided `erf`'s own
 //! f32 error by a vanishing derivative. The thirty-four survivors were not reporting untestable
 //! coefficients behind a correct correction; they were reporting that the correction had destroyed
