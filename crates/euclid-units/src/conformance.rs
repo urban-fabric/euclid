@@ -26,6 +26,12 @@
 //! for it, and always compiled under `cfg(test)` so this crate's own suites exercise the same
 //! code a carrier author calls.
 //!
+//! The `generated` submodule sits behind a **second** feature, `conformance-generated`, which
+//! enables this one and additionally pulls the property engine. The division: these functions
+//! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
+//! the laws should take; the generated search is tooling for locating where a carrier fails
+//! them, and costs a dependency.
+//!
 //! These docs are the module's own (`//!`), with no outer `///` on the `mod` declaration: the
 //! two forms are concatenated, and an outer comment resolves intra-doc links in the *parent's*
 //! scope, so a link to a function in here would silently fail from there.
@@ -36,7 +42,7 @@
 //! holds, which is a property of your sample rather than of the contract. Four or five values
 //! including a zero and a negative is plenty; the three-operand laws run over every triple.
 
-use euclid_numeric::{Element, Real};
+use euclid_scalar::{Element, Real};
 
 use crate::{DiscreteQuantity, LinearQuantity, Mask, Measure, Quantity, ScalarQuantity};
 
@@ -95,7 +101,7 @@ where
 pub fn discrete_laws_for<Q>(what: &str)
 where
     Q: DiscreteQuantity + ConformanceSample + PartialEq + core::fmt::Debug + Clone,
-    Q::Repr: euclid_numeric::Semiring,
+    Q::Repr: euclid_scalar::Semiring,
 {
     discrete_laws(&Q::sample(), what);
 }
@@ -123,6 +129,287 @@ where
             "{what}: raw(from_raw(v)) must be v"
         );
     }
+}
+
+/// The **operator bridge**: a carrier's `+`, `-`, `+=`, `-=`, `-` and `sum` must agree with the
+/// trait methods they abbreviate.
+///
+/// # Why this is a separate suite
+///
+/// [`LinearQuantity`] supplies `add`, `sub` and `neg` as **default bodies**, so one body serves
+/// every carrier in every consuming crate -- which is exactly what [`quantity_laws`] checks, and
+/// checking it once is enough. The operators are the other half, and they are not: each carrier
+/// writes `impl Add for Length`, `impl AddAssign for Length`, `impl Neg for Length` out by hand,
+/// so there are as many implementations as there are units and nothing tied them to the trait.
+///
+/// Mutation testing measured the gap in `euclid-quantity`: roughly 300 surviving mutants across
+/// `Add`, `Sub`, `Neg`, `AddAssign` and `SubAssign`, including every unit's `+=` being
+/// replaceable with a body that does nothing. The shared default was well covered and its
+/// sixty-one hand-written twins were not.
+///
+/// The operator traits are not bounds on [`LinearQuantity`] -- a carrier may host the tier
+/// without overloading anything -- so this cannot live inside `quantity_laws` and takes its own
+/// bounds instead. A carrier that *does* overload should run it.
+///
+/// `sum` is included because `xs.iter().sum()` is the one of these a caller is most likely to
+/// reach for and the least likely to have written carefully: it must agree with folding `+` from
+/// zero.
+pub fn operator_bridge_laws<Q>(xs: &[Q], what: &str)
+where
+    Q: LinearQuantity
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Add<Output = Q>
+        + core::ops::Sub<Output = Q>
+        + core::ops::Neg<Output = Q>
+        + core::ops::AddAssign
+        + core::ops::SubAssign
+        + core::iter::Sum<Q>,
+{
+    for &a in xs {
+        assert_eq!(LinearQuantity::neg(a), -a, "{what}: neg is unary -");
+
+        for &b in xs {
+            assert_eq!(LinearQuantity::add(a, b), a + b, "{what}: add is +");
+            assert_eq!(LinearQuantity::sub(a, b), a - b, "{what}: sub is -");
+
+            let mut assigned = a;
+            assigned += b;
+            assert_eq!(assigned, a + b, "{what}: a += b agrees with a + b");
+
+            let mut assigned = a;
+            assigned -= b;
+            assert_eq!(assigned, a - b, "{what}: a -= b agrees with a - b");
+        }
+    }
+
+    // `sum` against an explicit fold, including the empty case, which must be zero rather than
+    // a panic or a first element.
+    let folded = xs
+        .iter()
+        .copied()
+        .fold(Q::from_raw(<Q::Repr as Element>::zero()), |acc, x| acc + x);
+    let summed: Q = xs.iter().copied().sum();
+    assert_eq!(summed, folded, "{what}: sum agrees with a fold of +");
+
+    let empty: Q = core::iter::empty().sum();
+    assert_eq!(
+        empty,
+        Q::from_raw(<Q::Repr as Element>::zero()),
+        "{what}: the empty sum is zero"
+    );
+}
+
+/// The **temperature scales**, pinned to physical fixed points.
+///
+/// [`Temperature`](crate::Temperature) is the one tier in this crate whose conversions are
+/// *affine* rather than linear -- each scale has both a factor and an offset -- and that is
+/// exactly the arithmetic
+/// that goes wrong quietly. A dropped offset still round-trips within one scale; a factor applied
+/// to the offset still gives plausible-looking numbers; a swapped multiply and divide is only
+/// visible away from the reference point. Mutation testing found twenty-one survivors across the
+/// three scales, including every `from_*` constructor replaceable with a default and every
+/// accessor with a constant.
+///
+/// # Fixed points, not round trips
+///
+/// A round trip through one scale cannot see a wrong offset, because the offset cancels. So the
+/// anchors here are **physical constants**: water's freezing and boiling points and absolute
+/// zero, in all three scales. They come from outside the implementation, which is what makes
+/// them worth asserting -- the same reasoning as checking the SI exponent table against
+/// definitions rather than against a copy of itself.
+///
+/// `-40` earns its place: it is the single temperature at which Celsius and Fahrenheit agree, so
+/// an implementation that has confused the factor with the offset passes a `0` check and fails
+/// here.
+///
+/// The tolerance is absolute and tight. These are small numbers reached by one multiply and one
+/// add, so there is no accumulation to accommodate; `1e-9` is generous and still four orders
+/// inside what a mistaken constant would cost.
+pub fn temperature_laws<Q>(what: &str)
+where
+    Q: crate::Temperature<Repr = f64> + Copy + core::fmt::Debug,
+{
+    const TOL: f64 = 1e-9;
+
+    let close = |got: f64, want: f64, law: &str| {
+        assert!(
+            (got - want).abs() <= TOL,
+            "{what}: {law} — got {got}, want {want}"
+        );
+    };
+
+    // Each scale reads back what it was given: the weakest law, and the only one a dropped
+    // offset survives.
+    for v in [0.0_f64, 25.0, -40.0, 100.0] {
+        close(Q::from_celsius(v).celsius(), v, "from_celsius then celsius");
+        close(
+            Q::from_fahrenheit(v).fahrenheit(),
+            v,
+            "from_fahrenheit then fahrenheit",
+        );
+    }
+    for v in [0.0_f64, 273.15, 373.15] {
+        close(Q::from_kelvin(v).kelvin(), v, "from_kelvin then kelvin");
+    }
+
+    // Water freezes: 0 °C = 32 °F = 273.15 K.
+    let freezing = Q::from_celsius(0.0);
+    close(freezing.fahrenheit(), 32.0, "water freezes at 32 °F");
+    close(freezing.kelvin(), 273.15, "water freezes at 273.15 K");
+
+    // Water boils: 100 °C = 212 °F = 373.15 K.
+    let boiling = Q::from_celsius(100.0);
+    close(boiling.fahrenheit(), 212.0, "water boils at 212 °F");
+    close(boiling.kelvin(), 373.15, "water boils at 373.15 K");
+
+    // The crossover: -40 °C = -40 °F. An implementation that has swapped the factor and the
+    // offset agrees with the others at zero and disagrees here.
+    let crossover = Q::from_celsius(-40.0);
+    close(
+        crossover.fahrenheit(),
+        -40.0,
+        "-40 °C is -40 °F (the scales cross)",
+    );
+    close(crossover.kelvin(), 233.15, "-40 °C is 233.15 K");
+
+    // Absolute zero, from every direction.
+    let zero = Q::absolute_zero();
+    close(zero.kelvin(), 0.0, "absolute zero is 0 K");
+    close(zero.celsius(), -273.15, "absolute zero is -273.15 °C");
+    close(zero.fahrenheit(), -459.67, "absolute zero is -459.67 °F");
+    close(Q::from_kelvin(0.0).celsius(), -273.15, "0 K is -273.15 °C");
+    close(
+        Q::from_fahrenheit(-459.67).kelvin(),
+        0.0,
+        "-459.67 °F is 0 K",
+    );
+
+    // And every constructor/accessor pair agrees about the same physical temperature, which is
+    // what makes the three scales one quantity rather than three.
+    for celsius in [-40.0_f64, 0.0, 21.0, 100.0] {
+        let from_c = Q::from_celsius(celsius);
+        let from_f = Q::from_fahrenheit(celsius * 9.0 / 5.0 + 32.0);
+        let from_k = Q::from_kelvin(celsius + 273.15);
+        close(from_f.celsius(), celsius, "Fahrenheit agrees with Celsius");
+        close(from_k.celsius(), celsius, "Kelvin agrees with Celsius");
+        close(
+            from_c.kelvin(),
+            from_k.kelvin(),
+            "the three constructors agree",
+        );
+    }
+}
+
+/// **Scalar scaling**: `a * k`, `k * a` and `a / k` must agree with the trait operations they
+/// abbreviate.
+///
+/// The third face of the same gap [`operator_bridge_laws`] closes, and the largest one in
+/// `euclid-quantity`: 118 surviving mutants across `Mul<Repr>`, `Div<Repr>` and the commuted
+/// `Mul<Q> for Repr`. Every one of those impls is a one-line delegation to a shared helper, the
+/// helper is covered, and the sixty-odd delegations were not.
+///
+/// # Multiplication and division are *not* symmetric here, and the law says so
+///
+/// `a * k` is exactly [`LinearQuantity::scale`], so that one is an equality.
+///
+/// `a / k` is **not** `scale(1/k)`, and the difference is deliberate rather than incidental: the
+/// reciprocal rounds once before multiplying, so `a.scale(1.0 / k)` and `a / k` disagree in the
+/// last bits. A carrier must divide the raw value directly. Asserting the wrong one of these
+/// would pin a subtly less accurate implementation, so the law is stated against
+/// [`Measure::from_raw`] of the divided raw value — which is the definition — rather than
+/// against `scale`.
+///
+/// That also makes this law the thing standing between the current implementation and an
+/// "obvious simplification" to `scale(1.0 / k)`.
+pub fn scaling_laws<Q>(xs: &[Q], factors: &[Q::Repr], what: &str)
+where
+    Q: LinearQuantity
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Mul<Q::Repr, Output = Q>
+        + core::ops::Div<Q::Repr, Output = Q>,
+    Q::Repr: Copy + PartialEq + core::ops::Mul<Q, Output = Q>,
+{
+    let zero = <Q::Repr as Element>::zero();
+    let one = <Q::Repr as Element>::one();
+
+    for &a in xs {
+        assert_eq!(a * one, a, "{what}: a * 1 = a");
+        assert_eq!(a / one, a, "{what}: a / 1 = a");
+        assert_eq!(
+            a * zero,
+            Q::from_raw(zero),
+            "{what}: a * 0 is the zero quantity"
+        );
+
+        for &k in factors {
+            assert_eq!(
+                a * k,
+                LinearQuantity::scale(a, k),
+                "{what}: a * k is scale(a, k)"
+            );
+            assert_eq!(k * a, a * k, "{what}: scalar multiplication commutes");
+
+            if k != zero {
+                assert_eq!(
+                    a / k,
+                    Q::from_raw(a.raw() / k),
+                    "{what}: a / k divides the raw value directly, not via a reciprocal"
+                );
+            }
+        }
+    }
+}
+
+/// [`scaling_laws`] over a carrier's own [`ConformanceSample`], with a fixed factor set.
+///
+/// The factors are the ones that matter for a scaling law rather than a wide sweep: the
+/// identities, a sign change, a magnifier and a divisor whose reciprocal is inexact — `3`, whose
+/// reciprocal is not representable, is what separates `a / k` from `a.scale(1/k)`.
+pub fn scaling_laws_for<Q>(what: &str)
+where
+    Q: LinearQuantity
+        + ConformanceSample
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Mul<Q::Repr, Output = Q>
+        + core::ops::Div<Q::Repr, Output = Q>,
+    Q::Repr: Copy + PartialEq + Real + core::ops::Mul<Q, Output = Q>,
+{
+    let one = <Q::Repr as Element>::one();
+    let two = one + one;
+    let three = two + one;
+    let factors = [
+        one,
+        <Q::Repr as Element>::zero(),
+        two,
+        three,
+        <Q::Repr as Element>::zero() - one,
+        one / two,
+    ];
+    scaling_laws(&Q::sample(), &factors, what);
+}
+
+/// [`operator_bridge_laws`] over a carrier's own [`ConformanceSample`].
+pub fn operator_bridge_laws_for<Q>(what: &str)
+where
+    Q: LinearQuantity
+        + ConformanceSample
+        + Copy
+        + PartialEq
+        + core::fmt::Debug
+        + core::ops::Add<Output = Q>
+        + core::ops::Sub<Output = Q>
+        + core::ops::Neg<Output = Q>
+        + core::ops::AddAssign
+        + core::ops::SubAssign
+        + core::iter::Sum<Q>,
+{
+    operator_bridge_laws(&Q::sample(), what);
 }
 
 /// The scalar helpers: selection, rounding and the predicates.
@@ -337,7 +624,7 @@ where
 pub fn discrete_laws<Q>(xs: &[Q], what: &str)
 where
     Q: DiscreteQuantity + PartialEq + core::fmt::Debug + Clone,
-    Q::Repr: euclid_numeric::Semiring,
+    Q::Repr: euclid_scalar::Semiring,
 {
     let zero = Q::from_raw(<Q::Repr as Element>::zero());
 
@@ -419,12 +706,12 @@ where
 /// # No new trait method was needed
 ///
 /// The carrier is built through [`Measure::from_raw`], which the contract already requires. The
-/// `Repr = f64` bound is the one restriction: `Repr` is any [`euclid_numeric::Element`],
+/// `Repr = f64` bound is the one restriction: `Repr` is any [`euclid_scalar::Element`],
 /// and euclid cannot generate an arbitrary one — an integer-backed carrier should run the fixed
 /// suite, or pass its own values to the slice-taking laws above.
-#[cfg(any(feature = "conformance", test))]
+#[cfg(any(feature = "conformance-generated", test))]
 pub mod generated {
-    use euclid_numeric::Real;
+    use euclid_scalar::Real;
     use euclid_stability::{Config, Gen, check, classify, generate};
 
     use super::{Mask, linear_laws, measure_laws, quantity_laws, scalar_laws};
@@ -486,7 +773,11 @@ pub mod generated {
         });
     }
 
-    /// [`quantity_laws`] — the aggregate — over generated carriers, for a linear carrier.
+    /// [`quantity_laws`] over generated values for a linear carrier.
+    ///
+    /// The associativity check uses the absolute tolerance in the carrier's own unit.
+    /// Account for rounding at the largest generated magnitudes. The reference
+    /// `f64` length carrier uses a tolerance of `1e-9`.
     pub fn quantity_laws_generated<Q>(tolerance: &Q, what: &str)
     where
         Q: Quantity + LinearQuantity + Measure<Repr = f64> + PartialEq + core::fmt::Debug + 'static,

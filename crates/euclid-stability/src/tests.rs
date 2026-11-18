@@ -1,4 +1,8 @@
 //! End-to-end: the `property!` macro and the `check!` family, used the way a consumer uses them.
+//!
+//! [`tapes`] exercises replay, persistence encoding, and dependent generation after edits.
+
+mod tapes;
 
 use crate::{assume, check, check_eq, check_ne, generate, property};
 

@@ -20,12 +20,11 @@
 //! It was, until 0.5. The rename is a correction rather than a preference, because "property
 //! testing" names the smaller half of what this does and points at the wrong tradition.
 //!
-//! In the Haskell and Rust lineage — QuickCheck, proptest — property testing is **type-driven**:
-//! an `Arbitrary` instance per type, generation derived from structure, and the interesting
-//! question is how to produce a well-formed value. That is a real and useful thing, and it is
-//! not where this crate's weight sits. There is no `Arbitrary` here and deliberately so (see
-//! [`generate`]); a generator is declared, in the same spirit as euclid's own
-//! `ConformanceSample`.
+//! QuickCheck associates generation and per-type shrinking through `Arbitrary`. Here a
+//! generator is declared explicitly (see [`generate`]), in the same spirit as euclid's own
+//! `ConformanceSample`, and shrinking edits its recorded choices. This is a design choice
+//! about dependent inputs and replay, rather than a claim that property testing must be
+//! type-driven. The numerical instruments are the reason for the crate's name.
 //!
 //! What the fleet actually needs from it is **numerical**: how much error a kernel has at its
 //! worst input, whether that error is explained by the problem's conditioning or by the
@@ -138,7 +137,10 @@ pub mod tolerance;
 mod macros;
 
 pub use generate::{Gen, Rejected};
-pub use runner::{Config, Failure, Outcome, check};
+pub use runner::{
+    Config, Counterexample, Exploration, Failure, FailureKind, Outcome, RunError, RunErrorKind,
+    RunReport, check, run,
+};
 pub use source::Source;
 pub use target::target;
 

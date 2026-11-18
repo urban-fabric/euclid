@@ -8,10 +8,10 @@ mod molar_energy;
 mod molar_mass;
 mod molar_volume;
 
-pub use amount_of_substance::*;
-pub use catalytic_activity::*;
-pub use concentration::*;
-pub use molality::*;
-pub use molar_energy::*;
-pub use molar_mass::*;
-pub use molar_volume::*;
+pub use amount_of_substance::AmountMoles;
+pub use catalytic_activity::CatalyticActivityKatals;
+pub use concentration::ConcentrationMolesPerCubicMeter;
+pub use molality::MolalityMolesPerKilogram;
+pub use molar_energy::MolarEnergyJoulesPerMole;
+pub use molar_mass::MolarMassKilogramsPerMole;
+pub use molar_volume::MolarVolumeCubicMetersPerMole;

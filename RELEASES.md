@@ -28,6 +28,147 @@ than it sounds and the second half is the part worth watching:
 A relicence is listed too. It changes nothing at compile time and everything about what a
 recipient may do.
 
+## 0.6.0 (unreleased)
+
+**`euclid-numeric` is merged into `euclid-scalar`.** Replace the dependency and import paths
+(`euclid_numeric` → `euclid_scalar`). All numeric trait names, primitive implementations,
+constants, interval helpers, compensated reductions and conformance laws now live in scalar.
+The numeric crate is removed rather than retained as a compatibility facade.
+
+The old eager `euclid_scalar::Real` and `Complex` traits are renamed to **`HostReal` and
+`HostComplex`**. Existing consumers of that crate must rename those bounds and qualified
+calls. The names `Real` and `Complex` now identify the backend-neutral traits formerly in
+numeric: they permit `Clone` carriers and mask-valued comparisons. Use `HostReal` or
+`HostComplex` when `Copy`, host predicates and associated constants are required.
+
+The workspace, generated laws and test tooling version together at 0.6.0. No release tag is
+created by this source migration.
+
+**`euclid-stability` assumptions now discard cases.** `assume!(false)` previously returned
+success, so a property could meet its case count without exercising any assertion. It now
+returns `FailureKind::Discard`; rejected cases contribute neither coverage nor target scores
+and are replaced within `max_rejects`. All-rejected properties fail. Callers handling `Outcome`
+directly should distinguish discards from failed assertions.
+
+`Failure` gains `kind` and `identity` fields. Replace two-field struct literals with
+`Failure::new(message, location)`; use `Failure::with_identity` for assertions sharing a helper.
+`Config` gains `exploration` and `replay_checks`; add `..Config::default()` to full literals.
+Failure shrinking now preserves the original assertion or panic location and rejects unstable
+replays, so tests that relied on changing failure sites or stateful replays need adjustment.
+
+Full-width signed integer and index generators now cover their entire declared domains, and
+float interpolation handles ranges whose intermediate width overflows. Recheck persisted
+tapes and accuracy budgets that depended on those formerly incorrect draws. Non-finite
+`target()` calls now preserve any earlier finite score, as their documented ignore policy requires.
+
+**The `conformance` feature no longer includes the generated search.** It is split: the
+fixed-sample laws stay in `conformance`, and the `conformance::generated` module — the
+`*_laws_generated` family and `GeneratedSample` — moves behind a new `conformance-generated`
+feature. Five crates are affected: `euclid-algebra`, `euclid-scalar`, `euclid-units`,
+`euclid-random`, `euclid-tensor`. (`euclid-matrix` has no generated module and is unchanged.)
+
+If you enable `conformance` and call anything under `conformance::generated`, add
+`conformance-generated` to your feature list; it enables `conformance` for you, so replacing one
+with the other is enough. If you only call the slice- or sample-taking laws, nothing changes.
+
+What it buys: `conformance` now resolves and compiles **no property engine at all**.
+`cargo tree --edges normal --features conformance` shows zero `euclid-stability` edges where it
+previously showed one, so a consumer checking a carrier against the contract no longer pays for
+the search machinery. Note this is dependency hygiene and *not* a publishing fix — `cargo publish`
+on these crates still fails while `euclid-stability` is `publish = false`, because cargo resolves
+optional and versioned dev dependencies at publish time whether or not their feature is on.
+
+**`Real::beta_reg_inv` at `f32` resolves a small root instead of returning the bracket
+midpoint.** Listed because it changes computed answers. The `f32` bisection stopped once its
+bracket fell below a bare `4·f32::EPSILON` — an *absolute* bound of `4.8e-7` — so for any root
+below that it returned the midpoint of the remaining bracket rather than the root.
+`beta_reg_inv(0.05, 0.1, 0.1)` came back as `2.38e-7`, which is `2⁻²²` and visibly the bisection
+halting, against a true root of `8.66e-11`: **2,752 times too large**. Worst relative error
+against the `f64` kernel over U-shaped shapes drops from `2.8e3` to `3.0e-7`, about 2.5 `f32`
+ulp.
+
+The bound is now relative to the bracket, matching `f32`'s own `gamma_lr_inv` and the `f64`
+peer — this was the one of the three that did not scale. **Roots above `~5e-7` are unaffected**,
+so a consumer whose shapes put the root mid-interval sees no change; the shapes that move are
+U-shaped betas (either parameter below 1) and strongly asymmetric ones, where the mass piles
+into a corner. `f64` was never affected.
+
+**`Real::beta_reg` returns a probability at large shapes where it returned `NaN`.** Listed
+because it changes computed answers, which this file counts as breaking even though every
+changed answer was previously unusable. For `a + b` above roughly `5.6e102` the regularized
+incomplete beta returned `NaN` for *every* `x`; it now returns the correct value — `I_½(a, a)`
+is exactly `½`, by symmetry of `Beta(a, a)`, at every representable shape including `f64::MAX`.
+Two narrower cases went the same way: `a·b` overflowing past `1.8e308`, and a shape ratio
+extreme enough to underflow the variance while the standard deviation itself is representable
+(`a = f64::MAX, b = 1e7`).
+
+The Edgeworth branch scales the shapes when their sum would overflow and uses a compensated
+residual to locate the input relative to the mean. For example, at `x = 0.5` with shapes
+`f64::MAX` and `f64::MAX.next_down()`, the CDF returns 0 in that order and 1 in the reverse
+order. The independent 60-digit reference grid measured a worst absolute error of `6.05e-9`
+near the branch entry at `min(a, b) = 1e7`. Highly asymmetric shapes also use this
+calculation when the shifted gamma limit would itself use Edgeworth.
+
+**Empty tensor shapes have zero elements even when an earlier partial product overflows.**
+`TensorSpec::num_elements()` returns `Some(0)` if any axis length is zero. Shapes with
+nonzero extents still report an overflowing product as `None`.
+
+**Gamma and beta boundary results changed.** The incomplete gamma and beta CDFs and their
+quantiles require positive, finite shapes. Invalid shapes return `NaN`, including at support
+endpoints. Gamma tails at large finite inputs can now saturate to `0` or `1` where an overflowing
+intermediate returned `NaN`. At shapes so large that all interior gamma quantiles round to the
+shape, the inverse returns that shape. The beta CDF uses the integrated density when either
+shape is exactly one, and its large-shape skewness correction stays finite at large asymmetry.
+Results in those beta regimes can change.
+
+**Digamma near negative poles uses reflection.** Negative integer poles and negative infinity
+return `NaN`. Nearby finite arguments can change because the calculation now preserves the
+distance to the pole and avoids walking the recurrence across the entire negative axis.
+The `f32` kernel now evaluates in `f64` and rounds once. This also fixes a wrong sign
+at the last binary32 input below the positive zero of digamma.
+Trigamma now reduces by the nearest integer before evaluating the reflection term,
+which preserves the distance to remote poles in both precisions.
+
+**Negative `f64` integer powers preserve representable subnormals.** When the positive
+power overflows, Euclid raises the reciprocal of the base to the exponent magnitude.
+For example, `Real::powi(2.0_f64, -1024)` now returns `2⁻¹⁰²⁴`.
+
+**`Real::erfc_inv` at `f32` evaluates the inverse in `f64` and rounds once.** The smallest
+positive `f32` inputs now give finite roots. Ordinary quantiles can change by a few ulps.
+
+**Gamma and beta preserve more extreme tails.** The gamma quantile uses the upper tail for
+probabilities above one-half. The small-shape gamma series computes the complement directly,
+including representable subnormal probabilities. Small-shape `f32` quantiles round after
+inversion. The beta CDF uses a shifted gamma limit for strongly asymmetric shapes and the
+endpoint mass ratio for two tiny shapes. The log beta
+calculation combines the large terms before rounding. The `f64` inverse complementary error
+function solves in log probability where halving its argument would round a subnormal.
+
+**Fixed-width rational arithmetic checks the reduced result.** `Rational64` and `Rational128`
+reduce with wider intermediates and cancel common factors before multiplying. Operators panic
+in both debug and release when the reduced result cannot be represented. To handle overflow
+and zero divisors, use `checked_new` or the corresponding `checked_*` method. Implementations
+of `euclid_algebra::Integer` must provide `checked_product`, `checked_negation`, and
+`checked_fraction_sum`. The supplied `i64` and `i128` implementations provide those methods.
+
+**Matrix conformance uses a scaled Frobenius bound.** The residual assertion handles finite
+values whose squares over- or underflow and rejects invalid tolerances and non-finite data.
+
+**Point and interval midpoint calculations use the primitive midpoint.** Large same-sign
+interval bounds can now have a finite midpoint, and opposite-sign bounds can have a finite
+radius even when their full width overflows. Point midpoints preserve the smallest subnormal
+when both positions are equal to it.
+
+**Several scalar kernels change results near floating-point boundaries.** `Real::ldexp`
+rounds once into the subnormal range. `Real::ln_exp_m1` preserves the small result near
+`ln(2)`, and the `f64` exponential integral `Real::exp_int_ei` preserves finite results past
+the overflow point of plain exponentiation. For example, `exp_int_ei(710.0)` is about
+`3.1509156882062014e305`.
+
+**`euclid_utils::assert_exact` now compares bits.** Opposite signs of zero compare unequal.
+NaNs with identical bits compare equal. The endpoints returned by `sweep` also preserve
+their original bits, including the sign of zero.
+
 ## 0.5.0
 
 **`euclid-property` is now `euclid-stability`.** Rename the dependency and the import

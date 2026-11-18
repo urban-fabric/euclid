@@ -1,9 +1,9 @@
 //! # euclid-units
 //!
-//! Physical-dimension contracts over any [`Real`](euclid_numeric::Real) carrier.
+//! Physical-dimension contracts over any [`Real`](euclid_scalar::Real) carrier.
 //!
 //! Like the rest of euclid, this crate ships *contracts*, not concrete types. A quantity is any
-//! [`Real`](euclid_numeric::Real)-backed carrier that implements [`Quantity`]; the dimension traits refine
+//! [`Real`](euclid_scalar::Real)-backed carrier that implements [`Quantity`]; the dimension traits refine
 //! it with the operations that dimension supports, including the cross-dimensional algebra
 //! (`length × length = area`, `length / time = speed`, `mass × acceleration = force`,
 //! `current × resistance = voltage`, …) expressed through associated quantity types. euclid does
@@ -66,8 +66,8 @@
 //!
 //! Quantities are scalar-valued: a length carries one `T`, where `T` can be a host scalar,
 //! expression, or graph scalar. Values are `Clone`, comparisons return masks through
-//! [`Compare`](euclid_numeric::Compare), and host literals are lifted through
-//! [`Real::scalar`](euclid_numeric::Real::scalar)/[`scalar_like`](euclid_numeric::Real::scalar_like).
+//! [`Compare`](euclid_scalar::Compare), and host literals are lifted through
+//! [`Real::scalar`](euclid_scalar::Real::scalar)/[`scalar_like`](euclid_scalar::Real::scalar_like).
 
 #[cfg(any(feature = "conformance", test))]
 pub mod conformance;

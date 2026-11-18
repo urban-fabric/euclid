@@ -287,4 +287,90 @@ mod tests {
         let back: ByteRange = serde_json::from_str(&json).unwrap();
         assert_eq!(back, r);
     }
+
+    /// The conversion and mixed-type comparison surface, which nothing was exercising.
+    ///
+    /// The tests above check the `DiscreteQuantity` trait methods — `DiscreteQuantity::add`,
+    /// `DiscreteQuantity::saturating_sub` — and those are shared default bodies. The inherent
+    /// `Bytes::saturating_sub`, the `From` conversions and the mixed `PartialEq`/`PartialOrd`
+    /// against a bare `u64` are separate implementations, and mutation testing found all nineteen
+    /// of them replaceable: `as_f64` could return `0.0`, `PartialEq<u64>` could return `true` for
+    /// every pair, `PartialOrd<u64>` could answer `None`.
+    ///
+    /// The mixed comparisons are the ones worth caring about. `Bytes` exists so a byte count
+    /// cannot be confused with any other number, and these impls are the deliberate escape hatch
+    /// back to `u64`. An escape hatch that compares wrongly is worse than none.
+    #[test]
+    fn the_raw_accessors_agree_with_the_value() {
+        for raw in [0_u64, 1, 1024, 4096, u64::MAX / 2] {
+            let b = Bytes::new(raw);
+            assert_eq!(b.as_u64(), raw, "as_u64 must be the raw count");
+            #[allow(clippy::cast_precision_loss)]
+            {
+                assert_eq!(b.as_f64(), raw as f64, "as_f64 must widen the raw count");
+                assert_eq!(b.as_f32(), raw as f32, "as_f32 must widen the raw count");
+            }
+        }
+    }
+
+    #[test]
+    fn saturating_sub_clamps_at_zero_rather_than_underflowing() {
+        assert_eq!(
+            Bytes::new(100).saturating_sub(Bytes::new(40)),
+            Bytes::new(60)
+        );
+        assert_eq!(Bytes::new(40).saturating_sub(Bytes::new(100)), Bytes::ZERO);
+        assert_eq!(Bytes::new(0).saturating_sub(Bytes::new(1)), Bytes::ZERO);
+        // Equal operands are the boundary, and must give zero rather than wrapping.
+        assert_eq!(Bytes::new(7).saturating_sub(Bytes::new(7)), Bytes::ZERO);
+
+        // The inherent method and the trait default must agree, since both are published.
+        for (a, b) in [(100_u64, 40_u64), (40, 100), (0, 0), (7, 7)] {
+            assert_eq!(
+                Bytes::new(a).saturating_sub(Bytes::new(b)),
+                euclid_units::DiscreteQuantity::saturating_sub(Bytes::new(a), Bytes::new(b)),
+                "the inherent saturating_sub must agree with the trait one at ({a}, {b})"
+            );
+        }
+    }
+
+    #[test]
+    fn the_u64_conversions_round_trip() {
+        for raw in [0_u64, 1, 4096, u64::MAX] {
+            assert_eq!(u64::from(Bytes::from(raw)), raw, "u64 -> Bytes -> u64");
+            let b = Bytes::new(raw);
+            assert_eq!(Bytes::from(u64::from(b)), b, "Bytes -> u64 -> Bytes");
+        }
+    }
+
+    #[test]
+    fn adding_a_bare_u64_matches_adding_the_wrapped_one() {
+        for (start, add) in [(0_u64, 0_u64), (100, 24), (4096, 1)] {
+            let mut raw_added = Bytes::new(start);
+            raw_added += add;
+            assert_eq!(
+                raw_added,
+                Bytes::new(start) + Bytes::new(add),
+                "+= u64 must agree with + Bytes"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_comparisons_agree_with_comparing_the_raw_values() {
+        for a in [0_u64, 1, 7, 1024] {
+            for b in [0_u64, 1, 7, 1024] {
+                let wrapped = Bytes::new(a);
+                assert_eq!(wrapped == b, a == b, "Bytes == u64 at ({a}, {b})");
+                assert_eq!(b == wrapped, b == a, "u64 == Bytes at ({a}, {b})");
+                assert_eq!(
+                    wrapped.partial_cmp(&b),
+                    a.partial_cmp(&b),
+                    "Bytes partial_cmp u64 at ({a}, {b})"
+                );
+                // Never incomparable: these are integers.
+                assert!(wrapped.partial_cmp(&b).is_some());
+            }
+        }
+    }
 }

@@ -25,6 +25,12 @@
 //! nothing for it, and always compiled under `cfg(test)` so this crate's own suites exercise
 //! the same code a carrier author calls.
 //!
+//! The `generated` submodule sits behind a **second** feature, `conformance-generated`, which
+//! enables this one and additionally pulls the property engine. The division: these functions
+//! are the contract, so `conformance` resolves no engine at all and is what a consumer binding
+//! the laws should take; the generated search is tooling for locating where a carrier fails
+//! them, and costs a dependency.
+//!
 //! Note that these docs are the module's own (`//!`), with no outer `///` on the `mod`
 //! declaration. The two forms are concatenated, and an outer comment resolves its intra-doc
 //! links in the *parent's* scope — so a link to a function in here would silently fail to
@@ -56,7 +62,8 @@
 use crate::witness::{DioidWitness, SemiringWitness};
 use crate::{
     AdditiveMagma, CanonicalOrder, CommutativeSemiring, Dioid, EuclideanDomain, Field,
-    LeftSemimodule, MultiplicativeMagma, OrderedSemiring, Ring, Semiring, StarSemiring,
+    LeftSemimodule, MultiplicativeMagma, OrderedSemiring, RefAdditiveMagma, RefMultiplicativeMagma,
+    Ring, Semiring, StarSemiring,
 };
 
 /// A carrier's own curated sample, declared once.
@@ -234,8 +241,83 @@ where
             assert_eq!(MultiplicativeMagma::mul(a, b), a * b, "{what}: ⊗ is *");
             assert_eq!(a - b, a + (-b), "{what}: a − b = a + (−b)");
             assert_eq!(-(a * b), (-a) * b, "{what}: −(ab) = (−a)b");
+
+            // The **compound-assignment bridge**, which is the operator bridge's other half and
+            // was missing until mutation testing noticed. `Ring` requires `AddAssign`,
+            // `SubAssign` and `MulAssign`, and nothing checked that any of them agrees with the
+            // binary operator it abbreviates — so `a += b` could be written to do nothing at all
+            // and every carrier in the fleet still conformed.
+            //
+            // It is a separate impl block from `Add`, which is exactly why it drifts: the usual
+            // spelling is `*self = *self + rhs`, and the usual mistake is a typo in the operator
+            // or an operand order that only matters for a non-commutative carrier.
+            let mut assigned = a;
+            assigned += b;
+            assert_eq!(assigned, a + b, "{what}: a += b agrees with a + b");
+
+            let mut assigned = a;
+            assigned -= b;
+            assert_eq!(assigned, a - b, "{what}: a −= b agrees with a − b");
+
+            let mut assigned = a;
+            assigned *= b;
+            assert_eq!(assigned, a * b, "{what}: a ×= b agrees with a × b");
         }
     }
+}
+
+/// The by-reference magma operations agree with their by-value counterparts.
+///
+/// [`RefAdditiveMagma::add_ref`] and [`RefMultiplicativeMagma::mul_ref`] exist for carriers that
+/// are not [`Copy`], and their documentation states the law directly: "Must agree with
+/// [`AdditiveMagma::add`] where both exist: `a.add_ref(&b) == a.add(b)` for a `Copy` carrier."
+///
+/// Nothing checked it. Mutation testing found every `add_ref` and `mul_ref` in the crate
+/// replaceable with `Default::default()` — returning zero for every input — and the whole
+/// workspace suite stayed green, across `i64`, `i128`, `f64`, `f32` and `GaussianRational`.
+///
+/// The reason the gap is structural rather than careless: a by-reference operation is written so
+/// that a generic algorithm can avoid a clone, so it is reached only from code paths that are
+/// generic over the *ref* traits — and the fleet's own suites all instantiate at `Copy` carriers,
+/// which take the by-value path. The duplicate implementation is never the one that runs here,
+/// and an implementation nothing runs is an implementation nothing checks.
+pub fn ref_magma_laws<T>(xs: &[T], what: &str)
+where
+    T: AdditiveMagma
+        + MultiplicativeMagma
+        + RefAdditiveMagma
+        + RefMultiplicativeMagma
+        + core::fmt::Debug
+        + Copy,
+{
+    for &a in xs {
+        for &b in xs {
+            assert_eq!(
+                a.add_ref(&b),
+                AdditiveMagma::add(a, b),
+                "{what}: a.add_ref(&b) must agree with a ⊕ b"
+            );
+            assert_eq!(
+                a.mul_ref(&b),
+                MultiplicativeMagma::mul(a, b),
+                "{what}: a.mul_ref(&b) must agree with a ⊗ b"
+            );
+        }
+    }
+}
+
+/// [`ref_magma_laws`] over a carrier's own [`ConformanceSample`].
+pub fn ref_magma_laws_for<T>(what: &str)
+where
+    T: AdditiveMagma
+        + MultiplicativeMagma
+        + RefAdditiveMagma
+        + RefMultiplicativeMagma
+        + ConformanceSample
+        + core::fmt::Debug
+        + Copy,
+{
+    ref_magma_laws(&T::sample(), what);
 }
 
 /// The field axiom: every nonzero element is invertible, and division is multiplication by the
@@ -262,6 +344,13 @@ where
 
         for &b in xs {
             assert_eq!(b / a, b * inv, "{what}: b / a = b · a⁻¹");
+
+            // The division half of the compound-assignment bridge; see `ring_laws` for why this
+            // whole family went unchecked. `Field` requires `DivAssign`, and `/=` could be
+            // written to do nothing.
+            let mut assigned = b;
+            assigned /= a;
+            assert_eq!(assigned, b / a, "{what}: b /= a agrees with b / a");
         }
     }
     for &a in xs {
@@ -520,7 +609,7 @@ where
 /// operations, and "build me one from a number" is not part of being one — `Zp<7>` and a
 /// polynomial ring have nothing in common to build *from*.
 ///
-/// So the carrier supplies its own generator, through [`generated::GeneratedSample`]. That is
+/// So the carrier supplies its own generator through `generated::GeneratedSample`. That is
 /// the same
 /// division of labour [`ConformanceSample`] already uses, with a generator in place of a list.
 ///
@@ -540,7 +629,7 @@ where
 /// The division of labour, then: the fixed suite proves the tiers are satisfiable and that your
 /// carrier satisfies them; this one hunts the representation invariants underneath, and re-runs
 /// the tier laws for free while it is there.
-#[cfg(any(feature = "conformance", test))]
+#[cfg(any(feature = "conformance-generated", test))]
 pub mod generated {
     use euclid_stability::{Config, Gen, check, classify};
 
@@ -575,7 +664,14 @@ pub mod generated {
         euclid_stability::generate::vec(T::generator(), 3, 6)
     }
 
-    fn settings<T: GeneratedSample>() -> Config {
+    /// `pub(crate)` only so the vacuity suite can assert the contract below directly.
+    ///
+    /// The thing worth pinning is that a carrier's declared [`GeneratedSample::cases`] is what
+    /// the search actually runs. Replacing this body with `Config::default()` silently drops
+    /// that — `Config`'s own default is 256 cases — and no behavioural test separates the two
+    /// without counting draws, which would be a statistical assertion about a generator rather
+    /// than a statement about this function. One `assert_eq!` on the field says it exactly.
+    pub(crate) fn settings<T: GeneratedSample>() -> Config {
         Config::default().cases(T::cases())
     }
 

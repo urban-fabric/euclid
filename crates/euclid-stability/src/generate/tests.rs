@@ -1,4 +1,8 @@
 //! Generators: that they stay in their declared bounds, compose, and reject rather than lie.
+//!
+//! Basic combinators live here. `composition` checks wide values, sizing and replay;
+//! `single_precision` checks native floats and extreme ranges; `exploration_metadata` checks
+//! finite-domain completeness and bounded allocation.
 
 use super::{
     DrawError, Gen, boolean, distinct, index, int, just, one_of, pair, permutation, recursive,
@@ -275,3 +279,7 @@ fn permutation_is_a_function_of_its_tape() {
     let mut replaying = Source::replaying(generating.consumed());
     assert_eq!(first, generator.draw(&mut replaying).expect("complete"));
 }
+
+mod composition;
+mod exploration_metadata;
+mod single_precision;

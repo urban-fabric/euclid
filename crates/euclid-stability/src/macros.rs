@@ -127,7 +127,7 @@ macro_rules! check {
         if !$condition {
             return Err($crate::Failure::new(
                 format!($($arg)+),
-                concat!(file!(), ":", line!()),
+                concat!(file!(), ":", line!(), ":", column!()),
             ));
         }
     };
@@ -155,7 +155,7 @@ macro_rules! check_eq {
                     left,
                     right,
                 ),
-                concat!(file!(), ":", line!()),
+                concat!(file!(), ":", line!(), ":", column!()),
             ));
         }
     }};
@@ -182,7 +182,7 @@ macro_rules! check_ne {
                     stringify!($right),
                     left,
                 ),
-                concat!(file!(), ":", line!()),
+                concat!(file!(), ":", line!(), ":", column!()),
             ));
         }
     }};
@@ -191,14 +191,24 @@ macro_rules! check_ne {
 /// Skip this case unless `condition` holds.
 ///
 /// Prefer narrowing the generator. An `assume!` discards work already done and counts against
-/// the rejection budget, so a property that assumes away most of its input is quietly testing
-/// much less than its case count suggests — which is exactly why the runner reports the
-/// rejection rate instead of letting it pass unnoticed.
+/// the rejection budget. The runner draws replacements, reports the rejection rate and fails
+/// if it cannot reach the accepted-case count. An optional second argument supplies the reason.
 #[macro_export]
 macro_rules! assume {
     ($condition:expr) => {
         if !$condition {
-            return Ok(());
+            return Err($crate::Failure::discard(
+                stringify!($condition),
+                concat!(file!(), ":", line!(), ":", column!()),
+            ));
+        }
+    };
+    ($condition:expr, $reason:expr) => {
+        if !$condition {
+            return Err($crate::Failure::discard(
+                $reason,
+                concat!(file!(), ":", line!(), ":", column!()),
+            ));
         }
     };
 }

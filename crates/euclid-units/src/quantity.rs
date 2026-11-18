@@ -1,4 +1,4 @@
-use euclid_numeric::{Compare, Element, Real};
+use euclid_scalar::{Compare, Element, Real};
 
 use super::Dimension;
 
@@ -16,8 +16,8 @@ pub type Mask<Q> = <<Q as Measure>::Repr as Compare>::Mask;
 /// for the scalar, linear, and dimension contracts — those stay opt-in per unit, each an empty
 /// impl block over defaults, so a unit claims only the behaviour it actually has.
 ///
-/// [`Natural`]: euclid_numeric::Natural
-/// [`Integer`]: euclid_numeric::Integer
+/// [`Natural`]: euclid_scalar::Natural
+/// [`Integer`]: euclid_scalar::Integer
 pub trait Measure: Clone {
     /// The numeric carrier, such as `f64`, `u64`, or `i64`.
     type Repr: Element;

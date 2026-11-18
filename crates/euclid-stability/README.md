@@ -31,8 +31,9 @@ lowering entries, binary-searching magnitudes — and re-runs the generator. Wha
 structurally valid by construction, because it came from the generator.
 
 **There are no shrink implementations to write.** A new generator composes out of `generate` and
-is immediately as shrinkable as everything else. Adding a generator cannot introduce a shrinking
-bug.
+is immediately as shrinkable as everything else. Generators must still be deterministic and
+re-derive dependent bounds after tape edits: a successfully generated case must remain legal.
+`src/tests/tapes.rs` checks replay, bounded choices and dependent edits over generated inputs.
 
 ## Why not proptest
 
@@ -50,11 +51,105 @@ That is proptest's documented weak spot. From its own source, on `prop_flat_map`
 A tape has no such limit. Lowering the entry that produced the node count means the generator
 re-reads the following entries under the *new* bound, so the dependency is re-derived for free
 and every candidate stays in range. `shrinking_preserves_a_dependent_bound` in
-`src/runner/tests.rs` pins exactly that.
+`src/runner/tests/search.rs` pins exactly that.
 
 The cost is that a tape is opaque: a failure is reported by replaying it, not by pretty-printing
 a stored shrink path. In exchange a persisted failure is a line of hex that reproduces exactly,
 on any machine.
+
+## Lessons from QuickCheck
+
+[QuickCheck](https://github.com/BurntSushi/quickcheck) separates generation, shrinking and
+execution. Its [Arbitrary trait](https://github.com/BurntSushi/quickcheck/blob/master/src/arbitrary.rs)
+provides generation and an iterator of smaller values. Euclid instead declares generators with
+explicit bounds and shrinks their choice tapes. Both designs need bounded shrink work and
+reproducible generation; seeded generation alone does not preserve a case if its generator changes.
+
+The [runner](https://github.com/BurntSushi/quickcheck/blob/master/src/tester.rs) separates passed
+cases from discarded attempts and supports panics as failures. Euclid keeps those distinctions:
+`cases` counts accepted executions, `max_rejects` bounds extra draws, and an exhausted rejection
+budget fails the run. QuickCheck defaults `min_tests_passed` to zero; euclid requires the requested
+case count. Tests exercise these guarantees directly instead of inferring them from passing laws.
+
+The engine tests are organized by responsibility under
+`src/{runner,relation,numeric,machine}/tests/`, with acceptance controls beside rejection cases.
+`src/tests/tapes.rs` checks encoding, bounded draws, replay and dependent tape edits over generated
+inputs. Consumer properties live with their owning contracts or numerical implementation.
+
+The local `python3 -B bin/mutants.py` wrapper restores
+regression and budget fixtures between mutation scenarios; a broken generator's saved tape must
+not make a later mutant appear caught. Use fresh worker copies for each measured scenario when
+the wrapper is unavailable. See [Contributing](../../CONTRIBUTING.md#the-seventh-check-run-deliberately-cargo-mutants).
+
+## Running and inspecting a property
+
+`check` is the libtest wrapper: it panics with a report on failure. `run` returns
+`Result<RunReport, RunError>` so tools and engine tests can inspect the evidence directly.
+`Outcome` remains `Result<(), Failure>`; existing property bodies and `?` still work.
+
+```rust
+use euclid_stability::{Config, assume, classify, generate, run, target};
+
+let report = run("positive squares", &Config::default().cases(20),
+    &generate::int(-10, 10), |x| {
+        assume!(x > 0, "positive inputs only");
+        classify!("positive");
+        target(x as f64);
+        assert!(x * x > 0);
+        Ok(())
+    }).unwrap();
+assert_eq!(report.passed, 20);
+assert_eq!(report.labels["positive"], 20);
+assert_eq!(report.attempts, report.passed + report.rejected);
+```
+
+An assumption discards the case. Its labels and target scores are discarded too, even when
+reported before `assume!`. The runner draws replacements until the accepted-case target is
+met or the rejection budget is exhausted. A property that discards everything fails.
+
+The report includes effective seed/configuration, attempts, passes, failures, rejections and
+their reasons, regression replays, coverage and the best finite target score. Nested runs
+preserve their parent's instrumentation. `RunErrorKind` distinguishes a counterexample from
+generation, coverage, accuracy-budget, stale-regression and replay-consistency errors. A stable
+property error includes the original and minimized tapes, final case, failure and shrink cost.
+
+## Deterministic edges and small exhaustive domains
+
+Random search remains the default, preserving existing tape layouts and accuracy budgets.
+Choose another mode explicitly:
+
+```rust
+use euclid_stability::{Config, generate, run};
+
+let flags = generate::array::<_, 3>(generate::boolean());
+let report = run("boolean arrays", &Config::default().exhaustive(), &flags,
+    |flags| { assert_eq!(flags.len(), 3); Ok(()) }).unwrap();
+assert!(report.exhaustive);
+assert_eq!(report.passed, 8);
+
+let inputs = generate::int(100, 200).with_examples(vec![2, 3, 5, 7, 11]);
+let mut seen = Vec::new();
+run("examples", &Config::default().cases(5).edges_first(), &inputs,
+    |x| { seen.push(x); Ok(()) }).unwrap();
+assert_eq!(seen, [2, 3, 5, 7, 11]);
+```
+
+`edges_first()` tries complete edge tapes before random search. Integer ranges contribute their
+endpoints and midpoint; `sampled_from` contributes every entry of a small list. `with_examples`
+adds a sampled branch, so applying it deliberately changes a generator's tape layout. Edges
+spend the normal case budget; choose enough cases to reach the edges you need.
+
+`exhaustive()` visits every supported finite choice combination. Finite metadata composes
+through ranges, fixed values, tuples, arrays, bounded lists, alternatives, maps and filters.
+Filters and assumptions count rejected combinations separately; a many-to-one map can produce
+duplicate values. An all-rejected domain still fails. Exhaustive mode returns
+`UnsupportedExploration` when completeness cannot be established within the configured case
+and tape budgets; it never silently falls back to random search.
+
+Metadata construction is lazy and bounded: at most 4,096 tapes and 262,144 tape words per
+collection; list enumeration supports maximum lengths up to 64. Large example lists use
+representative edges. Custom `Gen::new`, dependent `and_then` and `sized` generators currently
+have unknown exhaustive domains. These metadata limits do not constrain ordinary generation.
 
 ## Surface
 
@@ -77,6 +172,7 @@ to minimise what it finds:
 | `source` | the choice tape; a value is a pure function of it |
 | `generate` | generators and combinators, reading from a tape |
 | `generate::float` | float generation built to find numerical bugs, not to be uniform |
+| `generate::float32` | native f32 bit patterns, signed zeros, subnormals and bounded ranges |
 | `shrink` | one generic minimiser over the tape, no per-type rules |
 | `runner` | search, shrink, persist, report |
 | `persist` | minimised failures as committable hex, with the case they render as |
@@ -84,9 +180,28 @@ to minimise what it finds:
 | `rng` | SplitMix64, the only randomness here |
 
 Generators: `int`, `index`, `boolean`, `just`, `vec`, `distinct`, `permutation`, `one_of`,
-`weighted`, `pair`, `triple`, `recursive`, plus `map` / `and_then` / `filter`. For floats:
+`weighted`, `pair`, `triple`, `recursive`, `sampled_from`, `array`, `option`, `result`,
+`uint`, full-width `u64` / `u128` / `i128`, and `sized`, plus `map` / `and_then` / `filter`.
+`sized(max, build)` records a shrinkable structural size independently of numeric ranges:
+`sized(8, |n| vec(int(-100, 100), n, n))` generates a list of exactly the chosen length.
+For f64 floats:
 `finite`, `any`, `magnitude` (log-uniform by exponent), `in_range`, `positive`, `notable`,
-`non_finite`, `cancelling_pair`.
+`non_finite`, `cancelling_pair`, `binade_boundary`, `pair_with_edge_cases`.
+
+The last two exist because of inputs the others structurally cannot produce, and both were added
+after mutation testing found a defect a generated property had missed:
+
+- **`binade_boundary(min_exp, max_exp)`** draws an exact power of two, both signs. `magnitude`
+  deliberately fills all 52 mantissa bits — "round numbers hide alignment bugs" — which makes a
+  binade boundary a `2^-52` event. That boundary is the only place where the step away from zero
+  and the step toward it have different widths, so it is the only place a *direction* error is
+  observable. `euclid-scalar`'s `ulp` had one; a property sweeping 1,000 decades did not see it.
+- **`pair_with_edge_cases(min_exp, max_exp)`** draws an ordinary first element and a second from
+  the cases a two-argument guard must handle — both NaNs, both infinities, both zeros, and the
+  first element itself for the equality arm. A guard like `x.is_nan() || y.is_nan()` reads
+  symmetrically and is not: weakened to `&&`, a NaN *first* argument can still produce a NaN by
+  accident, while a NaN *second* argument returns a plausible finite neighbour. A property that
+  fixes the second argument cannot see it.
 
 `distinct` and `permutation` are both "valid by construction rather than by rejection", which is
 the house rule for a generator with a constraint: the shrinker's job is to make values smaller
@@ -183,6 +298,9 @@ Targeting never weakens a property: it changes which cases are tried, not which 
 
 ## Performance
 
+The measurements below predate the structured runner and exploration metadata. Run the
+benchmark again when assessing current throughput.
+
 `cargo bench -p euclid-stability` prints a table. It is a plain `fn main` with `harness = false`
 — no criterion, because a benchmark dependency is still a dependency and `deny.toml` would need
 an exception for it.
@@ -238,8 +356,8 @@ surfaced:
 - **Rejection** — a `filter` or `assume!` excluded the case. Tracked against a budget, because a
   generator rejecting most of what it makes is testing a fraction of its case count. Rejecting
   *everything* is an error, not a pass.
-- **Overrun** — a tape did not feed the generator to completion. Only reachable while shrinking,
-  where it means "discard this candidate", never "the property holds".
+- **Overrun** — a tape or generation budget did not feed the generator to completion. It means
+  "discard this candidate", never "the property holds".
 - **Budget reached** — shrinking stopped on its probe cap rather than at a fixpoint, so the
   reported case may not be minimal. Said out loud, since a reader otherwise assumes minimal.
 
@@ -252,12 +370,167 @@ finding. Vary `Config::seed` deliberately for a longer soak; do not vary it per 
 Set `EUCLID_STABILITY_VERBOSE=1` to let panic backtraces through during a search; they are
 suppressed by default because shrinking re-runs a failing property hundreds of times.
 
+Before shrinking and again before saving, the runner checks that a failing tape reproduces
+the same Debug rendering and failure identity at least twice (`Config::replay_checks`).
+Assertions default to their source location; panics use the panic location. Shared helpers
+can set `Failure::with_identity` to distinguish their laws. Shrinking keeps that identity,
+so a smaller input triggering another assertion cannot replace the original bug.
+
+Inconsistent replays produce `RunErrorKind::Unstable` without saving a counterexample. These
+bounded checks catch common state leaks; they cannot prove purity. Generators, properties
+and case formatting must remain deterministic, without time, external randomness or mutable
+state affecting replay.
+
 ## Not here
 
 No `Arbitrary` derive — declare the generator, in the same spirit as `ConformanceSample` over a
 blanket impl. No regex string generation, no process forking for aborts, no `no_std`. Each is
 absent because nothing in the fleet needed it, and adding one later is cheaper than maintaining
 it unused.
+
+## Where this goes next
+
+Four open questions, in the order they constrain each other. Each one is here because a specific
+piece of work ran into it, and the evidence is cited rather than summarised — a roadmap item
+without a failure behind it is a preference.
+
+### 1. `publish = false` makes every contract crate unpublishable
+
+The decision that gates the others, and it is already load-bearing rather than hypothetical.
+Every contract crate wires the laws behind a feature:
+
+```toml
+conformance = ["dep:euclid-stability"]
+euclid-stability = { workspace = true, optional = true }
+```
+
+So:
+
+```console
+$ cargo publish --dry-run -p euclid-algebra
+error: failed to prepare local package for uploading
+Caused by:
+  no matching package named `euclid-stability` found
+  location searched: crates.io index
+```
+
+This crate is `publish = false` and the five contract crates therefore cannot go to crates.io at
+all. Nothing is broken today — euclid is consumed by git tag, and [the README says
+so](../../README.md#using-it) — but it is a one-way door.
+
+**The feature is now split, and that was necessary without being sufficient.** `conformance`
+keeps the fixed-sample laws and takes no dependency; `conformance-generated` pulls this crate.
+`cargo tree --edges normal --features conformance` went from one `euclid-stability` edge to zero,
+so a consumer taking the laws compiles and downloads no engine. Worth having on its own merits.
+
+It does not make anything publishable, and the first pass at this section said it would. Measured
+by removing one dependency table at a time:
+
+| `euclid-stability` appears as | `cargo publish` |
+|---|---|
+| optional `[dependencies]`, feature **off** | **fails** |
+| versioned `[dev-dependencies]` | **fails** |
+| path-only `[dev-dependencies]` (no version) | stripped — passes |
+| absent from both | passes |
+
+Cargo resolves optional dependencies and versioned dev-dependencies from the registry at publish
+time regardless of features. So the entry's *existence* is the blocker, not its activation, and
+no amount of feature carving reaches it.
+
+That leaves two real options, and the split has made the first one cheaper rather than replacing
+it:
+
+- **Publish this crate.** Now the obvious path. It costs a public API and a compatibility burden
+  on a test engine whose posture is "shaped by what the fleet needed", and `0.x` churn here would
+  propagate through the layer-1 chain in
+  [CONTRIBUTING](../../CONTRIBUTING.md#what-a-release-costs-everyone-else). What the split buys is
+  that the burden lands only on consumers who opt into `conformance-generated` — everyone else
+  stops seeing this crate entirely, which is a much smaller promise than before.
+- **Move the generated suites out of the contract crates.** Into a separate unpublished crate
+  depending on both, or down into each consumer's own tests. That keeps this crate unpublished
+  and costs the property RELEASES 0.5.0 advertised — that the generated strategy ships *with* the
+  contract — plus a path-only dev-dependency everywhere.
+
+Staying git-only remains defensible, but it should then be written in `RELEASES.md` as a decision
+rather than left as a consequence.
+
+### 2. References are the half this crate does not have
+
+The engine finds inputs that violate a property. Accuracy checks need expected
+values from an independent source.
+
+Closing `BETA_EDGEWORTH_MIN` and checking the quantile solvers required independent Python
+`Decimal` references. The earlier tables name their local generator. The newer
+[extreme-shape generator](../euclid-scalar/tests/references/extreme_shapes.py) ships with the
+scalar tests and uses MPFR and Decimal.
+
+- **Commit new generators beside the owning crate's tests.** Name the generator from the table.
+- **A generator self-validates before it emits**, against closed forms it shares no code with,
+  and exits nonzero otherwise. This is not ceremony: `qref.py` caught a factor-of-two error in
+  its own *expected* value that way — `I_x(2,3)` written with `B(2,3)⁻¹ = 6` instead of `12` —
+  before a single reference was taken from it.
+- **Provenance travels with the value**: what computed it, what it was validated against, at what
+  working precision, and *at which exact double*. The last one is not pedantry — the beta's
+  density is `≈3568`, so one ulp of `x` is worth `4e-13` of probability, and a reference computed
+  at the real-valued argument would have charged the kernel `44×` its actual error.
+
+### 3. Insensitivity, as a named relation
+
+`relation` names seventeen metamorphic shapes — involution, idempotence, round trip, `agree`,
+`precision_agrees`, `fixed_point`. It has no way to state the opposite: **this output must not
+depend on that input.**
+
+That is a real contract and euclid has one. `gamma_lr_inv` and `beta_reg_inv` are safeguarded
+Newton: a seed, a bracket, and bisection whenever a Newton step would leave it. Their answers are
+therefore independent of the seed *and* of the derivative, which was verified by disabling both —
+seed removed, densities forced to `0`, so no Newton step can fire — and measuring against the
+120-digit reference:
+
+| | worst relative error vs truth |
+|---|---|
+| as shipped | `1.1e-13` gamma, `1.3e-14` beta |
+| seed and derivative disabled | `7.4e-14` gamma, `1.3e-14` beta |
+
+Unchanged, and marginally better. This is why 56 mutants in that file are unkillable, and the
+right response is not to chase them: it is to **state the guarantee**.
+
+`relation::insensitive_to(name, x, perturb, f, compare)` **now exists**, with accept and reject
+controls beside the other sixteen relations. One honest limitation, which the first draft of this
+section glossed: the quantile solver's independence is **internal** — the seed is a local, not an
+argument — so no relation taking `f` from outside can perturb it. Expressing that would mean
+making the seed injectable, which is production surface added for a test, and the measurement
+above is better evidence anyway. The relation serves insensitivity that is part of the *input*:
+periodicity, invariance under a common scale, a representation detail that carries no value.
+
+A second honest note: euclid's own kernels currently have no *untested* insensitivity to point it
+at. Degree-based trig periodicity, the obvious candidate, is already covered by
+`real_carriers/reduction.rs`. So this is vocabulary for consumers and for future properties,
+which is what most of `relation` is — and the reason to add it now is that the gap was only
+visible once a 56-mutant cluster turned out to be a design guarantee nobody had written down.
+
+### 4. Two gaps that were discipline, not capability
+
+Worth recording because the instinct was to propose features and the measurement said otherwise.
+The `BETA_EDGEWORTH_MIN` defect survived a sweep that stopped at `a = 1e100` while the format runs
+to `1.8e308`. Both tools for catching that already exist:
+
+- `generate::float::notable()` already draws `f64::MAX`, `f64::MIN`, both subnormals and `2^53`,
+  and `magnitude(min_exp, max_exp)` takes explicit exponent bounds.
+- `classify!` with `Config::require(label, percent)` already fails a run whose cases never reach a
+  labelled region — which is precisely "this sweep never got above `1e102`".
+
+Nothing was missing. Nothing required the label. So the change went to
+[CONTRIBUTING](../../CONTRIBUTING.md#organizing-property-tests) rather than into API — **a
+property guarding a threshold branch requires a coverage label on both sides of it**, and a
+magnitude sweep ends at the format's limit or says in a comment where it stopped and why. Both
+rules are written there now. A new generator would have been a worse answer than a used one.
+
+### What to keep refusing
+
+The list above still stands, with two additions earned this round: **no arbitrary-precision
+arithmetic in Rust** — references come from outside and are pasted in with their provenance — and
+**no second engine**. The temptation with the reference story is to grow this crate an oracle
+module; the convention is the deliverable, not more code.
 
 ## Why a test harness lives in euclid
 

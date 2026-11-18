@@ -8,7 +8,7 @@ It is the **carrier** tier of euclid: the other euclid crates own the
 carrier-generic numeric, tensor, and unit *contracts*, and euclid-quantity
 supplies the concrete `f64` unit/storage types that implement them. It names the
 two tiers it builds on directly — `euclid-units` for the dimension contracts and
-the `Dimension`/`dim` vocabulary these units implement, and `euclid-numeric` for
+the `Dimension`/`dim` vocabulary these units implement, and `euclid-scalar` for
 the interval kernels `euclid_quantity::ops::Interval` delegates its arithmetic
 to.
 
@@ -155,14 +155,13 @@ belong in the crates that use `euclid-quantity`.
 
 ## Adding Units
 
-Each unit lives in its own file under `src/units/<family>/` (one file per unit,
-e.g. `units/mechanics/force.rs`); shared constants and the family's tests live
-in `units/<family>.rs` beside the directory — the workspace denies
-`mod_module_files`, so there is no `mod.rs`. The crate is deliberately
-macro-free, so each unit spells out its impls explicitly; the quickest path is
-to copy the nearest existing unit's file and adjust it:
+Each unit lives in a file under `src/units/<family>/`, such as
+`units/mechanics/force.rs`. Units for the same quantity share a subdirectory
+and conversion constants, as in `units/geometry/length/`. The workspace uses
+`<module>.rs` beside the corresponding directory. Copy the nearest unit's
+file to follow its implementation pattern.
 
-1. Create `src/units/<family>/<unit>.rs` with the transparent `f64` newtype
+1. Create the unit file with the transparent `f64` newtype
    (`pub(crate)` field, standard derives), a `new` constructor, a raw accessor,
    and any helpers.
 2. Implement `euclid_units::Measure` — the carrier type, runtime `Dimension`,
@@ -181,9 +180,10 @@ to copy the nearest existing unit's file and adjust it:
    contract for it and wire its associated types to the other primaries.
 6. Implement the `+`/`-`/scaling/`Sum` operators (delegating to the
    `crate::quantity::scalar_*` helpers) if it is linear.
-7. Declare the file in `units/<family>.rs` (`mod <unit>; pub use <unit>::*;`);
-   the family and `units::*` re-export it to the crate root automatically. Add
-   tests in the family file's `#[cfg(test)]` modules matching nearby ones.
+7. Declare the module and re-export the new type in the parent module. The
+   family re-exports grouped units, and `units` re-exports each family at the
+   crate root. Use the test index in `src/units/tests.rs` to find the relevant
+   conformance, dimensional arithmetic, inherent method, and conversion tests.
 
 ## Validation
 

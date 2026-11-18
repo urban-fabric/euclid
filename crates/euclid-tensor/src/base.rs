@@ -1,4 +1,4 @@
-use euclid_numeric::{Boolean, Compare, Element, NormedDivisionAlgebra, Real, Ring, Semiring};
+use euclid_scalar::{Boolean, Compare, Element, NormedDivisionAlgebra, Real, Ring, Semiring};
 
 /// **Rank n.** An n-dimensional array over a carrier element type: the dtype-agnostic array
 /// notions — shape, reshape, indexing/gather, and tensor selection. A vector is just a rank-1

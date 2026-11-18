@@ -221,3 +221,27 @@ mod tests {
         assert!(a.approx_eq(&b, &LengthMeters::new(-0.001)));
     }
 }
+
+#[cfg(test)]
+mod error_tests {
+    use super::QuantityError;
+
+    /// `QuantityError`'s `Display` must say something.
+    ///
+    /// It is the crate's only error type and it implements `std::error::Error`, so this string is
+    /// what reaches a caller's logs when a conversion refuses a non-finite value. Mutation
+    /// testing found the body replaceable with one that writes nothing and returns `Ok(())` — an
+    /// error that renders empty is an error nobody can act on.
+    #[test]
+    fn the_error_describes_itself() {
+        let rendered = QuantityError::NotFinite.to_string();
+        assert!(!rendered.is_empty(), "the error rendered to nothing");
+        assert!(
+            rendered.contains("finite"),
+            "the message should name the problem: {rendered}"
+        );
+        // And it is usable as a `std::error::Error`, which is what makes the message reachable.
+        let as_error: &dyn std::error::Error = &QuantityError::NotFinite;
+        assert_eq!(as_error.to_string(), rendered);
+    }
+}

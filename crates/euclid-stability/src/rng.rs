@@ -45,6 +45,34 @@ mod tests {
     use super::SplitMix64;
     use std::collections::BTreeSet;
 
+    /// The published SplitMix64 stream for seed 0, as a golden vector.
+    ///
+    /// Everything else in this module checks a *relation* — same seed agrees with itself,
+    /// different seeds diverge, a zero seed does not stick — and every one of those holds for an
+    /// RNG whose mixing function has been quietly broken. Mutation testing proved it: replacing
+    /// either `^` in the final avalanche with `|` or `&` left all three tests green, because a
+    /// damaged mixer is still deterministic and still varies.
+    ///
+    /// What a golden vector adds is that these are the *right* numbers. They are the reference
+    /// implementation's output for seed 0, so this test pins the algorithm to the one the name
+    /// claims rather than to whatever this file happens to compute — and any mutation of the
+    /// constants, the shifts or the xors moves them.
+    #[test]
+    fn the_stream_matches_the_reference_implementation() {
+        let mut rng = SplitMix64::new(0);
+        let drawn: Vec<u64> = (0..4).map(|_| rng.next_u64()).collect();
+        assert_eq!(
+            drawn,
+            vec![
+                0xE220_A839_7B1D_CDAF,
+                0x6E78_9E6A_A1B9_65F4,
+                0x06C4_5D18_8009_454F,
+                0xF88B_B8A8_724C_81EC,
+            ],
+            "the stream has diverged from the published SplitMix64 vector for seed 0"
+        );
+    }
+
     #[test]
     fn a_seed_reproduces_its_stream() {
         let mut a = SplitMix64::new(12_345);

@@ -28,17 +28,11 @@
 //!
 //! ## What is not here
 //!
-//! **Analysis** — `exp`/`ln`/`conj`, the real transcendentals — is a separate concern, and lives
-//! in `euclid-numeric` as a contract over any carrier. **The concrete number line** is a third
-//! concern again: `euclid-scalar` is where this tower's [`OrderedField`] /
-//! [`AlgebraicallyClosedField`] fuse with that analysis surface into the `Copy` `Real` and
-//! `Complex` of `f64`/`f32`.
-//!
-//! That three-way split is why this crate has **no dependencies at all**, not even
-//! `euclid-numeric`. Algebraic structure needs nothing from analysis; it is `euclid-scalar` that
-//! needs both. Until 0.4 this crate held the tower *and* the concrete tier, which forced it to
-//! import euclid's `Real`/`Complex` under the aliases `LazyReal`/`LazyComplex` to dodge a name
-//! collision with its own. Splitting the two removed the collision and the aliases with it.
+//! **Analysis** — `exp`/`ln`, real and complex special functions — lives in `euclid-scalar`.
+//! That crate owns both backend-neutral scalar contracts and eager `HostReal`/`HostComplex`
+//! traits, alongside native implementations and numerical kernels. It depends on this
+//! algebraic tower; the algebraic tower does not depend on analysis.
+//! The optional `conformance-generated` feature adds the independent property engine.
 
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 

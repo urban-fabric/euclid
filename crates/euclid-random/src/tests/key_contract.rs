@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use super::toy_sampler::ToySampler;
-use crate::RandomKey;
+use crate::{RandomKey, RandomSampler, conformance};
 
 type S = ToySampler;
 
@@ -121,4 +121,92 @@ fn toy_sampler_satisfies_the_key_laws() {
 #[test]
 fn toy_sampler_satisfies_the_sampler_bound_laws() {
     crate::conformance::sampler_bound_laws::<ToySampler>(&[0, 1, 7, 42], "ToySampler");
+}
+
+// Each instantiation introduces one fault into the otherwise valid reference sampler.
+struct BrokenSampler<const KEYS: bool>;
+
+impl<const KEYS: bool> RandomKey for BrokenSampler<KEYS> {
+    type Key = <ToySampler as RandomKey>::Key;
+
+    fn key(seed: u64) -> Self::Key {
+        ToySampler::key(seed)
+    }
+
+    fn split(key: &Self::Key, count: usize) -> Vec<Self::Key> {
+        if KEYS {
+            vec![*key; count]
+        } else {
+            ToySampler::split(key, count)
+        }
+    }
+
+    fn fold_in(key: &Self::Key, data: u64) -> Self::Key {
+        ToySampler::fold_in(key, data)
+    }
+}
+
+impl<const KEYS: bool> RandomSampler for BrokenSampler<KEYS> {
+    type Real = f64;
+    type Bool = bool;
+    type Int = i64;
+
+    fn uniform(key: &Self::Key, shape: &[usize], low: f64, high: f64) -> f64 {
+        if !KEYS && (low, high) == (0.0, 2.0) {
+            2.25
+        } else {
+            ToySampler::uniform(key, shape, low, high)
+        }
+    }
+
+    fn normal(key: &Self::Key, shape: &[usize], mean: f64, stddev: f64) -> f64 {
+        ToySampler::normal(key, shape, mean, stddev)
+    }
+
+    fn bernoulli(key: &Self::Key, shape: &[usize], p: f64) -> bool {
+        ToySampler::bernoulli(key, shape, p)
+    }
+
+    fn randint(key: &Self::Key, shape: &[usize], low: i64, high: i64) -> i64 {
+        ToySampler::randint(key, shape, low, high)
+    }
+}
+
+impl conformance::ConformanceSample for BrokenSampler<true> {
+    fn seeds() -> Vec<u64> {
+        ToySampler::seeds()
+    }
+}
+
+#[test]
+fn key_suites_reject_children_that_copy_the_parent() {
+    assert!(
+        std::panic::catch_unwind(|| conformance::key_laws_for::<BrokenSampler<true>>(
+            "copies parent"
+        ))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| conformance::generated::key_laws_generated::<
+            BrokenSampler<true>,
+        >("copies parent"))
+        .is_err()
+    );
+}
+
+#[test]
+fn sampler_suites_reject_a_draw_outside_the_test_interval() {
+    assert!(
+        std::panic::catch_unwind(|| conformance::sampler_bound_laws::<BrokenSampler<false>>(
+            &[0, 1, 7, 42],
+            "escapes"
+        ))
+        .is_err()
+    );
+    assert!(
+        std::panic::catch_unwind(|| conformance::generated::sampler_bound_laws_generated::<
+            BrokenSampler<false>,
+        >("escapes"))
+        .is_err()
+    );
 }

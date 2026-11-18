@@ -1,0 +1,31 @@
+full_surface!(amount_moles, crate::AmountMoles, as_moles);
+full_surface!(
+    catalytic_activity_katals,
+    crate::CatalyticActivityKatals,
+    as_katals
+);
+full_surface!(
+    concentration_moles_per_cubic_meter,
+    crate::ConcentrationMolesPerCubicMeter,
+    as_moles_per_cubic_meter
+);
+full_surface!(
+    molality_moles_per_kilogram,
+    crate::MolalityMolesPerKilogram,
+    as_moles_per_kilogram
+);
+full_surface!(
+    molar_energy_joules_per_mole,
+    crate::MolarEnergyJoulesPerMole,
+    as_joules_per_mole
+);
+full_surface!(
+    molar_mass_kilograms_per_mole,
+    crate::MolarMassKilogramsPerMole,
+    as_kilograms_per_mole
+);
+full_surface!(
+    molar_volume_cubic_meters_per_mole,
+    crate::MolarVolumeCubicMetersPerMole,
+    as_cubic_meters_per_mole
+);

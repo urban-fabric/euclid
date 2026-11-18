@@ -1,4 +1,4 @@
-use euclid_numeric::Ring;
+use euclid_scalar::Ring;
 
 use super::Measure;
 

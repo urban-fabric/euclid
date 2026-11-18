@@ -4,7 +4,7 @@
 //! encoding, and structural conveniences.
 
 use super::Tensor;
-use euclid_numeric::{NormedDivisionAlgebra, Real, Ring, Semiring};
+use euclid_scalar::{NormedDivisionAlgebra, Real, Ring, Semiring};
 
 /// Statistical and scan reductions beyond the additive/ordered core on [`Tensor`].
 ///

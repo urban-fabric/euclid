@@ -1,2 +1,19 @@
+# rust
 target/
-.idea/
+
+# local mutation investigations
+/.mutation-investigations/
+mutants.out
+mutants.out.old
+
+# editors
+.agents
+.aws
+.codex
+.claude
+.idea
+CLAUDE.md
+
+# tools
+__pycache__/
+/bin/

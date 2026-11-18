@@ -1,0 +1,7 @@
+mod acceleration_centimeters_per_second_squared;
+mod acceleration_meters_per_second_squared;
+
+pub use acceleration_centimeters_per_second_squared::AccelerationCentimetersPerSecondSquared;
+pub use acceleration_meters_per_second_squared::AccelerationMetersPerSecondSquared;
+
+const MPS2_PER_CMPS2: f64 = 0.01;

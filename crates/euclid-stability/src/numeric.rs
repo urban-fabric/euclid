@@ -67,30 +67,32 @@ pub const UNIT_ROUNDOFF: f64 = f64::EPSILON / 2.0;
 ///
 /// Returns `None` where the comparison is meaningless: non-finite values, or a derivative
 /// estimate that cannot be formed.
+///
+/// The symmetric derivative window must fit in the finite range. Subnormal inputs
+/// have too little relative precision for a one-ulp comparison.
 #[must_use]
 pub fn seam_ratio(f: impl Fn(f64) -> f64, x: f64) -> Option<f64> {
     let next = next_up(x);
+    if ![x, next]
+        .into_iter()
+        .all(|point| point.is_finite() && !point.is_subnormal())
+    {
+        return None;
+    }
     let (here, there) = (f(x), f(next));
-    if !here.is_finite() || !there.is_finite() || next == x {
+    if ![here, there].into_iter().all(f64::is_finite) {
         return None;
     }
     let observed = (there - here).abs();
 
     // The derivative is estimated over a window far wider than one ulp, so a seam inside the
     // window cannot inflate the expectation and hide itself.
-    let window = f64::EPSILON.sqrt() * x.abs().max(f64::MIN_POSITIVE);
-    // Decline in the subnormal range. Two things break there at once: the derivative window is
-    // enormous relative to `x` (it is floored at `MIN_POSITIVE` to avoid underflowing to
-    // nothing), and a one-ulp step is a *percent-scale* relative change rather than a
-    // sixteen-digit one, because subnormals have so few significant bits left. So consecutive
-    // outputs legitimately differ hugely and the whole premise of the measure fails. `cbrt` was
-    // reported as seamed at `1e-321` for exactly this reason — the detector's fault, not
-    // `cbrt`'s.
-    let subnormal = |v: f64| v != 0.0 && v.abs() < f64::MIN_POSITIVE;
-    if subnormal(x) || subnormal(next) || x + window == x || x - window == x {
+    let window = f64::EPSILON.sqrt() * x.abs();
+    let [lower, upper] = [x - window, x + window];
+    if ![lower, upper].into_iter().all(f64::is_finite) {
         return None;
     }
-    let (up, down) = (f(x + window), f(x - window));
+    let (up, down) = (f(upper), f(lower));
     if !up.is_finite() || !down.is_finite() {
         return None;
     }
@@ -119,14 +121,7 @@ fn ulp_of(x: f64) -> f64 {
 /// The next representable `f64` above `x`.
 #[must_use]
 pub fn next_up(x: f64) -> f64 {
-    if x.is_nan() || x == f64::INFINITY {
-        return x;
-    }
-    if x == 0.0 {
-        return f64::from_bits(1);
-    }
-    let bits = x.to_bits();
-    f64::from_bits(if x > 0.0 { bits + 1 } else { bits - 1 })
+    x.next_up()
 }
 
 /// A seam found by [`scan_for_seam`], [`scan_window`] or [`hunt_seams`].
@@ -214,14 +209,7 @@ pub fn scan_window(
 /// The next representable `f64` below `x`.
 #[must_use]
 pub fn next_down(x: f64) -> f64 {
-    if x.is_nan() || x == f64::NEG_INFINITY {
-        return x;
-    }
-    if x == 0.0 {
-        return -f64::from_bits(1);
-    }
-    let bits = x.to_bits();
-    f64::from_bits(if x > 0.0 { bits - 1 } else { bits + 1 })
+    x.next_down()
 }
 
 /// Scan a window around each candidate and return every seam found, worst first.
@@ -312,23 +300,23 @@ pub fn scan_monotone(f: impl Fn(f64) -> f64, start: f64, steps: usize) -> Option
 /// meaning, or where `f` is non-finite nearby.
 #[must_use]
 pub fn condition_at(f: impl Fn(f64) -> f64, x: f64) -> Option<f64> {
-    if x == 0.0 || !x.is_finite() {
-        return None;
-    }
-    let value = f(x);
-    if value == 0.0 || !value.is_finite() {
-        return None;
-    }
-
+    let x = finite_nonzero(x)?;
+    let value = finite_nonzero(f(x))?;
     let step = f64::EPSILON.powf(0.25) * x.abs();
     let (up, down) = (f(x + step), f(x - step));
-    if !up.is_finite() || !down.is_finite() {
-        return None;
-    }
-
-    let derivative = (up - down) / (2.0 * step);
+    let derivative = central_difference(up, down, step)?;
     let condition = (x * derivative / value).abs();
     condition.is_finite().then_some(condition)
+}
+
+fn finite_nonzero(x: f64) -> Option<f64> {
+    x.is_finite().then_some(x).filter(|x| *x != 0.0)
+}
+
+fn central_difference(up: f64, down: f64, step: f64) -> Option<f64> {
+    let up = up.is_finite().then_some(up)?;
+    let down = down.is_finite().then_some(down)?;
+    Some((up - down) / (2.0 * step))
 }
 
 /// The relative error a **forward-stable** implementation of `f` is entitled to at `x`.

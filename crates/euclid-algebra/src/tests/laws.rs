@@ -86,7 +86,7 @@ impl ConformanceSample for GaussianRational {
 
 impl ConformanceSample for f64 {
     /// Dyadic rationals only: exactly representable, so the field laws hold without a
-    /// tolerance. `f64`'s inexactness is euclid-numeric's subject, not the tower's.
+    /// tolerance. `f64`'s inexactness is euclid-scalar's subject, not the tower's.
     fn sample() -> Vec<Self> {
         vec![0.0, 1.0, -1.0, 0.5, -2.5, 4.0]
     }
@@ -167,6 +167,17 @@ fn zp_is_a_field_for_a_prime_modulus() {
             assert_eq!(a * a.inverse(), Zp::<7>::ONE);
         }
     }
+
+    // In GF(7), 2 · 4 = 1, so 3 / 2 = 5 with zero remainder.
+    let (q, r) = Zp::<7>::new(3).div_rem(Zp::new(2));
+    assert_eq!((q.value(), r.value()), (5, 0));
+}
+
+#[test]
+fn zp_inverse_handles_zero_exponent_and_wide_prime_moduli() {
+    assert_eq!(Zp::<2>::new(1).inverse().value(), 1);
+    // For the Mersenne prime 2^61 − 1, 2 · 2^60 ≡ 1.
+    assert_eq!(Zp::<{ (1 << 61) - 1 }>::new(2).inverse().value(), 1 << 60);
 }
 
 #[test]
@@ -174,6 +185,7 @@ fn zn_satisfies_the_ring_laws_for_a_composite_modulus() {
     laws::commutative_semiring_laws_for::<Zn<6>>("Zn<6>");
     laws::ring_laws_for::<Zn<6>>("Zn<6>");
     assert_eq!(Zn::<6>::from_i64(-1).value(), 5);
+    assert_eq!(Zn::<1>::ONE.value(), 0);
 }
 
 #[test]
@@ -196,6 +208,10 @@ fn zn_composite_has_zero_divisors() {
 fn gaussian_rationals_satisfy_the_field_laws() {
     laws::commutative_semiring_laws_for::<GaussianRational>("GaussianRational");
     laws::ring_laws_for::<GaussianRational>("GaussianRational");
+    // The Euclidean tier too: `div_rem` is the one operation a field's zero remainder makes
+    // look trivial, and mutation testing found its quotient unpinned.
+    laws::euclidean_laws_for::<GaussianRational>("GaussianRational");
+    laws::field_laws_for::<GaussianRational>("GaussianRational");
     laws::field_laws_for::<GaussianRational>("GaussianRational");
 }
 
@@ -218,7 +234,7 @@ fn gaussian_i_squared_is_minus_one() {
 #[test]
 fn floats_satisfy_the_field_laws_on_exact_binary_values() {
     // Dyadic rationals only: these are represented exactly, so the field laws hold without a
-    // tolerance. The inexact behaviour of `f64` is euclid-numeric's subject, not this crate's —
+    // tolerance. The inexact behaviour of `f64` is euclid-scalar's subject, not this crate's —
     // here the question is only whether the tower's axioms are wired up correctly.
     laws::commutative_semiring_laws_for::<f64>("f64");
     laws::ring_laws_for::<f64>("f64");
@@ -299,4 +315,27 @@ fn the_boolean_dioid_is_an_ordered_semiring() {
     // Monotonicity is what makes a relaxation step sound: extending two ordered partial results
     // by the same factor must not reorder them.
     laws::ordered_semiring_laws(&[Reach(false), Reach(true)], "Reach");
+}
+
+/// The by-reference magma operations, for every carrier that offers them.
+///
+/// A separate test rather than a line inside each carrier's block above, because the `Ref`
+/// traits are not part of the tier tower — a carrier can host a semiring without them — so the
+/// check is keyed on the operations rather than on the tier.
+///
+/// Mutation testing is what prompted it: `add_ref` and `mul_ref` were replaceable with
+/// `Default::default()` for every carrier in the crate, returning zero for all input, with the
+/// whole workspace suite green. See [`conformance::ref_magma_laws`](crate::conformance::ref_magma_laws)
+/// for why the duplicate implementation is the one nothing exercises.
+#[test]
+fn by_reference_operations_agree_with_by_value() {
+    laws::ref_magma_laws_for::<i64>("i64");
+    // `i128` has the operations but declares no `ConformanceSample`, so it brings its own.
+    laws::ref_magma_laws(&[0_i128, 1, -1, 7, -12], "i128");
+    laws::ref_magma_laws_for::<f32>("f32");
+    laws::ref_magma_laws_for::<f64>("f64");
+    laws::ref_magma_laws_for::<Rational64>("Rational64");
+    laws::ref_magma_laws_for::<GaussianRational>("GaussianRational");
+    laws::ref_magma_laws_for::<Zp<7>>("Zp<7>");
+    laws::ref_magma_laws_for::<Zn<6>>("Zn<6>");
 }

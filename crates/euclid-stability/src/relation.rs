@@ -125,6 +125,7 @@ fn broke<T: Debug>(law: &str, name: &str, comparison: &str, left: &T, right: &T)
         ),
         "a metamorphic relation",
     )
+    .with_identity(format!("{name}: {law}"))
 }
 
 /// `f(f(x)) = x` — applying `f` twice returns the original.
@@ -496,18 +497,12 @@ pub fn precision_agrees(
 
     #[allow(clippy::cast_possible_truncation)]
     let rounded = expected as f32;
-    if !rounded.is_finite() || !computed.is_finite() {
-        // Both non-finite in the same way is agreement; otherwise it is a disagreement worth
-        // reporting through the normal path.
-        if rounded.is_nan() && computed.is_nan() {
-            return Ok(());
-        }
-        if rounded == computed {
-            return Ok(());
-        }
+    if rounded == computed || (rounded.is_nan() && computed.is_nan()) {
+        return Ok(());
     }
 
-    if f32_ulps_between(computed, rounded).is_some_and(|gap| gap <= u64::from(ulps)) {
+    let gap = f32_ulps_between(computed, rounded);
+    if gap.is_some_and(|gap| gap <= u64::from(ulps)) {
         Ok(())
     } else {
         Err(Failure::new(
@@ -519,8 +514,7 @@ pub fn precision_agrees(
                  The wide result rounded to f32 is the best the narrow kernel could return, so \
                  this gap is the narrow implementation's own — most often an f64 coefficient set \
                  reused at f32, where it is no longer the right polynomial.",
-                f32_ulps_between(computed, rounded)
-                    .map_or_else(|| "non-finite".to_string(), |gap| gap.to_string())
+                gap.map_or_else(|| "non-finite".to_string(), |gap| gap.to_string())
             ),
             "a stability relation",
         ))
@@ -630,6 +624,77 @@ pub fn bounded<T: Clone + Debug, R: PartialOrd + Debug>(
         Err(Failure::new(
             format!("{name}: f({x:?}) = {value:?} is outside [{low:?}, {high:?}]"),
             "a metamorphic relation",
+        ))
+    }
+}
+
+/// `f(perturb(x)) = f(x)` — the output does **not** depend on what `perturb` changes.
+///
+/// The one shape missing from the list above, and the only one here that asserts an
+/// *independence* rather than a correspondence. Its uses are the places where a function is
+/// documented to ignore something: periodicity (`sin_cos_degrees` must ignore a whole turn),
+/// invariance under a common positive scale, insensitivity to a representation detail that
+/// carries no value.
+///
+/// # Why a named relation rather than two calls and an `assert_eq!`
+///
+/// Because the claim is easy to make in prose and easy to leave untested, and when it holds it
+/// is *invisible to mutation testing* — which is how this gap was found. `gamma_lr_inv` is a
+/// safeguarded Newton solve: a cheap seed, a bracket, and bisection whenever a Newton step would
+/// leave it. Its answer is therefore independent of both the seed and the derivative, and
+/// measuring that against a 120-digit reference confirms it — with the seed removed and the
+/// densities forced to `0`, so no Newton step can fire at all, the worst relative error moves
+/// from `1.1e-13` to `7.4e-14`. Unchanged, marginally better.
+///
+/// Fifty-six mutants survive in that kernel for exactly that reason, and no accuracy assertion
+/// can kill them because there is no accuracy difference to find. The honest response is to
+/// state the guarantee instead of chasing them, and this is the function that states it.
+///
+/// # What it cannot reach
+///
+/// Recorded because the motivating example is the one case this does *not* serve. The quantile
+/// solver's insensitivity is **internal** — the seed is a local, not an argument — so no
+/// relation taking `f` from outside can perturb it. Expressing that would mean making the seed
+/// injectable, which is production surface added for a test, and the measurement in the
+/// paragraph above is the better evidence. Use this where the ignored thing is part of the
+/// *input*; where it is an implementation detail, measure against truth with the detail
+/// disabled and write down what you found.
+///
+/// ```
+/// use euclid_stability::relation::{self, Exact};
+///
+/// // A turn is a turn: reducing an angle must ignore whole revolutions.
+/// relation::insensitive_to(
+///     "angle reduction is periodic",
+///     90.0_f64,
+///     |x| x + 360.0,
+///     |x| x.rem_euclid(360.0),
+///     &Exact,
+/// )
+/// .unwrap();
+/// ```
+///
+/// Note `Exact` there. An insensitivity claim is usually either exact or false — the ignored
+/// thing is ignored or it is not — so reach for a tolerance only when the *computation* after
+/// the reduction is inexact, and say which of the two you mean.
+pub fn insensitive_to<T: Clone + Debug, R: Debug>(
+    name: &str,
+    x: T,
+    perturb: impl Fn(T) -> T,
+    f: impl Fn(T) -> R,
+    compare: &impl Compare<R>,
+) -> Outcome {
+    let direct = f(x.clone());
+    let perturbed = f(perturb(x));
+    if compare.same(&perturbed, &direct) {
+        Ok(())
+    } else {
+        Err(broke(
+            "f(perturb(x)) = f(x)",
+            name,
+            &compare.describe(),
+            &perturbed,
+            &direct,
         ))
     }
 }

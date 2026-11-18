@@ -10,19 +10,26 @@
 //!
 //! # Rejection
 //!
-//! [`filter`](Gen::filter) and `assume!` both produce [`Rejected`], which is distinct from both
-//! a failure and an [`Overrun`]. A rejected case is not evidence of anything — it is an input
+//! [`filter`](Gen::filter) produces [`Rejected`]; `assume!` returns a
+//! [`FailureKind::Discard`](crate::FailureKind::Discard). Both are distinct from a failed
+//! assertion and an [`Overrun`]. A rejected case is not evidence of anything — it is an input
 //! the property does not claim to cover — so the runner discards it and draws again, up to a
 //! budget. Hitting that budget is itself reported, because a generator that rejects nine cases
 //! in ten is testing far less than its case count suggests.
 
+mod compound;
+mod explore;
 pub mod float;
+pub mod float32;
+
+pub use compound::{array, i128, option, result, sampled_from, sized, u64, u128, uint};
+use explore::{Metadata, product, range_tapes, sequence, weighted_tapes};
 
 use std::rc::Rc;
 
 use crate::source::{Overrun, Source};
 
-/// A generated case was rejected by a filter or an `assume!`.
+/// A generator rejected a case through a filter.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rejected {
     /// What was being assumed, for the diagnostic when the rejection budget runs out.
@@ -50,12 +57,14 @@ type Draw<T> = Rc<dyn Fn(&mut Source) -> Result<T, DrawError>>;
 /// A recipe for reading a `T` off a [`Source`].
 pub struct Gen<T> {
     draw: Draw<T>,
+    metadata: Rc<dyn Fn() -> Metadata>,
 }
 
 impl<T> Clone for Gen<T> {
     fn clone(&self) -> Self {
         Self {
             draw: Rc::clone(&self.draw),
+            metadata: self.metadata.clone(),
         }
     }
 }
@@ -65,7 +74,17 @@ impl<T: 'static> Gen<T> {
     pub fn new(draw: impl Fn(&mut Source) -> Result<T, DrawError> + 'static) -> Self {
         Self {
             draw: Rc::new(draw),
+            metadata: Rc::new(|| (None, Rc::new(Vec::new()))),
         }
+    }
+
+    pub(crate) fn exploration(&self) -> Metadata {
+        (self.metadata)()
+    }
+
+    fn with_metadata(mut self, build: impl Fn() -> Metadata + 'static) -> Self {
+        self.metadata = Rc::new(build);
+        self
     }
 
     /// Read one value.
@@ -75,7 +94,10 @@ impl<T: 'static> Gen<T> {
 
     /// Transform every generated value.
     pub fn map<U: 'static>(self, f: impl Fn(T) -> U + 'static) -> Gen<U> {
-        Gen::new(move |source| self.draw(source).map(&f))
+        let metadata = self.metadata.clone();
+        let mut result = Gen::new(move |source| self.draw(source).map(&f));
+        result.metadata = metadata;
+        result
     }
 
     /// Choose the next generator based on the value just drawn.
@@ -93,20 +115,33 @@ impl<T: 'static> Gen<T> {
 
     /// Keep only values satisfying `predicate`; reject the rest.
     pub fn filter(self, reason: &'static str, predicate: impl Fn(&T) -> bool + 'static) -> Self {
-        Gen::new(move |source| {
+        let metadata = self.metadata.clone();
+        let mut result = Gen::new(move |source| {
             let value = self.draw(source)?;
             if predicate(&value) {
                 Ok(value)
             } else {
                 Err(DrawError::Rejected(Rejected { reason }))
             }
-        })
+        });
+        result.metadata = metadata;
+        result
+    }
+
+    /// Inject explicit edge values. This wrapper changes the generator's tape format.
+    /// Random runs mix them in; `Config::edges_first` runs their complete tapes first.
+    pub fn with_examples(self, values: Vec<T>) -> Self
+    where
+        T: Clone,
+    {
+        weighted(vec![(1, sampled_from(values)), (3, self)])
     }
 }
 
 /// The same value every time.
 pub fn just<T: Clone + 'static>(value: T) -> Gen<T> {
     Gen::new(move |_| Ok(value.clone()))
+        .with_metadata(|| (Some(Rc::new(vec![vec![]])), Rc::new(vec![vec![]])))
 }
 
 /// An integer in the inclusive range `low..=high`.
@@ -115,7 +150,11 @@ pub fn just<T: Clone + 'static>(value: T) -> Gen<T> {
 /// If `low > high`.
 pub fn int(low: i64, high: i64) -> Gen<i64> {
     assert!(low <= high, "empty range {low}..={high}");
-    Gen::new(move |source| Ok(source.in_range(low, high)?))
+    Gen::new(move |source| Ok(source.in_range(low, high)?)).with_metadata(move || {
+        range_tapes(
+            (core::primitive::i128::from(high) - core::primitive::i128::from(low) + 1) as u128,
+        )
+    })
 }
 
 /// A `usize` in the inclusive range `low..=high`.
@@ -123,14 +162,13 @@ pub fn int(low: i64, high: i64) -> Gen<i64> {
 /// # Panics
 /// If `low > high`.
 pub fn index(low: usize, high: usize) -> Gen<usize> {
-    assert!(low <= high, "empty range {low}..={high}");
-    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
-    Gen::new(move |source| Ok(source.in_range(low as i64, high as i64)? as usize))
+    assert!(low <= high, "empty index range");
+    uint(low as u64, high as u64).map(|value| value as usize)
 }
 
 /// A `bool`.
 pub fn boolean() -> Gen<bool> {
-    Gen::new(|source| Ok(source.boolean()?))
+    int(0, 1).map(|value| value == 1)
 }
 
 /// A `Vec<T>` whose length is in `min..=max`.
@@ -142,15 +180,16 @@ pub fn boolean() -> Gen<bool> {
 /// If `min > max`.
 pub fn vec<T: 'static>(element: Gen<T>, min: usize, max: usize) -> Gen<Vec<T>> {
     assert!(min <= max, "empty length range {min}..={max}");
-    Gen::new(move |source| {
-        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
-        let len = source.in_range(min as i64, max as i64)? as usize;
+    let metadata_element = element.clone();
+    let result = Gen::new(move |source| {
+        let len = source.in_unsigned_range(min as u64, max as u64)? as usize;
         let mut out = Vec::with_capacity(len);
         for _ in 0..len {
             out.push(element.draw(source)?);
         }
         Ok(out)
-    })
+    });
+    result.with_metadata(move || sequence(&metadata_element, min, max))
 }
 
 /// A `Vec<T>` of pairwise-distinct values, with length in `min..=max`.
@@ -177,9 +216,9 @@ pub fn vec<T: 'static>(element: Gen<T>, min: usize, max: usize) -> Gen<Vec<T>> {
 /// If `min > max`.
 pub fn distinct<T: PartialEq + 'static>(element: Gen<T>, min: usize, max: usize) -> Gen<Vec<T>> {
     assert!(min <= max, "empty length range {min}..={max}");
-    Gen::new(move |source| {
-        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
-        let len = source.in_range(min as i64, max as i64)? as usize;
+    let metadata_element = element.clone();
+    let result = Gen::new(move |source| {
+        let len = source.in_unsigned_range(min as u64, max as u64)? as usize;
         let mut out: Vec<T> = Vec::with_capacity(len);
         for _ in 0..len {
             let candidate = element.draw(source)?;
@@ -192,7 +231,8 @@ pub fn distinct<T: PartialEq + 'static>(element: Gen<T>, min: usize, max: usize)
             }
         }
         Ok(out)
-    })
+    });
+    result.with_metadata(move || sequence(&metadata_element, min, max))
 }
 
 /// A permutation of `0..n`, as a `Vec<usize>` of length `n`.
@@ -232,10 +272,12 @@ pub fn permutation(n: usize) -> Gen<Vec<usize>> {
 /// If `choices` is empty.
 pub fn one_of<T: 'static>(choices: Vec<Gen<T>>) -> Gen<T> {
     assert!(!choices.is_empty(), "one_of needs at least one choice");
-    Gen::new(move |source| {
-        let pick = source.below(choices.len() as u64)? as usize;
-        choices[pick].draw(source)
-    })
+    weighted(
+        choices
+            .into_iter()
+            .map(|generator| (1, generator))
+            .collect(),
+    )
 }
 
 /// One of `choices`, by relative weight.
@@ -245,15 +287,28 @@ pub fn one_of<T: 'static>(choices: Vec<Gen<T>>) -> Gen<T> {
 pub fn weighted<T: 'static>(choices: Vec<(u32, Gen<T>)>) -> Gen<T> {
     assert!(!choices.is_empty(), "weighted needs at least one choice");
     let weights: Vec<u32> = choices.iter().map(|(w, _)| *w).collect();
-    Gen::new(move |source| {
+    let metadata_choices = choices.clone();
+    let result = Gen::new(move |source| {
         let pick = source.weighted(&weights)?;
         choices[pick].1.draw(source)
-    })
+    });
+    result.with_metadata(move || weighted_tapes(&metadata_choices))
 }
 
 /// Two generators as a pair.
 pub fn pair<A: 'static, B: 'static>(first: Gen<A>, second: Gen<B>) -> Gen<(A, B)> {
-    Gen::new(move |source| Ok((first.draw(source)?, second.draw(source)?)))
+    let metadata_first = first.clone();
+    let metadata_second = second.clone();
+    Gen::new(move |source| Ok((first.draw(source)?, second.draw(source)?))).with_metadata(
+        move || {
+            let (finite_a, edges_a) = metadata_first.exploration();
+            let (finite_b, edges_b) = metadata_second.exploration();
+            (
+                product(finite_a.as_deref(), finite_b.as_deref()).map(Rc::new),
+                Rc::new(product(Some(&edges_a), Some(&edges_b)).unwrap_or_default()),
+            )
+        },
+    )
 }
 
 /// Three generators as a triple.
@@ -262,13 +317,7 @@ pub fn triple<A: 'static, B: 'static, C: 'static>(
     second: Gen<B>,
     third: Gen<C>,
 ) -> Gen<(A, B, C)> {
-    Gen::new(move |source| {
-        Ok((
-            first.draw(source)?,
-            second.draw(source)?,
-            third.draw(source)?,
-        ))
-    })
+    pair(pair(first, second), third).map(|((a, b), c)| (a, b, c))
 }
 
 /// A self-referential generator, for trees and expressions.

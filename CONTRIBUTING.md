@@ -19,16 +19,11 @@ rather than a push:
   nothing else, because a pinned consumer has exactly one question
 - a release is a tag, cut after the merge — see [Releasing](#releasing)
 
-**Not 1.0, and not soon.** 1.0 is a promise that the surface will not break
-without a major bump, and two things have to close first: `euclid-matrix`'s
-twelve traits have never been executed by any carrier (no tensor exists here to
-satisfy them, and the boundary forbids shipping one), and the generated half of
-the conformance strategy is still internal to this repository. Pinning works
-today and is the point; 1.0 is a separate claim.
-
-`euclid-quantity`'s 270 undocumented public items were the third, and are
-written — `missing_docs` is now denied with no crate-wide exception anywhere in
-the workspace.
+**1.0 is a separate commitment.** It promises a compatible public surface
+until the next major version. The matrix conformance laws still need to run
+against a downstream tensor carrier. Euclid exposes generated conformance laws
+through the `conformance-generated` feature and requires documentation for
+public items across the workspace.
 
 ## Version Control: Jujutsu
 
@@ -134,7 +129,7 @@ The last one is not redundant with `cargo test --doc`: that runs doctests, while
 this resolves **intra-doc links**. Nothing else catches a `[`foo`](path)` whose
 path has gone stale, and a broken link is worse than a missing one — it silently
 points somewhere plausible. `--document-private-items` is needed because most of
-`euclid-numeric` is `pub(crate)`, so the default doc build never looks at it.
+`euclid-scalar` is `pub(crate)`, so the default doc build never looks at it.
 
 `cargo deny check` is the sixth and the only one that looks *outside* the
 workspace — advisories, licences, the shape of the dependency graph, and where
@@ -156,6 +151,113 @@ worth knowing before a dependency change:
   and a comment in a README cannot stop a transitive pull.
 
 It needs the advisory database, so it is the one check that wants a network.
+
+## Property and numerical tests
+
+### Organizing property tests
+
+Keep public laws in the owning crate's `conformance` module. A generated sample calls the same
+law function as a fixed sample; deliberately broken carriers check that the law rejects a defect.
+Kernel accuracy, conditioning and stability properties live with the numeric implementation.
+
+The generated numeric suites have one entry point, `tests/properties.rs`, with children under
+`tests/properties/`: `identities`, `conditioning`, `stability` and `gamma`. The first two are split
+again by the question they ask. Run them with:
+
+```sh
+cargo test -p euclid-scalar --test properties
+EUCLID_STABILITY_SOAK=25 cargo test -p euclid-scalar --test properties gamma
+```
+
+Keep existing property names and regression/budget paths when moving tests. Persisted tapes are
+evidence, so moving a source file must not discard that evidence. Files containing tests stay under
+400 lines; helpers and related cases belong in a directory with an index explaining the split.
+
+**A sweep over magnitudes ends at the format's limit, or says where it stopped and why.** This is
+the one rule here that was written from a defect rather than from taste. `beta_reg` returned `NaN`
+for every `x` above `a + b = 5.64e102`, and the suite had been sweeping the exact identity
+`I_½(a, a) = ½` over `a = 1e7 … 1e100` — reaching the branch, on an unimpeachable instrument, and
+stopping two and a half decades short. `1e100` is a round number, not a boundary; `f64` runs to
+`1.8e308`. Its sibling `gamma_large_shape` sweeps to `1e300` and had no such hole, from the same
+template. Use `f64::MAX`, or the value that provably saturates, or leave a comment.
+
+**A property guarding a threshold branch requires coverage on both sides of it.** `classify!` with
+`Config::require(label, percent)` already fails a run whose cases never reach a labelled region,
+and `generate::float::notable()` already draws `f64::MAX`, `f64::MIN`, both subnormals and `2^53`.
+Nothing was missing when the above slipped through — nothing *required* the label. Where a kernel
+switches algorithms at a constant, label the two sides and require both, so a generator that
+drifts away from the crossover fails instead of quietly testing one branch twice.
+
+The engine's own tests are split under `src/{runner,relation,numeric,machine}/tests/`.
+[The QuickCheck design review](crates/euclid-stability/README.md#lessons-from-quickcheck) explains
+which framework distinctions the suite pins: accepted cases versus attempts, bounded shrinking,
+replay, and dependent input validity. Study the design without adding a second property engine.
+
+Runner tests in `structured`, `exploration` and `health` cover typed results, discards,
+finite-domain completeness and failure-preserving replay. Generator tests in `composition`
+and `single_precision` cover the extended domains. Use `run` when checking returned evidence;
+reserve `check` for tests of libtest panic reporting. Exercise a rejecting control as well as
+an accepting property, so a no-op engine cannot satisfy the test.
+
+**A test that swaps the panic hook must not run concurrently with one that drives the engine.**
+Both are process-global: a vacuity suite replaces the hook with a silent one so an expected panic
+prints no backtrace, and `euclid-stability` installs its own hook to record panic *locations*,
+which it uses as a failure's identity when confirming a shrunk counterexample reproduces the same
+failure. Overlap those on libtest's thread pool and a rejection test reports `unstable property:
+counterexample did not reproduce the same case and failure` instead of the law that broke — a
+flake that passes in isolation and fails in the full-workspace run. Both `vacuity.rs` files hold
+one `Mutex` across either kind of body; copy that if you add a third.
+
+### Reference values come from a committed generator
+
+An accuracy test needs something to be accurate *against*, and for the special functions that
+means a high-precision value computed outside euclid and pasted in. The convention, which is
+newer than most of this file:
+
+**Commit the generator with the owning crate's accuracy tests.** Readers need to be able to
+re-derive the fixtures and check the precision claim. `/bin/` is reserved for local tools.
+
+```sh
+python3 -B crates/euclid-scalar/tests/references/extreme_shapes.py
+```
+
+Three rules, each paid for:
+
+- **It validates itself before it emits, and exits non-zero otherwise.** Against closed forms it
+  shares no code with — `I_x(1,1) = x`, `I_x(a,1) = xᵃ`, `Γ(n) = (n−1)!`, and so on. This is not
+  ceremony: the `I_x(2,3)` expectation was first written with `B(2,3)⁻¹ = 6` instead of `12`, and
+  the check caught it before any reference was taken from the harness.
+- **The table names its generator and the command that reproduces it.** Byte-for-byte: the
+  emitter prints Rust rows, so regenerating and pasting should produce no diff.
+- **Provenance includes the exact argument.** Evaluate the reference at `Decimal(x)` for the
+  `f64` the test will actually pass, not at the real-valued expression `x` came from. Where a
+  function is steep this dominates — the incomplete beta's density is `≈3568` at `a = b = 1e7`,
+  so one ulp of `x` is worth `4e-13` of probability, which is `44×` the kernel's own error there.
+
+**No arbitrary-precision arithmetic in Rust.** References are computed in Python and pasted in.
+The membership rule keeps a bignum library out of the workspace, and an oracle module here would
+be a second implementation of the thing under test.
+
+### Soak runs
+
+`euclid-stability` fixes its seed by default, deliberately — a property that fails
+on one seed in ten is a property that fails, and a drifting seed turns that finding
+into a flake. To search harder on purpose:
+
+```sh
+EUCLID_STABILITY_SOAK=100 cargo test        # every property, a hundred times the cases
+EUCLID_STABILITY_SEED=0x1234 cargo test     # the same effort down a different path
+EUCLID_STABILITY_STATS=1 cargo test         # what the generators actually produced
+```
+
+A multiplier rather than an absolute count, because the suites choose their case
+counts deliberately and an absolute override would flatten considered numbers into
+one. Unset, these change nothing.
+
+A soak that trips an accuracy budget has **found something**: searching harder
+reached a worse input than the committed baseline, so the recorded number is now
+known to be optimistic. Re-record it with `EUCLID_STABILITY_RECORD=1` only once
+you have decided the kernel is acceptable there.
 
 **A git `pre-push` hook will not help you here.** `jj` does not run git hooks, so
 a `.git/hooks/pre-push` script is silently skipped on `jj git push` — exactly when
@@ -196,7 +298,7 @@ is held to the same bar.
 A release is a **tag**, and consumers pin it. Three steps, in this order:
 
 1. **Bump** `version` in `[workspace.package]` at the root, in its own commit or
-   as part of the change that broke something. All ten crates share it, so they
+   as part of the change that broke something. All nine crates share it, so they
    version together. Minor for a breaking change, patch otherwise — see
    [RELEASES](RELEASES.md#what-counts-as-breaking) for where that line is, and
    note it is wider than "the signature changed".
@@ -205,12 +307,13 @@ A release is a **tag**, and consumers pin it. Three steps, in this order:
    written a week later is an entry written from the diff.
 3. **Merge, then tag.** The tag goes on `main` *after* the squash merge, not on
    your local commit — the squash creates a new commit that does not exist until
-   the merge, so a tag cut beforehand points at something that never lands:
+   the merge. After fetching, confirm `origin/main` is the reviewed squash-merge
+   commit before tagging it.
 
    ```sh
-   jj git fetch
-   jj bookmark set v0.6.0 -r main@origin   # or: git tag v0.6.0 origin/main
-   jj git push --bookmark v0.6.0
+   jj git fetch --remote origin
+   git tag -a v0.6.0 origin/main -m "Euclid 0.6.0"
+   git push origin refs/tags/v0.6.0
    ```
 
    Getting this backwards is the one mistake the ordering exists to prevent, and
@@ -227,27 +330,16 @@ euclid is **layer 1** of a stratified fleet — see
 [euclid is layer 1](README.md#euclid-is-layer-1) for the map.
 
 Being the floor means a breaking change here is the most expensive kind that
-exists in the fleet: it is the only one every other repository has to absorb, and
-they have to absorb it *in layer order*, because cargo resolves one version of a
-package per build graph. Nothing above can move until everything below it has.
+exists in the fleet. Migrate in layer order so crates that exchange Euclid
+types share the same tag. Cargo can resolve multiple refs, each with its own
+type and trait identities.
 
-**That is six sequential migrations**, on the current graph — layer 2 (`bayes`,
-`hausdorff`, `cayley`), then `abel`, then `sierpinski` and `galois`, then
-`dirichlet` and `weierstrass`, then `cantor`. Not six repositories; six *waves*,
-each of which cannot start until the previous one lands.
+Start with direct consumers such as `bayes`, `hausdorff`, and `cayley`.
+Then migrate their dependents and check each build graph with
+`cargo tree --duplicates`.
 
-The current chain is not hypothetical. `galois` is pinned to euclid `0.3.0` and
-its own manifest records the migration as "blocked outside this repository":
-`hausdorff-base` requires `^0.3.0`, so bumping `galois` alone fails resolution on
-hausdorff's requirement rather than on its own. That is the layering working as
-intended — the failure is loud and at the bottom — but it means a euclid release
-is the start of a multi-repository sequence rather than an event.
-
-The practical consequence for this repository: **prefer additive change, and
-batch what must break.** Two breaking releases cost the fleet two six-wave
-propagations; one release carrying both costs it one. That asymmetry is the
-strongest argument available for holding a breaking change back until there is
-another to travel with it.
+Prefer additive changes and batch breaking changes that can ship together.
+Each breaking release requires another migration pass through its dependents.
 
 ### No CHANGELOG — RELEASES is not one
 
@@ -400,7 +492,7 @@ README's [data-structure section][ds].
   library: the same formula would produce different answers on different
   interfaces.
 - **New numeric function** — add it to the accuracy, stability, and identity
-  suites in `euclid-numeric/src/tests/`. A function that is merely *plausible* in
+  suites in `euclid-scalar/src/tests/`. A function that is merely *plausible* in
   the normal range is not enough; see below.
 
   **Give its error a score and a budget.** This is the one habit that separates a
@@ -447,11 +539,11 @@ README's [data-structure section][ds].
 ## Numerical Work
 
 Numeric changes carry risk that ordinary review does not catch, so they get their
-own bar. The suites in `euclid-numeric/src/tests/` are organized by the property
+own bar. The suites in `euclid-scalar/src/tests/` are organized by the property
 under test rather than by the function under test, so one function is exercised
 from several directions at once.
 
-**The module header of `euclid-numeric/src/tests.rs` is the authoritative
+**The module header of `euclid-scalar/src/tests.rs` is the authoritative
 index** — every suite, what question it answers, and the house rules on file size
 and tolerances. Read it before adding a suite, and update it when you do. It
 lives there rather than here because a list in two places is a list that goes

@@ -12,7 +12,7 @@
 //! [`super::capabilities`], which holds the tests for them.
 
 use super::dense::Dense;
-use euclid_numeric::Real;
+use euclid_scalar::Real;
 
 /// Mean of a slice, `0.0` for an empty one.
 pub(super) fn mean_of(xs: &[f64]) -> f64 {

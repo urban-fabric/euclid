@@ -6,7 +6,7 @@
 //! decompositions ([`QrDecomposition`] / [`HermitianEigendecomposition`] /
 //! [`SingularValueDecomposition`] / [`GeneralSolve`] / [`Determinant`]). A backend
 //! (ramanujan eagerly, `maxwell`/XLA compiled) implements these for its concrete tensor type.
-//! Depends on **only `euclid-tensor` and `euclid-numeric`**, and on nothing third-party.
+//! Depends on **only `euclid-tensor` and `euclid-scalar`**, and on nothing third-party.
 //!
 //! # Vocabulary only
 //!
@@ -49,7 +49,7 @@
 #[cfg(feature = "conformance")]
 pub mod conformance;
 
-use euclid_numeric::{NormedDivisionAlgebra, Real};
+use euclid_scalar::{NormedDivisionAlgebra, Real};
 use euclid_tensor::Tensor;
 
 /// The real field of a tensor's elements — its norms, log-determinant, and Mahalanobis
@@ -166,7 +166,7 @@ pub trait MatrixRealSpectrum: MatrixTensor {
     /// `A = V·diag(λ)·Vᴴ` requires combining a `RealSpectrum` with a `Self`, and nothing else in
     /// this trait relates the two types — so for a complex carrier there is no expression for
     /// `V·diag(λ)` at all, generic or otherwise. The practical consequence was that
-    /// [`conformance`]'s eigen and SVD laws could not be written, leaving
+    /// the `conformance` module's eigen and SVD laws could not be written, leaving
     /// [`HermitianEigendecomposition`] and [`SingularValueDecomposition`] as the only part of
     /// euclid's contract surface with no law behind it.
     ///
@@ -222,7 +222,7 @@ pub trait HermitianEigendecomposition: MatrixRealSpectrum {
     ///
     /// Eigenvectors are determined only up to phase (sign, for a real carrier), so no law here
     /// fixes their signs and no caller should depend on them — see
-    /// [`conformance::eigh_laws`].
+    /// `conformance::eigh_laws`.
     fn eigh(self) -> (Self::RealSpectrum, Self);
 }
 
@@ -243,7 +243,7 @@ pub trait SingularValueDecomposition: MatrixRealSpectrum {
     /// rank-1 of length `k`, and `V` is `n × k`.
     ///
     /// Singular vectors are determined only up to a matched phase pair, so no law fixes their
-    /// signs — see [`conformance::svd_laws`].
+    /// signs. See `conformance::svd_laws`.
     fn svd(self) -> (Self, Self::RealSpectrum, Self);
 }
 

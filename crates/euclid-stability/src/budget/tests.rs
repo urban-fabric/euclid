@@ -6,10 +6,46 @@
 
 use super::{Entry, Verdict, evaluate, load, parse_line, record, recorded};
 
+#[test]
+fn recording_follows_a_child_process_environment() {
+    const MODE: &str = "EUCLID_RECORD_TEST_CHILD";
+    if let Some(expected) = std::env::var_os(MODE) {
+        assert_eq!(super::recording(), expected == "on");
+        return;
+    }
+
+    let executable = std::env::current_exe().expect("locate the test executable");
+    for mode in ["on", "off"] {
+        let mut command = std::process::Command::new(&executable);
+        command
+            .args([
+                "--exact",
+                "budget::tests::recording_follows_a_child_process_environment",
+            ])
+            .env(MODE, mode);
+        if mode == "on" {
+            command.env(super::RECORD, "1");
+        } else {
+            command.env_remove(super::RECORD);
+        }
+        let child = command
+            .output()
+            .expect("run the isolated environment check");
+        assert!(
+            child.status.success(),
+            "recording mode {mode}: {}",
+            String::from_utf8_lossy(&child.stdout),
+        );
+    }
+}
+
 /// A temp directory unique to one test, so the suite can run in parallel without two tests
 /// racing on the same file.
 fn scratch(name: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("euclid-stability-budget-{name}"));
+    let dir = std::env::temp_dir().join(format!(
+        "euclid-stability-budget-{}-{name}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     dir.join("budgets.txt").to_string_lossy().to_string()
 }

@@ -1,0 +1,10 @@
+# Settings for on-demand mutation investigations.
+
+# Examine every generated mutation.
+exclude_re = []
+
+minimum_test_timeout = 20
+
+# Include feature-gated laws and tests in crates that depend on the mutated crate.
+additional_cargo_args = ["--all-features"]
+test_workspace = true

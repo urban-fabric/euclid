@@ -99,7 +99,7 @@
 //!
 //! # The optimisations are behaviour-preserving, and that is checked
 //!
-//! By something stronger than the test suite: `euclid-numeric`'s recorded `target()` baseline is
+//! By something stronger than the test suite: `euclid-scalar`'s recorded `target()` baseline is
 //! unchanged to the last bit (`5.510272789619652e-1`). The search visits tapes in a fixed order
 //! from a fixed seed, so a change that perturbed the trajectory by one tape would have moved
 //! that number. An accuracy budget turns out to double as a regression test for the engine.

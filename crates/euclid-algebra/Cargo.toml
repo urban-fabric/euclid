@@ -28,15 +28,42 @@ path = "src/lib.rs"
 # Off by default: a consumer that only writes formulas pays nothing for it, and one
 # verifying a carrier opts in. Always compiled under `cfg(test)` regardless, so this
 # crate's own suites exercise the same code a consumer would call.
-conformance = ["dep:euclid-stability"]
+conformance = []
 
-# No dependencies, not even euclid-numeric. Algebraic structure needs nothing from
-# analysis: this crate says which tier a carrier reaches, euclid-numeric says what
+# The generated search over the same laws, which needs the property engine.
+#
+# Split out so that `conformance` costs nothing: a consumer taking the fixed laws now
+# resolves, downloads and compiles no engine at all. Verified with
+# `cargo tree -p <crate> --edges normal --features conformance`, which shows zero
+# `euclid-stability` edges where it previously showed one.
+#
+# The division is the honest one. The fixed laws are the *contract* — a carrier author
+# runs them to find out whether their impl is sound — while the search is *tooling for
+# locating where it fails*, and only the first needs to travel with the published
+# artifact.
+#
+# # This is hygiene, not a publishing fix
+#
+# Stated plainly because the first attempt at this assumed otherwise. `euclid-stability`
+# is `publish = false`, and `cargo publish` on this crate still fails:
+#
+#     error: no matching package named `euclid-stability` found
+#
+# Measured, by removing one table at a time: **an optional `[dependencies]` entry blocks
+# publishing even with its feature off**, and **a versioned `[dev-dependencies]` entry
+# blocks it too** — cargo resolves both from the registry at publish time. Only a
+# *path-only* dev-dependency is stripped. So publishing needs `euclid-stability` itself
+# published, or absent from both tables; the split alone does not get there. See
+# `crates/euclid-stability/README.md#where-this-goes-next`.
+conformance-generated = ["conformance", "dep:euclid-stability"]
+
+# No dependencies, not even euclid-scalar. Algebraic structure needs nothing from
+# analysis: this crate says which tier a carrier reaches, euclid-scalar says what
 # operations a formula may use, and the two meet only in euclid-scalar — which is
 # the one crate that depends on both.
 #
 # Until 0.3 this crate also held the concrete Copy tier, which forced a dependency
-# on euclid-numeric plus `LazyReal`/`LazyComplex` import aliases to dodge a name
+# on euclid-scalar plus `LazyReal`/`LazyComplex` import aliases to dodge a name
 # collision with its own `Real`/`Complex`. Splitting that tier out into
 # euclid-scalar removed the dependency, the aliases, and the collision together.
 
@@ -46,7 +73,7 @@ conformance = ["dep:euclid-stability"]
 # silently drifting out of the workspace's standard.
 [dependencies]
 # The property/stability engine, now an **optional runtime dependency** rather than dev-only,
-# enabled by the `conformance` feature. That feature's whole shape is "test surface a consumer
+# enabled by the `conformance-generated` feature. That feature's whole shape is "test surface a consumer
 # opts into and otherwise pays nothing for", and the generated laws are that surface — so the
 # engine travels with them. A consumer that only binds the contract never sees it.
 euclid-stability = { workspace = true, optional = true }

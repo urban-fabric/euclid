@@ -102,6 +102,33 @@ impl Source {
         self.max_len = max_len;
     }
 
+    /// Reuse this source to replay `tape` and then **keep going** with fresh randomness.
+    ///
+    /// The climber's mode, and the one place where replaying and growing are both wanted. A
+    /// hill-climbing step perturbs one entry of the best tape so far, and a perturbation that
+    /// *raises* a length or a count makes the generator read further than the original tape
+    /// went — so under [`restart_replaying`](Self::restart_replaying) the candidate overruns and
+    /// is thrown away. Measured on a generator whose score did not reward length, that discarded
+    /// 11% of the case budget at the default `targeted_fraction`, and every one of those
+    /// discards was counted as a *rejection* against a budget meant for generator filters.
+    ///
+    /// Growing past the end fixes it: the mutated prefix is honoured, and whatever the generator
+    /// asks for beyond it is invented. The candidate is a different case than the original, which
+    /// is exactly what a climbing step is supposed to produce.
+    ///
+    /// **Not for shrinking.** There the opposite is required — see
+    /// [`restart_replaying`](Self::restart_replaying), which refuses to extend — because topping
+    /// a short candidate up with new randomness would silently change the case under examination
+    /// and make the minimisation unsound.
+    pub fn restart_climbing(&mut self, tape: &[u64], seed: u64, max_len: usize) {
+        self.tape.clear();
+        self.tape.extend_from_slice(tape);
+        self.position = 0;
+        self.rng = SplitMix64::new(seed);
+        self.mode = Mode::Grow;
+        self.max_len = max_len.max(tape.len());
+    }
+
     /// Reuse this source to replay `tape`, **keeping its allocation**.
     ///
     /// The shrink path's reason for existing. Every probe needs a source over a candidate tape,
@@ -201,8 +228,32 @@ impl Source {
     pub fn in_range(&mut self, low: i64, high: i64) -> Result<i64, Overrun> {
         assert!(low <= high, "empty range {low}..={high}");
         let span = high.wrapping_sub(low) as u64;
-        let offset = self.below(span.wrapping_add(1))?;
+        let offset = if span == u64::MAX {
+            self.word()?
+        } else {
+            self.below(span + 1)?
+        };
         Ok(low.wrapping_add(offset as i64))
+    }
+
+    /// Read one full-width word without narrowing its range. Costs one tape entry.
+    pub fn word(&mut self) -> Result<u64, Overrun> {
+        self.next_raw()
+    }
+
+    /// Draw an unsigned integer in the inclusive range, including full-width ranges.
+    ///
+    /// # Panics
+    /// If `low > high`.
+    pub fn in_unsigned_range(&mut self, low: u64, high: u64) -> Result<u64, Overrun> {
+        assert!(low <= high, "empty unsigned range");
+        let span = high - low;
+        let offset = if span == u64::MAX {
+            self.word()?
+        } else {
+            self.below(span + 1)?
+        };
+        Ok(low + offset)
     }
 
     /// Draw a `bool`, true with probability one half.
@@ -217,16 +268,22 @@ impl Source {
     pub fn weighted(&mut self, weights: &[u32]) -> Result<usize, Overrun> {
         let total: u64 = weights.iter().map(|w| u64::from(*w)).sum();
         assert!(total > 0, "weights must sum to a positive value");
-        let mut pick = self.below(total)?;
-        for (index, weight) in weights.iter().enumerate() {
-            let weight = u64::from(*weight);
-            if pick < weight {
-                return Ok(index);
-            }
-            pick -= weight;
-        }
-        Ok(weights.len() - 1)
+        Ok(weighted_index(weights, self.below(total)?))
     }
+}
+
+/// Locate an offset in a distribution whose total exceeds the offset.
+fn weighted_index(weights: &[u32], mut pick: u64) -> usize {
+    let mut entries = weights.iter().copied().enumerate();
+    let last = entries.next_back().map_or(0, |(index, _)| index);
+    for (index, weight) in entries {
+        let weight = u64::from(weight);
+        if pick < weight {
+            return index;
+        }
+        pick -= weight;
+    }
+    last
 }
 
 #[cfg(test)]

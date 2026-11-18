@@ -337,6 +337,17 @@ property! {
         }
     }
 
+    fn a_sweep_places_each_point_on_the_affine_grid(bounds in limits(), n in generate::index(3, 64)) {
+        let (lo, hi) = bounds;
+        let step = (hi - lo) / (n - 1) as f64;
+        let tolerance = 8.0 * f64::EPSILON * lo.abs().max(hi.abs()).max(1.0);
+        for (i, actual) in sweep(lo, hi, n).enumerate() {
+            let expected = step.mul_add(i as f64, lo);
+            check!((actual - expected).abs() <= tolerance,
+                "grid index {i}: {actual} vs {expected}");
+        }
+    }
+
     /// A log sweep hits both bounds and has a constant ratio between steps.
     ///
     /// The ratio is the defining property — a log sweep whose points were

@@ -59,8 +59,11 @@ impl<const P: u64> Zp<P> {
     /// `self^e mod P` by square-and-multiply.
     fn pow(self, mut e: u64) -> Self {
         let mut base = self;
-        let mut acc = Self(1 % P);
-        while e > 0 {
+        let mut acc = Self::ONE;
+        for _ in 0..u64::BITS {
+            if e == 0 {
+                break;
+            }
             if e & 1 == 1 {
                 acc *= base;
             }

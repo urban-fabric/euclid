@@ -219,12 +219,12 @@ impl Dimension {
     pub const fn commensurable(self, other: Self) -> bool {
         let a = self.exponents();
         let b = other.exponents();
-        let mut i = 0;
-        while i < 7 {
-            if a[i] != b[i] {
+        let (mut a, mut b) = (a.as_slice(), b.as_slice());
+        while let ([left, rest_a @ ..], [right, rest_b @ ..]) = (a, b) {
+            if *left != *right {
                 return false;
             }
-            i += 1;
+            (a, b) = (rest_a, rest_b);
         }
         true
     }

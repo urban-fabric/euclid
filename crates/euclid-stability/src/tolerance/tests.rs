@@ -1,6 +1,8 @@
 //! The comparisons, especially the cases where a naive tolerance gives the wrong answer.
 
-use super::{condition_number, ulps_between, within_absolute, within_relative, within_ulps};
+use super::{
+    compensated_sum, condition_number, ulps_between, within_absolute, within_relative, within_ulps,
+};
 
 #[test]
 fn identical_values_are_zero_ulps_apart() {
@@ -102,6 +104,23 @@ fn relative_comparison_against_zero_fails_loudly() {
 }
 
 #[test]
+fn relative_comparison_handles_overflow_without_losing_small_gaps() {
+    let max = f64::MAX;
+    for (a, b) in [(max, -max), (-max, max)] {
+        assert!(within_relative(a, b, 2.0));
+        assert!(!within_relative(a, b, 2.0_f64.next_down()));
+    }
+    assert!(within_relative(max, -max / 2.0, 1.5));
+    assert!(!within_relative(max, -max / 2.0, 1.5_f64.next_down()));
+    assert!(!within_relative(
+        3.0,
+        3.0_f64.next_down(),
+        0.625 * f64::EPSILON
+    ));
+    assert!(!within_relative(max, -f64::INFINITY, 2.0));
+}
+
+#[test]
 fn the_condition_number_of_a_benign_sum_is_near_one() {
     assert!((condition_number(&[1.0, 2.0, 3.0]) - 1.0).abs() < 1e-15);
 }
@@ -151,6 +170,61 @@ fn the_condition_number_survives_the_cancellation_it_measures() {
         (1e16..1e17).contains(&condition),
         "expected a condition number near 2e16, got {condition:e}"
     );
+}
+
+/// The summation kernel itself, pinned to an **exact** value.
+///
+/// Every test above reaches `compensated_sum` through `condition_number`, and not one of them
+/// pins it. They assert a *band* — `condition.is_finite()`, `(1e16..1e17)` — on a quantity
+/// computed as `magnitude / total.abs()`, so a correction that comes out negated, doubled or
+/// dropped still lands inside the band and the suite stays green. Mutation testing found four
+/// separate ways to corrupt this function that the entire 1,169-test workspace suite accepted,
+/// including flipping the sign of the correction term.
+///
+/// That is the gap line coverage cannot see: the line *executes* in three tests and is *pinned*
+/// by none of them. The fix is to assert the number, not a range containing it.
+///
+/// Both orderings are checked because they take different branches of the
+/// `total.abs() >= term.abs()` test, and that branch is the whole difference between
+/// Kahan–Babuška–Neumaier and plain Kahan — the latter is wrong exactly when a later term is
+/// larger than the running total, which is what `[1.0, 1e16, -1e16]` arranges.
+#[test]
+fn the_compensated_sum_is_exact_where_the_naive_fold_is_not() {
+    for terms in [[1e16, 1.0, -1e16], [1.0, 1e16, -1e16]] {
+        let naive = terms.iter().fold(0.0_f64, |acc, t| acc + t);
+        assert_eq!(
+            naive, 0.0,
+            "precondition: the naive fold must lose the small term for {terms:?}"
+        );
+        assert_eq!(
+            compensated_sum(&terms),
+            1.0,
+            "the compensated sum of {terms:?} is exactly 1.0"
+        );
+    }
+
+    // A benign sum must come out exactly too, or the correction is leaking into cases that do
+    // not need it.
+    assert_eq!(compensated_sum(&[1.0, 2.0, 3.0]), 6.0);
+    assert_eq!(compensated_sum(&[1.0, -1.0]), 0.0);
+    assert_eq!(compensated_sum(&[]), 0.0);
+}
+
+/// `within_absolute` measures `|a - b|`, not `|a + b|`.
+///
+/// Two values straddling zero are as far apart as they get; a sum would call them identical.
+/// Found by mutation testing, which replaced the subtraction with an addition and watched the
+/// suite pass — because every existing case compared same-signed values, where the two
+/// expressions rarely disagree enough to matter.
+#[test]
+fn within_absolute_measures_a_difference_not_a_sum() {
+    assert!(
+        !within_absolute(1.0, -1.0, 0.5),
+        "values two apart must not compare within half"
+    );
+    assert!(!within_absolute(1e-3, -1e-3, 1e-9));
+    // And the honest direction still works.
+    assert!(within_absolute(1.0, 1.25, 0.5));
 }
 
 /// And the same at a magnitude where the naive fold loses the term entirely in both directions.

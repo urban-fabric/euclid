@@ -13,7 +13,7 @@ wrapper. euclid is the vocabulary all of them share, so a formula written
 against it compiles against every one without being rewritten.
 
 ```rust
-use euclid_numeric::Real;
+use euclid_scalar::Real;
 
 // Written once, against the trait — no mention of any concrete number type.
 fn logpdf<T: Real>(x: T) -> T {
@@ -116,104 +116,68 @@ sampler contract without shipping a PRNG.
 | physical dimensions and their cross-dimensional algebra | your own unit carriers |
 | the array and sampler contracts | concrete tensors and a PRNG |
 
-A fifth contract crate, `euclid-algebra`, sits beside those: it defines what
-`⊕` and `⊗` must *satisfy* — which algebraic tier a carrier reaches — and ships
-nothing concrete beyond a few exact number systems.
+`euclid-algebra` supplies the algebraic structures and exact number systems. `euclid-scalar`
+combines scalar contracts, native implementations and numerical kernels. `euclid-quantity`
+supplies concrete physical quantities, while `euclid-matrix` extends the tensor contract.
 
-**Three crates in this repository are the other side of that table.**
-`euclid-quantity` *is* the `Meters` struct and `euclid-scalar` *is* the concrete
-`Copy` number line; `euclid-matrix` is linear-algebra *content* — algorithms
-written once over the tensor contract, naming no backend. They live here because
-each depends on nothing but euclid and nothing released them independently — but
-they are kept as separate crates precisely so the boundary above still holds: a
-consumer that takes `euclid-units` gets contracts only and never sees
-`euclid-quantity`.
+### Two scalar tiers in one crate
 
-That distinction is the whole reason the crate list below is grouped rather
-than flat.
+The portable scalar traits allow deferred carriers: values are `Clone`, literals are lifted
+through `Real::scalar`, and comparisons return masks. `HostReal` and `HostComplex` add the
+requirements of eager scalar code: `Copy`, associated constants and host predicates. These
+are separate traits within `euclid-scalar`, not separate crates.
 
-### Three rules, and who they bind
+| use | trait |
+|---|---|
+| backend-neutral real formulas, including expressions and tensors | `euclid_scalar::Real` |
+| eager real kernels requiring `Copy` and host predicates | `euclid_scalar::HostReal` |
+| backend-neutral complex construction and components | `euclid_scalar::Complex` |
+| eager complex field and transcendental operations | `euclid_scalar::HostComplex` |
 
-The **contract** crates follow three rules that look arbitrary until you know
-they exist to keep *deferred* carriers possible — you cannot branch on a graph
-node, `Copy` a symbolic handle, or write a float literal into an expression
-tree:
-
-- comparisons return masks, never a host `bool`
-- values are `Clone`, never `Copy`
-- literals are lifted with `Real::scalar`, never written as `2.0`
-
-**The carrier crates break all three, deliberately.** That is not drift, it is
-their purpose. `euclid-scalar`'s `Real` is `Copy`, returns a host `bool` from
-`is_finite`, and offers `PI` as an associated constant rather than a lifted
-literal — because eager geometry and physics kernels genuinely need the real
-number line, and a tensor compiler cannot give them one. Every `euclid-quantity`
-unit is likewise `Copy` with `bool` predicates.
-
-So the rules are a property of the *tier*, not of the repository:
-
-| | contract tier | carrier tier |
-|---|---|---|
-| crates | `euclid-numeric`, `euclid-units`, `euclid-tensor`, `euclid-random`, `euclid-algebra` | `euclid-quantity`, `euclid-scalar` |
-| comparison yields | a carrier mask | a host `bool` |
-| value semantics | `Clone` | `Copy` |
-| constants | lifted via `Real::scalar` | associated constants |
-| runs on | any carrier, including deferred ones | concrete `f64`/`f32` only |
-
-Write against the contract tier by default: it is the wider bound, and it is
-what makes a formula portable. Reach for the carrier tier only when a kernel
-needs the number line itself.
+The native `f64`/`f32`, integer and boolean implementations live beside their traits. The
+special-function algorithms live in private `kernels/` modules, and the public trait methods
+delegate to them. A new backend implements the contracts; it does not inherit a storage layout.
 
 ## Crates
 
-There are **two dependency-free roots**, not one. `euclid-numeric` is the larger
-and the one most things reach for, but `euclid-algebra` is not a leaf of it:
-algebraic structure (which tier a carrier reaches) needs nothing from analysis
-(what operations a formula may use). The two foundations sit side by side and
-meet only in `euclid-scalar`, the one crate with two parents — which is exactly
-what that crate is for.
-
-**There is no umbrella crate** — depend on the specific crates you need.
+**There is no umbrella crate** — depend on the crates you use. The production graph has four
+layers; the tree shows dependencies from foundation to consumer:
 
 ```text
-euclid-numeric             no dependencies
-├── euclid-units           → euclid-numeric
-│   └── euclid-quantity    → euclid-units, euclid-numeric
-├── euclid-tensor          → euclid-numeric
-│   └── euclid-matrix      → euclid-tensor, euclid-numeric
-├── euclid-random          → euclid-numeric
-└── euclid-scalar          → euclid-numeric, euclid-algebra
-                                              ↑
-euclid-algebra             no dependencies ───┘
+euclid-algebra              algebraic structures and exact carriers
+└── euclid-scalar            scalar contracts, host traits, primitive impls, numerical kernels
+    ├── euclid-units         dimension and quantity contracts
+    │   └── euclid-quantity  concrete physical quantities; also uses scalar
+    ├── euclid-tensor        rank-graded tensor contracts
+    │   └── euclid-matrix    matrix extensions; also uses scalar
+    └── euclid-random        sampler contracts
 
-euclid-utils               dev-only, no dependencies     publish = false
-euclid-stability           no dependencies               publish = false; a runtime
-                                                         edge only under `conformance`
+Test tooling, outside the production layers:
+  euclid-stability          property runner, shrinking and numerical instruments
+  euclid-utils              test helpers
 ```
 
-Three crates depend on a **peer** as well as on a root — `euclid-quantity` on
-`euclid-units`, `euclid-matrix` on `euclid-tensor`, `euclid-scalar` on
-`euclid-algebra`. In every case the peer is the contract the crate implements or
-extends, so the edge is the point rather than a shortcut. A consumer still takes
-on only the surface it uses: nothing depends *downward* from a root onto a
-carrier, so taking `euclid-units` never pulls `euclid-quantity`.
+`euclid-scalar` depends on `euclid-algebra`. The three domain contracts depend on `euclid-scalar`
+and not on one another. Quantity and matrix extend their corresponding domain contracts, and
+also use scalar contracts directly. Optional `conformance` features add the independent stability
+engine explicitly; ordinary consumers do not receive the test tooling.
 
-The eight published members fall out of two questions: **which concern** is this,
-and **contract or concrete**. Drawn as a grid, the crate list stops looking
-arbitrary — and the empty cells are as deliberate as the full ones. The first
-four rows are the four kinds of value from the top of this page:
+The nine workspace members include seven production crates and two test-tooling crates.
+`euclid-numeric` was merged into `euclid-scalar` for 0.6: scalar traits and scalar implementations
+now have one owner. See [the migration notes](RELEASES.md#060-unreleased).
 
-| concern | contract | concrete |
+| concern | contract | implementation |
 |---|---|---|
-| scalars | [`euclid-numeric`](crates/euclid-numeric) | [`euclid-scalar`](crates/euclid-scalar) |
+| scalar mathematics | [`euclid-scalar`](crates/euclid-scalar) | primitive implementations in the same crate |
 | physical quantities | [`euclid-units`](crates/euclid-units) | [`euclid-quantity`](crates/euclid-quantity) |
-| arrays | [`euclid-tensor`](crates/euclid-tensor) | — *a backend supplies one* |
-| randomness | [`euclid-random`](crates/euclid-random) | — *a consumer supplies a PRNG* |
-| algebraic structure | [`euclid-algebra`](crates/euclid-algebra) | — |
-| matrix extensions | [`euclid-matrix`](crates/euclid-matrix) | — *a backend supplies one* |
+| tensors | [`euclid-tensor`](crates/euclid-tensor) | supplied by a backend |
+| randomness | [`euclid-random`](crates/euclid-random) | supplied by a consumer |
+| algebraic structure | [`euclid-algebra`](crates/euclid-algebra) | exact carriers in the same crate |
+| matrix extensions | [`euclid-matrix`](crates/euclid-matrix) | supplied by a backend |
 
-**Contracts** — write a formula against these and it runs on any carrier. All
-six are dependency-free in the sense that matters: nothing third-party.
+**Contracts** — formulas written against these run on any suitable carrier. None introduces
+third-party production dependencies. `euclid-quantity` additionally uses serde and bytemuck for
+its concrete storage wrappers.
 
 A contract crate is also where you find out whether your carrier *honors* it. A
 tier is a claim — `impl Semiring for MyThing {}` asserts that `⊗` distributes
@@ -271,7 +235,7 @@ was being withheld is specific and worth naming:
 
 Two crates needed nothing new to export this — `Tensor::from_host` and
 `Measure::from_raw` already let euclid build a carrier. `euclid-algebra` and
-`euclid-numeric` do need one thing from you, a `GeneratedSample` impl, because a
+`euclid-scalar` do need one thing from you, a `GeneratedSample` impl, because a
 `Semiring` has no constructor and should not: "build me one from a number" is not
 part of being one.
 
@@ -282,7 +246,7 @@ what the test surface is written against.
 
 | crate | purpose |
 |-------|---------|
-| [`euclid-numeric`](crates/euclid-numeric) | scalar algebra tiers, real analysis, masks, special functions, interpolation, graph control flow |
+| [`euclid-scalar`](crates/euclid-scalar) | scalar traits, host traits, primitive implementations, numerical kernels, constants and conformance laws |
 | [`euclid-units`](crates/euclid-units) | physical-dimension contracts over any `Real` carrier — SI base and derived quantities |
 | [`euclid-tensor`](crates/euclid-tensor) | the rank-graded `Tensor` contract, its capability extensions, and dtype/spec metadata |
 | [`euclid-random`](crates/euclid-random) | explicit-key random sampler contracts |
@@ -294,7 +258,6 @@ what the test surface is written against.
 | crate | purpose |
 |-------|---------|
 | [`euclid-quantity`](crates/euclid-quantity) | the concrete `f64` physical quantities — lengths, speeds, times, angles, byte sizes, counts, with uncertainty intervals and affine positions |
-| [`euclid-scalar`](crates/euclid-scalar) | the concrete `Copy` number line — `Real` and `Complex`, where the algebra tower and the analysis surface fuse |
 
 **Dev-only** — two further members, both `publish = false`, neither of which a
 consumer receives unless it asks. `euclid-utils` is taken only under
@@ -329,10 +292,9 @@ fixed sample proves a tier is satisfiable, the generated one hunts the
 representation invariants underneath it.
 
 **The name says "stability" rather than "property" on purpose.** It was
-`euclid-property` until 0.5, and that pointed at the wrong tradition: property
-testing in the QuickCheck/proptest lineage is *type-driven*, where an `Arbitrary`
-instance per type does the work and the interesting question is how to build a
-well-formed value. This crate has no `Arbitrary`, deliberately — a generator is
+`euclid-property` until 0.5. QuickCheck associates generation and per-type
+shrinking through `Arbitrary`; this crate instead edits a replayable choice
+tape. It has no `Arbitrary`, deliberately — a generator is
 declared, in the same spirit as `ConformanceSample` — and its weight is
 numerical rather than type-theoretic: condition numbers, forward and two-stage
 error bounds, seam hunting at algorithm crossovers, ulp monotonicity scans, and
@@ -362,7 +324,7 @@ where "is this a contract?" gives the wrong answer and "must this be agreed?"
 gives the right one:
 
 - **Scalar kernels belong in euclid.** `erf`, `lgamma`, the Bessel and Airy
-  functions and the rest of `euclid-numeric/src/kernels/` are ~8.4k lines of
+  functions and the rest of `euclid-scalar/src/kernels/` are ~8.4k lines of
   concrete `f64`/`f32` code, and they stay. A scalar special function has one
   right answer, every carrier needs it, and a second implementation of `erf` in
   a consumer is a second chance to get it wrong. It is also what makes
@@ -437,25 +399,23 @@ it, so the engine travels with the test surface a consumer opted into.
 
 ## Using It
 
-**These crates are not on crates.io.** This repository is private, so depend on
-it by git — and **pin a tag**, not a branch:
+**These crates are not on crates.io.** The current checkout is 0.6.0 in development;
+the scalar merge has not been tagged as a release. Against a local checkout, use paths:
 
 ```toml
 [dependencies]
-# the contract tier — write formulas against these
-euclid-numeric = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
-euclid-units   = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
-euclid-tensor  = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
-euclid-random  = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
-euclid-algebra = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
-
-# the carrier tier — concrete f64, only if a kernel needs the number line
-euclid-quantity = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
-euclid-scalar   = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
-
-# content — the matrix extension signatures a backend implements
-euclid-matrix = { version = "0.5", git = "ssh://git@github.com/urban-fabric/euclid.git", tag = "v0.5.0" }
+euclid-scalar = { version = "0.6", path = "../euclid/crates/euclid-scalar" }
+euclid-units = { version = "0.6", path = "../euclid/crates/euclid-units" }
+euclid-tensor = { version = "0.6", path = "../euclid/crates/euclid-tensor" }
+euclid-random = { version = "0.6", path = "../euclid/crates/euclid-random" }
+euclid-algebra = { version = "0.6", path = "../euclid/crates/euclid-algebra" }
+euclid-quantity = { version = "0.6", path = "../euclid/crates/euclid-quantity" }
+euclid-matrix = { version = "0.6", path = "../euclid/crates/euclid-matrix" }
 ```
+
+For released versions, depend on this private repository by git and **pin its actual release
+tag**, rather than a branch. `v0.5.0` retains the old crate split; use
+[the migration notes](RELEASES.md#060-unreleased) when adopting the merged scalar API.
 
 Take only the crates you use; there is no umbrella crate to pull the rest in.
 Every member is Apache-2.0 — see [License](#license).
@@ -483,17 +443,11 @@ be.
 
 ### One ref per build graph
 
-Worth knowing before you bump, because it makes a euclid upgrade a *chain*
-rather than an independent edit. Cargo resolves one version of a package per
-build graph, so two crates in the same graph cannot pin different euclid tags —
-if your dependency also depends on euclid, you both move together.
-
-That is not a flaw to route around; it is the property that keeps the fleet
-honest, since two halves of one binary computing against two definitions of a
-length is precisely what euclid exists to prevent. The practical consequence is
-that an upgrade starts at the bottom: a consumer pinned to `^0.3` blocks
-everything above it until it moves, and bumping the top alone fails resolution
-on the requirement underneath rather than quietly tracking a reshaped surface.
+Pin the same Euclid tag throughout a dependency graph. Cargo can resolve
+multiple Git refs in one build, where each ref supplies distinct trait and type
+identities. A quantity or carrier from one ref cannot satisfy the corresponding
+type or trait from another. Upgrade the dependencies that expose Euclid types
+first, and check for duplicate Euclid packages with `cargo tree --duplicates`.
 
 ### euclid is layer 1
 
@@ -574,7 +528,7 @@ release costs.
 Crate names are hyphenated; in Rust they are imported with underscores:
 
 ```rust
-use euclid_numeric::Real;
+use euclid_scalar::Real;
 use euclid_units::Length;
 ```
 
@@ -626,7 +580,7 @@ lint and demands `mod.rs`.
 Licensed under the [Apache License, Version 2.0](LICENSE).
 Copyright 2026 Raymond Mead.
 
-**There are no exceptions.** Every one of the ten members takes
+**There are no exceptions.** Every one of the nine members takes
 `license.workspace = true`, so the whole workspace is Apache-2.0 and versions
 together under one licence.
 
