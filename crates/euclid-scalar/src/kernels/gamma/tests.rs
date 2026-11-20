@@ -168,7 +168,7 @@ fn the_log_gamma_methods_partition_the_line() {
 /// entirely plausible.
 #[test]
 fn the_gamma_methods_keep_the_two_pole_kinds_apart() {
-    use GammaMethod::{Lanczos, Reflected, Saturated, SignedPole, UnsignedPole};
+    use GammaMethod::{Lanczos, Reflected, Saturated, SignedPole, Stirling, UnsignedPole};
     for (x, want) in [
         (0.0, SignedPole),
         (-0.0, SignedPole),
@@ -183,7 +183,11 @@ fn the_gamma_methods_keep_the_two_pole_kinds_apart() {
         (0.5_f64.next_down(), Reflected),
         (0.5, Lanczos),
         (1.0, Lanczos),
-        (GAMMA_OVERFLOW_MIN, Lanczos),
+        // The Lanczos/Stirling handover, closed on the Stirling side. Its placement is an
+        // accuracy decision, not a range one — see `math::gamma::STIRLING_MIN`.
+        (crate::math::gamma::STIRLING_MIN.next_down(), Lanczos),
+        (crate::math::gamma::STIRLING_MIN, Stirling),
+        (GAMMA_OVERFLOW_MIN, Stirling),
         (GAMMA_OVERFLOW_MIN.next_up(), Saturated),
         (1e300, Saturated),
     ] {

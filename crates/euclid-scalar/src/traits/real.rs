@@ -678,8 +678,9 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     ///
     /// | `x` | `[1,5]` | `[5,20]` | `[20,60]` | `[60,120]` | `[120,171]` |
     /// |-----|---------|----------|-----------|------------|-------------|
-    /// | `Γ` | `2.6e-15` | `4.7e-15` | `3.1e-14` | `7.8e-14` | `1.0e-13` |
-    /// | `lnΓ` | * | `8.0e-16` | `3.4e-16` | `6.4e-16` | `3.8e-16` |
+    /// | `Γ` was | `11.5` | `21.4` | `139.9` | `351.4` | `458.1` ulp |
+    /// | `Γ` now | `11.5` | `21.4` | **`2.4`** | **`3.6`** | **`2.3`** |
+    /// | `lnΓ` | * | `3.6` | `1.5` | `2.9` | `1.7` |
     ///
     /// \* `lnΓ` has zeros at `x = 1` and `x = 2`, so a *relative* figure there measures the
     /// conditioning of the zero rather than the kernel; it is `6.4e-14` and means nothing.
@@ -716,9 +717,15 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// `base`. Each was eliminated by measuring the piece it blamed. That is the whole reason
     /// this entry now reports a cause rather than a plausible story.
     ///
-    /// Raising the accuracy means more coefficients, a larger `g`, or handing large arguments to
-    /// a Stirling series instead — a change to the approximation, chosen against a measurement
-    /// of what the surface needs. `ln_gamma` is unaffected and stays the better route.
+    /// **Fixed above `x = 20` by handing those arguments to a Stirling series**, which is a
+    /// change to the approximation rather than to its arithmetic — the only kind that could
+    /// have worked. See `math::gamma::stirling_gamma`, and `stirling_half_power` for why the
+    /// base has to be `x` rather than the `x/e` the formula is usually written with.
+    ///
+    /// Below `20` the Lanczos route remains, at `11.5` and `21.4` ulp. Its truncation is small
+    /// there — that is why the handover sits where it does — and what limits those two bands has
+    /// not been attributed. `ln_gamma` is unaffected throughout and is still the better route
+    /// for anything that can take a logarithm.
     fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.

@@ -120,6 +120,60 @@ pub(crate) fn lanczos_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) -> T
     (T::TWO * T::PI).sqrt() * half * half * sum
 }
 
+/// `μ(x) = lnΓ(x) − (x−½)ln x + x − ½ln 2π`, from its asymptotic series.
+///
+/// The same expansion the modified-Bessel family uses, and valid here for the same reason:
+/// every argument reaching it is above [`STIRLING_MIN`], where the first omitted term
+/// `−691/(360360 x¹¹)` is far below rounding.
+pub(crate) fn stirling_remainder<T: HostReal>(x: T) -> T {
+    let inv = T::ONE / x;
+    let inv2 = inv * inv;
+    inv * (T::from_f64(1.0 / 12.0)
+        + inv2
+            * (T::from_f64(-1.0 / 360.0)
+                + inv2
+                    * (T::from_f64(1.0 / 1260.0)
+                        + inv2 * (T::from_f64(-1.0 / 1680.0) + inv2 * T::from_f64(1.0 / 1188.0)))))
+}
+
+/// `x^{x/2}·e^{−x/2}`, the half of `x^x e^{−x}` that stays in range.
+///
+/// **The base is `x`, not `x/e`**, and that is the whole accuracy of this route. `x/e` is not
+/// representable, so its half-ulp of rounding is amplified by the exponent — `x·ε/4`, which is
+/// `42` ulp at `x = 170`. Splitting the exponential out instead leaves the base exact. Measured
+/// against true `Γ` through [`stirling_gamma`]:
+///
+/// ```text
+/// x             20.5   40.5   60.5   80.5   120.5   170.5
+/// (x/e)^x        6.0    9.0   11.5   37.6    43.2    60.8   ulp
+/// x^x·e^{−x}     1.5    0.4    1.8    0.9     0.1     0.2
+/// ```
+///
+/// `(x/e)^x` is how Stirling's formula is usually written, which is why this note exists.
+fn stirling_half_power<T: HostReal>(x: T) -> T {
+    let half = x * T::HALF;
+    x.powf(half) * (-half).exp()
+}
+
+/// `Γ(x) = √(2π/x)·x^x·e^{−x}·e^{μ(x)}`, for large `x`.
+///
+/// Three pieces: the remainder series, the half power, and the prefactor. Used above
+/// [`STIRLING_MIN`] because the Lanczos approximation's own *truncation* — not its arithmetic —
+/// reaches `456` ulp by `x = 170`, while this is `0.1` to `1.8` across the same range.
+pub(crate) fn stirling_gamma<T: HostReal>(x: T) -> T {
+    let half = stirling_half_power(x);
+    let tau_over_x = (T::TWO * T::PI) / x;
+    tau_over_x.sqrt() * half * half * stirling_remainder(x).exp()
+}
+
+/// At or above this argument `Γ` leaves the Lanczos product for [`stirling_gamma`].
+///
+/// **`50`, between the two measured points that bracket the handover.** The Lanczos truncation
+/// is `0.0` ulp at `x = 40.5` and `145.1` at `60.5`, so it goes between them; Stirling is `0.4`
+/// and `1.8` at the same two, so either side is safe for it. `50` also clears the `μ` series'
+/// own requirement of about `20` by a wide margin.
+pub(crate) const STIRLING_MIN: f64 = 20.0;
+
 /// Splitting the power and exponential keeps the intermediates in range.
 fn lanczos_half_power<T: HostReal>(power: T, base: T) -> T {
     base.powf(power * T::HALF) * (-base * T::HALF).exp()

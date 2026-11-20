@@ -212,3 +212,99 @@ fn log_scale_matches_the_prefactor_at_integer_shape() {
     let actual = log_scaled_gamma(2.0_f64, 4.0, 1.5_f64.ln());
     assert!((actual - (24.0_f64.ln() - 4.0)).abs() <= 2e-15);
 }
+
+/// The three Stirling pieces, each asserted on its own.
+///
+/// Split so a regression names itself. `stirling_gamma` is a product, and a product that has
+/// drifted says nothing about which factor moved — which is the mistake that cost three
+/// attempts at attributing the Lanczos error this route replaces.
+#[test]
+fn the_stirling_pieces_each_do_their_part() {
+    // `μ(x) ≈ 1/(12x)` with the first correction `−1/(360x³)`, both checked directly.
+    for &x in &[20.0_f64, 50.0, 171.0] {
+        let leading = 1.0 / (12.0 * x);
+        let corrected = leading - 1.0 / (360.0 * x * x * x);
+        let mu = stirling_remainder(x);
+        assert!(mu < leading, "μ({x}) must sit below its leading term");
+        // Against the *two*-term asymptotic, so the tolerance is the third term `1/(1260x⁵)`
+        // rather than rounding: `2.5e-10` at `x = 20`, which is `6e-8` of `μ`. Asserting
+        // tighter than the comparison's own truncation is how this first failed.
+        let third = 1.0 / (1260.0 * x.powi(5));
+        assert!(
+            (mu - corrected).abs() <= 4.0 * third,
+            "μ({x}) = {mu:e} is not its two-term asymptotic {corrected:e} to within {third:e}"
+        );
+    }
+
+    // The half power, squared, is `x^x·e^{−x}` — checked through the logarithm, which is the
+    // only form of it that stays in range at these arguments.
+    for &x in &[25.0_f64, 90.0, 170.0] {
+        let half = stirling_gamma(x)
+            / ((2.0 * core::f64::consts::PI / x).sqrt() * stirling_remainder(x).exp());
+        let want = x * x.ln() - x;
+        assert!(
+            (half.ln() - want).abs() <= 1e-13 * want.abs(),
+            "x^x·e^-x at {x} is {:e}, not {want:e}",
+            half.ln()
+        );
+    }
+}
+
+/// `Γ` above the Stirling threshold, against MPFR at 256 bits.
+///
+/// Provenance: `mpfr_gamma` rounded to nearest `f64`, evaluated at the exact `f64` the test
+/// passes. These four were `145` to `458` ulp out under the Lanczos route — not from rounding
+/// but from that approximation's own truncation, which is why the route exists.
+#[test]
+fn gamma_matches_its_references_above_the_stirling_threshold() {
+    const REFERENCES: &[(f64, f64)] = &[
+        (25.5, 3.086_770_540_528_696_6e24),
+        (60.5, 1.071_999_183_320_204_3e81),
+        (120.5, 6.100_294_974_024_006e197),
+        (170.5, 5.562_092_414_56e305),
+    ];
+    for &(x, want) in REFERENCES {
+        let got = crate::kernels::gamma::gamma(x);
+        let ulps = (got - want).abs() / crate::Real::ulp(want);
+        assert!(
+            ulps <= 8.0,
+            "Γ({x}) is {ulps:.1} ulp from its reference: {got:e} against {want:e}"
+        );
+    }
+}
+
+/// `Γ(x+1) = x·Γ(x)` across the threshold and above it, with no reference at all.
+///
+/// The property that would catch a degradation no table covers: it holds for every `x`, it
+/// straddles the Lanczos/Stirling handover so a misplaced threshold shows up as a step, and it
+/// needs nothing but the kernel itself.
+#[test]
+fn gamma_satisfies_its_recurrence_across_the_stirling_handover() {
+    let mut worst = 0.0_f64;
+    let mut worst_at = 0.0_f64;
+    for i in 0..=600 {
+        // `[15, 165]`, which crosses `STIRLING_MIN` with both routes well represented.
+        let x = 15.0 + 150.0 * f64::from(i) / 600.0;
+        let (here, next) = (
+            crate::kernels::gamma::gamma(x),
+            crate::kernels::gamma::gamma(x + 1.0),
+        );
+        if !next.is_finite() {
+            continue;
+        }
+        let relative = ((next - x * here) / next).abs();
+        if relative > worst {
+            worst = relative;
+            worst_at = x;
+        }
+    }
+    // Measured `4.6e-15`, and the worst point is `x = 16.25` — **below** `STIRLING_MIN`, so the
+    // binding arm is Lanczos rather than the new one. That is worth knowing: above the handover
+    // the recurrence holds to a few ulp, and what limits this figure is the route this change
+    // did not touch.
+    assert!(
+        worst < 1e-14,
+        "the recurrence drifts to {worst:e} at x = {worst_at}; it measured 4.6e-15 at x = 16.25 \
+         when the Stirling route was introduced, so check which arm moved"
+    );
+}

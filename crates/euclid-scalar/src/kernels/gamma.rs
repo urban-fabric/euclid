@@ -144,6 +144,12 @@ enum GammaMethod {
     Reflected,
     /// Above [`GAMMA_OVERFLOW_MIN`], where `Γ` has left the format.
     Saturated,
+    /// `x ≥ `[`STIRLING_MIN`](crate::math::gamma::STIRLING_MIN): the Stirling series.
+    ///
+    /// Not a speed choice. The Lanczos approximation's *truncation* reaches `456` ulp by
+    /// `x = 170` — measured by evaluating the same formula and coefficients at 60 digits, which
+    /// reproduces the kernel's error exactly — and Stirling is `0.1` to `1.8` ulp there.
+    Stirling,
     /// Everything else: the Lanczos product form.
     Lanczos,
 }
@@ -162,6 +168,8 @@ impl GammaMethod {
             Self::Reflected
         } else if x > GAMMA_OVERFLOW_MIN {
             Self::Saturated
+        } else if x >= crate::math::gamma::STIRLING_MIN {
+            Self::Stirling
         } else {
             Self::Lanczos
         }
@@ -176,6 +184,7 @@ pub(crate) fn gamma(x: f64) -> f64 {
             lanczos_reflected_gamma(sin, reflected, G, REFLECTED_ZERO_MIN, &LANCZOS)
         }),
         GammaMethod::Saturated => f64::INFINITY,
+        GammaMethod::Stirling => crate::math::gamma::stirling_gamma(x),
         GammaMethod::Lanczos => lanczos_gamma(x, G, &LANCZOS),
     }
 }
