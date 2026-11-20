@@ -4,7 +4,6 @@
 //! The term cutoff is loosened to the `f32` noise floor, which shortens the outward walk.
 
 use crate::constants::f32::SQRT_TAU;
-use crate::kernels::f32::gamma::ln_gamma;
 
 /// Cap on the outward walk in either direction from the peak. The significant terms span
 /// `O(√x)` indices, so this covers arguments past `1e8` before it binds.
@@ -57,21 +56,56 @@ fn i0_rel_sum(h: f32, k_peak: f32) -> f32 {
 /// the first omitted term, `1/(1260k⁵)`, is already `2.4e-8` at `k = 8`.
 const STIRLING_ASYMPTOTIC_MIN: f32 = 8.0;
 
+/// `μ(k)` below [`STIRLING_ASYMPTOTIC_MIN`], correctly rounded from 256-bit MPFR.
+///
+/// The `f64` peer explains the defect this replaces; here is what it cost in this format. The
+/// difference form `lnΓ(k+1) − (k ln k − k + ½ln(2πk))` subtracts two `O(k ln k)` quantities to
+/// leave an `O(1/12k)` one, and measured in `f32`:
+///
+/// ```text
+/// k                1       2       3       4       5       6       7
+/// relative error  1.9e-7  3.1e-7  1.2e-6  4.6e-6  1.3e-5  1.2e-5  1.1e-4
+/// ```
+///
+/// `1.1e-4` at `k = 7` against a format resolution of `1.19e-7` — **nine hundred times**. `μ` is
+/// doubled and added to an exponent that `exp` consumes, so `2·1.1e-4·μ(7) = 2.6e-6` lands
+/// straight in `I₀ᵉ` as relative error. Measured over `x ∈ [10, 40]`, which is where
+/// `k = round(x/2)` takes the values 5 to 7: **`2.7e-6`**. The prediction and the measurement
+/// agree to one significant figure, which is what identifies this as the whole of it.
+const STIRLING_REMAINDER: [f32; 7] = [
+    0.081_061_47,  // k = 1
+    0.041_340_698, // k = 2
+    0.027_677_925, // k = 3
+    0.020_790_672, // k = 4
+    0.016_644_692, // k = 5
+    0.013_876_129, // k = 6
+    0.011_896_71,  // k = 7
+];
+
 /// The Stirling remainder `μ(k) = lnΓ(k+1) − (k ln k − k + ½ln(2πk))`.
 ///
 /// Needed in its own right rather than as a difference — see
 /// [the `f64` peer](crate::kernels::bessel::modified_first) for the argument; it applies with
 /// more force here, since `f32` has only seven digits to lose.
+///
+/// Two regimes, and the split is [`STIRLING_ASYMPTOTIC_MIN`]. Above it the asymptotic series is
+/// exact to this format's rounding: the first omitted term `−1/(1680k⁷)` is `2.8e-10` at `k = 8`,
+/// which is `2.7e-8` of `μ(8)` and so under a quarter-ulp. Below it the series has not converged
+/// and the *difference* cannot be formed in this format at all, so the nine reachable indices
+/// come from a table. `k` is `round(|x|/2)` and therefore always an integer.
 fn stirling_remainder(k: f32) -> f32 {
     if k >= STIRLING_ASYMPTOTIC_MIN {
         let inv = 1.0 / k;
         let inv2 = inv * inv;
-        inv * (1.0 / 12.0 + inv2 * (-1.0 / 360.0 + inv2 / 1260.0))
-    } else {
-        // Small k: the defining difference is between O(1) quantities, so it is safe, and the
-        // asymptotic series would not yet have converged.
-        ln_gamma(k + 1.0) - (k * k.ln() - k + 0.5 * crate::math::log_domain::ln_tau_times(k))
+        return inv * (1.0 / 12.0 + inv2 * (-1.0 / 360.0 + inv2 / 1260.0));
     }
+    debug_assert!(
+        (1.0..STIRLING_ASYMPTOTIC_MIN).contains(&k) && k.fract() == 0.0,
+        "the Stirling table covers integer k in 1..8; k = {k} is outside it"
+    );
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let index = (k as usize).clamp(1, STIRLING_REMAINDER.len()) - 1;
+    STIRLING_REMAINDER[index]
 }
 
 /// `2k·ln h − 2·lnΓ(k+1) − 2h`, the shared log-domain core of both scaled peak terms.

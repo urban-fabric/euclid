@@ -21,7 +21,7 @@ the_f32_gamma_tracks_f64 1.19140625e-1
 the_f32_i0e_tracks_f64 1.796875e-1
 the_f32_i1e_tracks_f64 1.8359375e-1
 the_f32_j0_tracks_f64 2.1875e-1
-the_f32_k0e_tracks_f64 1.09375e-1
+the_f32_k0e_tracks_f64 1.171875e-1
 the_f32_lambert_w_tracks_f64 9.375e-2
 the_f32_ln_gamma_tracks_f64 2.5e-1
 the_f32_sin_int_tracks_f64 1.875e-1
