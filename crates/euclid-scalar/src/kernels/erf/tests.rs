@@ -1,7 +1,8 @@
 //! Unit tests for the error-function family.
 //!
 //! A child module so implementation plus tests stay inside the crate's 400-line budget, while
-//! `use super::*` still reaches `ErfForm`, `ErfcForm`, the `ErfcxDepth` ladder and the
+//! `use super::*` still reaches `ErfForm`, `ErfcForm`, the `ErfcxDepth` ladder — which now lives
+//! in [`super::depth`], and is re-reachable from here because the parent imports it — and the
 //! `ERFCX_CF_MIN` crossover. The depth ladder is the reason most of this exists: every
 //! comparison in it survived mutation testing, because each bucket is deliberately sized above
 //! its measured requirement and so one bucket over still converges. Only the decision is

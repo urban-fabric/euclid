@@ -6,6 +6,9 @@
 //! boundary, and only the decision can be pinned.
 
 use crate::kernels::bessel::asymptotic::i_scaled;
+// `LnI0Form` and its threshold live in the `scaled` child, where `ln_i0` does; `IForm` and
+// the two `I` crossovers stay beside the sums in the parent.
+use crate::kernels::bessel::modified_first::scaled::{LN_I0_SERIES_MAX, LnI0Form};
 use crate::kernels::bessel::modified_first::{I1_NO_LOG_MAX, *};
 
 #[test]
