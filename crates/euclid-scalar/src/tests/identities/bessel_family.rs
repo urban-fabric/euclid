@@ -54,6 +54,49 @@ fn the_modified_wronskian_holds_from_subnormal_to_enormous() {
     }
 }
 
+/// The same Wronskian in the **unscaled** forms, which the scaled one cannot see.
+///
+/// `I₀ᵉK₁ᵉ + I₁ᵉK₀ᵉ = 1/x` holds whatever `I₀`'s own unscaling does, because the `e^{±x}`
+/// factors cancel pairwise before the identity is formed. So the test above is blind to exactly
+/// the step that recovers `I₀` and `I₁` from their scaled forms — and that step was wrong:
+/// it was `exp(ln I₀ + x)`, whose exponent carries `ulp(x)/2` of absolute rounding that `exp`
+/// turns into relative error, `5.6e-14` at `x = 688`. It is `I₀ᵉ(x)·e^{x}` now.
+///
+/// This companion runs where the unscaled forms exist, which is the limit the scaled test's own
+/// comment describes: past `x ≈ 700` one factor overflows while the other underflows, so there
+/// is no identity left to check. Within that range it covers all three crossovers the family
+/// has — `I1_NO_LOG_MAX` at `1`, `K`'s series handover at `2`, and `I_ASYMPTOTIC_MIN` at `17`.
+///
+/// Measured worst **`5.6` ulp** at `x = 11.15`, over 1,399 points from `0.05` to `700`, with
+/// none above `8`. The bound is `16`.
+#[test]
+fn the_modified_wronskian_holds_unscaled_wherever_both_forms_exist() {
+    let mut worst = 0.0_f64;
+    let mut worst_at = 0.0_f64;
+    for i in 1..1_400 {
+        let x = 0.05 + 0.05 * f64::from(i);
+        if x >= 700.0 {
+            break;
+        }
+        let residual =
+            Real::bessel_i0(x) * Real::bessel_k1(x) + Real::bessel_i1(x) * Real::bessel_k0(x);
+        if !residual.is_finite() {
+            continue;
+        }
+        let want = 1.0 / x;
+        let ulps = (residual - want).abs() / Real::ulp(want);
+        if ulps > worst {
+            worst = ulps;
+            worst_at = x;
+        }
+    }
+    assert!(
+        worst <= 16.0,
+        "the unscaled I/K Wronskian reaches {worst:.1} ulp at x = {worst_at}; it measured 5.6 \
+         when `i0` stopped recovering its value through `exp(ln I0 + x)`"
+    );
+}
+
 // --- the differential equations -----------------------------------------
 
 #[test]
