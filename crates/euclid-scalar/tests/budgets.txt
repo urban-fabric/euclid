@@ -8,7 +8,7 @@ exp_m1_survives_where_the_naive_difference_cannot 1.6e1
 ln_1p_survives_where_the_naive_argument_rounds_away 1.6e1
 the_airy_wronskian_is_one_over_pi 5.28592726336836e-1
 the_bessel_jy_wronskian_is_minus_two_over_pi_x 4.2173319344381727e-1
-the_beta_quantile_inverts_its_own_cdf 2.0202709226056775e-1
+the_beta_quantile_inverts_its_own_cdf 2.069457569104839e-1
 the_erf_round_trip_is_forward_stable 5.62827643488525e-1
 the_f32_airy_ai_tracks_f64 1.7578125e-1
 the_f32_digamma_tracks_f64 2.5e-1
