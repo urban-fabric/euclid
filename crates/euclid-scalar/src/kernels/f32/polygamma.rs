@@ -180,6 +180,32 @@ impl RgammaRoute {
 }
 
 /// The reciprocal gamma `1/Γ(x)`, entire and zero at the non-positive integers.
+///
+/// # This keeps the log domain where the `f64` peer stopped using it, and that is measured
+///
+/// [`crate::kernels::polygamma::rgamma`] forms `1/Γ` as a product of representable factors,
+/// because `exp` turns its exponent's absolute rounding into relative error. Ported here, the
+/// same change **regressed** `x` near 1 and 2 — from one or two ulp to fifteen — and
+/// `the_reciprocal_gamma_carries_its_log_gamma_amplification` caught it.
+///
+/// The reason is the thing that model names. `lnΓ(1) = lnΓ(2) = 0`, so around those points the
+/// exponent is near zero and there is *nothing to amplify*: the log route is already correctly
+/// rounded there. What replaces it is `1/Γ(x)`, which inherits this format's `Γ` — and that is
+/// the part that differs between precisions. `f64`'s `Γ` is good enough near 2 that the quotient
+/// still wins (measured 8.7 ulp before, 7.0 after); `f32`'s is not.
+///
+/// Measured over the bands, the product form is better away from `|lnΓ| ≈ 0` and worse at it:
+///
+/// ```text
+///                  tiny negative   [-20, -0.5]   [0.5, 34]   near 1 and 2
+/// log domain            3.89e-6       5.85e-6     8.04e-6      1-2 ulp
+/// product form          4.71e-7       3.16e-6     2.31e-6       15 ulp
+/// ```
+///
+/// So a port is not the fix; the fix is choosing by `|lnΓ(x)|`, which is a threshold this format
+/// would have to measure for itself. Left as the log domain throughout until that is done, rather
+/// than taking an eight-fold gain in the tails at the cost of the two arguments most callers
+/// actually pass. The `f64` peer needs no such split because its quotient wins everywhere.
 pub(crate) fn rgamma(x: f32) -> f32 {
     match RgammaRoute::for_argument(x) {
         RgammaRoute::Undefined => f32::NAN,
