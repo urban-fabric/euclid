@@ -89,6 +89,31 @@ pub(crate) fn lanczos_log_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) 
     }
 }
 
+/// # The approximation runs out above about `x = 50`, and a Stirling route fixes it
+///
+/// `Γ`'s error at large argument is this approximation's **truncation**, not its arithmetic —
+/// every piece below is sub-ulp, and evaluating the same formula with the same coefficients at
+/// 60 digits reproduces the error exactly. See the precision note on `Real::gamma`.
+///
+/// A Stirling series is the repair, and the formulation matters. `Γ(x) = √(2π/x)·(x/e)^x·e^{μ(x)}`
+/// with `μ` the same `1/(12x) − 1/(360x³) + ⋯` the `I` family uses, which is exact to rounding
+/// from about `x = 20`. Measured against true `Γ`:
+///
+/// ```text
+/// x                20.5   40.5    60.5   80.5   120.5   170.5
+/// (x/e)^x            6.0    9.0    11.5   37.6    43.2    60.8   ulp
+/// x^x·e^{−x}         1.5    0.4     1.8    0.9     0.1     0.2
+/// this Lanczos       1.6    0.0   145.1      —   354.9   456.5
+/// ```
+///
+/// **The base must be `x`, not `x/e`.** `x/e` is not representable, and its half-ulp of rounding
+/// is amplified by the exponent — `x·ε/4` is `42` ulp at `x = 170`, which is the `60.8` row.
+/// Splitting the exponential out instead keeps the base exact, and is the same trick
+/// [`lanczos_half_power`] uses for range, applied here for accuracy.
+///
+/// So the repair is a `Stirling` arm above a threshold near `50`, built from three pieces —
+/// the `μ` series, `x^{x/2}·e^{−x/2}` squared, and the `√(2π/x)` prefactor. `ln_gamma` needs
+/// none of this and is unaffected.
 pub(crate) fn lanczos_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) -> T {
     let (power, base, sum) = lanczos_parts(x, g, coefficients);
     let half = lanczos_half_power(power, base);
