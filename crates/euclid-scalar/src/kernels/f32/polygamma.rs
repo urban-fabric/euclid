@@ -134,7 +134,12 @@ pub(crate) fn polygamma(order: u32, x: f32) -> f32 {
             let n = order as f32;
             // (-1)^{n+1} n! zeta(n+1, x)
             let sign = if order.is_multiple_of(2) { -1.0 } else { 1.0 };
-            sign * (ln_gamma(n + 1.0)).exp() * hurwitz_zeta(n + 1.0, x)
+            // `n!` narrowed from the exact `f64` factorial rather than `exp(lnΓ(n+1))`; see the
+            // `f64` peer. Narrowing the exact value is correctly rounded for this format, where
+            // `exp` of an `f32` logarithm is not: `ulp(42.3)/2` in `f32` is `1.9e-6`, sixteen
+            // times this format's resolution, for a quantity that has an exact answer.
+            sign * (crate::kernels::host::factorial::factorial(u64::from(order)) as f32)
+                * hurwitz_zeta(n + 1.0, x)
         }
     }
 }

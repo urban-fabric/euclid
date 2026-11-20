@@ -228,7 +228,18 @@ pub(crate) fn polygamma(order: u32, x: f64) -> f64 {
             let n = f64::from(order);
             // (-1)^{n+1} n! zeta(n+1, x)
             let sign = if order.is_multiple_of(2) { -1.0 } else { 1.0 };
-            sign * (ln_gamma(n + 1.0)).exp() * hurwitz_zeta(n + 1.0, x)
+            // `n!` from the exact factorial rather than `exp(lnΓ(n+1))`.
+            //
+            // The same `exp(a_logarithm)` hazard as `rgamma` and the `I` family: the exponent is
+            // `lnΓ(n+1)`, whose absolute rounding `exp` turns into relative error — `ulp(42.3)/2
+            // = 3.6e-15` at order 20, where `20!` is an *exactly representable* `f64`. There is
+            // nothing to approximate.
+            //
+            // `host::factorial` is exact through `20!` and falls back to `exp(ln_factorial)`
+            // above it, which is what this line was doing unconditionally. So the change is a
+            // strict improvement: exact where exactness is available, identical where it is not.
+            sign * crate::kernels::host::factorial::factorial(u64::from(order))
+                * hurwitz_zeta(n + 1.0, x)
         }
     }
 }
