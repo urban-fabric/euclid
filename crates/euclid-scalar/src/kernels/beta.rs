@@ -37,6 +37,33 @@ use crate::math::continued_fraction::{LENTZ_TINY_F64, converged, lentz_step, non
 /// that ratio without ever forming the two logs apart, by an exact product for small integer
 /// `b` and an integrated-digamma asymptotic for large `a`. The larger argument is passed as
 /// the base so the increment is the short one.
+/// # The `1e8` gate is too high, measured
+///
+/// Below it this falls to `lnΓ(min) − lnRF(max, min)`, and `ln_rising_factorial` is
+/// `lnΓ(base+inc) − lnΓ(base)` — a subtraction of two `O(z ln z)` quantities. It therefore
+/// inherits their *absolute* error whatever the result's size. Measured against MPFR at 400
+/// bits, worst relative error over 120 random `(a, b)` per band:
+///
+/// ```text
+/// band        a,b in [1e-3,1]  [1,50]  [50,1e4]  [1e4,1e7]
+/// ulp                    56.2    22.5      65.5      584.0
+/// ```
+///
+/// At `a = 1.07e4, b = 9.44e6` the three terms are `9.5e4`, `1.4e8` and `1.4e8`, leaving
+/// `8.4e4` — so `1.4e8·ε = 1.4e-8` of absolute error lands on a result of `8.4e4`, which is the
+/// `1.3e-13` measured. The arithmetic is accounted for exactly.
+///
+/// The branch below already avoids it, by the standard regrouping
+/// `(a−½)ln(a/(a+b)) + (b−½)ln(b/(a+b)) − ½ln(a+b) + ½ln 2π`, in which no two large terms
+/// subtract. It is gated at `1e8` because it carries **no Stirling remainder**: `μ(a) + μ(b) −
+/// μ(a+b)` is dropped, and that is only below rounding once the arguments are enormous.
+///
+/// So the fix is not to move the gate but to add those three `μ` terms — the same `1/(12z) −
+/// 1/(360z³) + ⋯` the `I` family uses, which is exact to rounding from about `z = 20`. With them
+/// the branch would serve everything above roughly `z = 20` and the cancelling path would be
+/// left to the small parameters where it is accurate. This is the same shape as
+/// `I_ASYMPTOTIC_MIN`, which sat at `20` for a reason that had stopped applying; here the reason
+/// still applies and has to be removed first.
 pub(crate) fn ln_beta(a: f64, b: f64) -> f64 {
     let (base, increment) = if a >= b { (a, b) } else { (b, a) };
     if increment >= 1e8 && base.is_finite() {
