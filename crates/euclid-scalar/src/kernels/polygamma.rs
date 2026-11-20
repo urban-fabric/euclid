@@ -56,13 +56,6 @@ const EM_COEFFS: [f64; 6] = [
 /// intermediate, computing `exp(−s ln y)` directly, and is why it remains the general route.
 const SQUARING_LOG_MAX: f64 = 700.0;
 
-/// Largest integer `s` admitted to the squaring path, independent of range.
-///
-/// Every sufficiently large `f64` is an integer, so the integrality test alone would admit
-/// `s = 1e28` — where `s as i32` saturates and the exponent is nonsense. Squaring also stops
-/// being the cheaper option long before this.
-const SQUARING_ORDER_MAX: f64 = 1024.0;
-
 /// How the Euler–Maclaurin scheme forms its nineteen powers.
 ///
 /// # Both arms exist for a measured reason
@@ -97,12 +90,22 @@ impl ZetaPower {
     /// `a` and `b` are the smallest and largest bases the scheme will raise, so both ends are
     /// checked: a base below one makes a *negative* exponent large, and one above makes the
     /// positive exponent large.
+    ///
+    /// # Two guards would be one too many
+    ///
+    /// This also carried `s < 1024`, to stop the integrality test admitting some `s = 1e28`
+    /// whose `as i32` would saturate. **Mutation testing showed that guard was unreachable**
+    /// and it is gone. `b` is `a + EM_SPLIT` with `a > 0`, so `ln b > ln 16 = 2.7726` and
+    /// therefore `reach > 2.7726·s`; passing `reach < 700` already forces `s < 252.5`. The order
+    /// bound could never be the comparison that rejected, which makes the cast below safe on the
+    /// range guard alone — and makes the deleted line worse than redundant, since a reader would
+    /// have trusted it to be doing something.
     fn for_scheme(s: f64, a: f64, b: f64) -> Self {
-        #[allow(clippy::cast_possible_truncation)]
-        let order = s as i32;
         let reach = s * a.ln().abs().max(b.ln().abs());
-        if s.fract() == 0.0 && s < SQUARING_ORDER_MAX && reach < SQUARING_LOG_MAX {
-            Self::Squaring(order)
+        if s.fract() == 0.0 && reach < SQUARING_LOG_MAX {
+            // `reach < 700` with `b > 16` bounds `s` below 253, so this cannot saturate.
+            #[allow(clippy::cast_possible_truncation)]
+            Self::Squaring(s as i32)
         } else {
             Self::Transcendental
         }

@@ -205,12 +205,9 @@ fn the_power_scheme_is_chosen_by_integrality_and_by_range() {
         ZetaPower::for_scheme(0.5_f64.next_up() + 2.0, 1.0, 17.0),
         Transcendental
     );
-    // An integer too large for the cast, and one whose product would leave the format.
+    // A huge integer `s`, rejected by the range guard — which is the only guard left, the order
+    // bound this used to carry having been unreachable. See `for_scheme`.
     assert_eq!(ZetaPower::for_scheme(1.0e28, 1.0, 17.0), Transcendental);
-    assert_eq!(
-        ZetaPower::for_scheme(SQUARING_ORDER_MAX, 1.0, 17.0),
-        Transcendental
-    );
     // The range guard, at the case that motivated it: `b = 1e10 + 16`, so `s·ln b` is `737`.
     assert_eq!(
         ZetaPower::for_scheme(32.0, 1.0e10, 1.0e10 + 16.0),
@@ -224,6 +221,32 @@ fn the_power_scheme_is_chosen_by_integrality_and_by_range() {
         ZetaPower::for_scheme(edge + 1.0, 1.0, b),
         Transcendental
     ));
+
+    // **Exactly on the boundary**, where `reach` is `700.0` to the bit. The comparison is
+    // strict, so this is `Transcendental`; widening it to `<=` is otherwise invisible, because
+    // every other argument misses the boundary and both arms are accurate on either side of it.
+    // Mutation testing found that survivor, and this is the argument that kills it: at `s = 2`
+    // and this `a`, `s·ln(a + 16)` lands on `700.0` with no rounding left over.
+    let on_edge = 1.007_090_887_028_056_4e152_f64;
+    assert_eq!(
+        2.0 * (on_edge + 16.0).ln(),
+        SQUARING_LOG_MAX,
+        "the exact crossing moved"
+    );
+    assert_eq!(
+        ZetaPower::for_scheme(2.0, on_edge, on_edge + 16.0),
+        Transcendental
+    );
+    // Just inside it the fast arm is taken, which is what makes the boundary a boundary rather
+    // than a region. Not `next_down`: at `1e152` an ulp is `2e136`, so one representable step
+    // does not move `reach` off `700.0` at all — a thousandth of the argument is the smallest
+    // perturbation that crosses.
+    let inside = on_edge * 0.999;
+    assert!(2.0 * (inside + 16.0).ln() < SQUARING_LOG_MAX);
+    assert_eq!(
+        ZetaPower::for_scheme(2.0, inside, inside + 16.0),
+        Squaring(2)
+    );
 
     // And the guarded result is the subnormal rather than the zero a product would give.
     let term = hurwitz_zeta(32.0, 1.0e10);
