@@ -47,8 +47,14 @@
 //! now        0.0     0.0     0.5      0.0       0.0       0.0        0.0   ulp
 //! ```
 //!
-//! **Correctly rounded across the whole tail.** See [`ERF_INV_TAIL_MAX`] for where the two
-//! routes hand over and why that point moved as the interior improved.
+//! **Correctly rounded across the whole tail** — but that row is sampled *at* decades, and
+//! stating it that way is what let a later defect hide. Re-measured with 400 samples drawn
+//! log-uniformly inside each decade, against a 400-bit reference, the claim is `≤ 1.0` ulp for
+//! every `1 − x` below `1e-2`, and it only became true for the band `[1e-9, 1e-8]` when
+//! [`ERF_INV_TAIL_MAX`] moved to `1e-6`. At decade points that band reads as `0.0` ulp; a
+//! decade in, it was `6277`. The threshold's own note carries the measurement.
+//!
+//! See [`ERF_INV_TAIL_MAX`] for where the two routes hand over and why that point moved twice.
 //!
 //! # The middle band had a different cause, and a different fix
 //!
@@ -62,7 +68,12 @@
 //! 1 − x      1e-1    1e-2   1e-3   1e-4    1e-5    1e-6
 //! was        18.9    48.9    2.6   17.5   204.3    9187   ulp
 //! now        10.3     0.0    0.0    0.0     0.0     0.0   ulp
+//! band         18      16    1.0    1.0     1.0     1.0   ulp, worst in the decade below
 //! ```
+//!
+//! The third row is the honest one. Where the decade points read `0.0` the band is `1.0`, which
+//! is rounding; where they read `10.3` the band is `18`. The residue near `1 − x = 1e-1` is
+//! Giles's single-precision fit and is not reachable by refinement — see [`erf_inv_seed`].
 //!
 //! The numerator fix alone left `1e-4` and `1e-5` at `20` and `299` ulp, seed-limited at about
 //! `6.6e-8`. A **second** Newton step closes them, and could not have before: with the old
@@ -217,29 +228,54 @@ fn erf_newton_step(x: f64, r: f64) -> f64 {
 
 /// At or below this `1 − |x|`, the tail route replaces Giles's fit.
 ///
-/// **`1e-9`, and it moved twice as the interior route improved.** The crossover is where the
-/// asymptotic seed starts beating Giles's fit *after both routes' refinement*, so it depends on
-/// how good the refinement is — it is not a property of the seeds alone. Measured against MPFR
-/// at 300 bits, with the threshold swept:
+/// **`1e-6`, placed in the middle of a five-decade overlap rather than against either edge.**
+/// The crossover is where the asymptotic seed starts beating Giles's fit *after both routes'
+/// refinement*, so it depends on how good the refinement is — it is not a property of the seeds
+/// alone.
+///
+/// Measured by building this kernel three ways — threshold `0.0`, threshold `1.0`, and the
+/// committed value — and sweeping each against a 400-bit MPFR reference, 300 samples per
+/// quarter decade drawn log-uniformly *inside* the band. Each route has one edge:
 ///
 /// ```text
-/// 1 − x            1e-7     1e-8      1e-9      1e-10        1e-11
-/// interior          0.5      0.0    5946.6    8.5e6        2.0e9     ulp
-/// tail           2248.7    644.7     214.9     80.5         33.3     ulp (two steps)
+/// 1 − x     1e-2 … 5.6e-3   5.6e-3 … 3.2e-3   3.2e-3 … 1.8e-3   1.8e-3 and below
+/// tail                140                18               2.0                1.0   ulp
+///
+/// 1 − x     1e-8 and above   1e-8 … 5.6e-9   5.6e-9 … 3.2e-9   3.2e-9 … 1.8e-9   below
+/// interior             1.0             3.0                52               657    6404  ulp
 /// ```
 ///
-/// `1e-7` was right when the interior took one Newton step against a cancelling numerator. With
-/// the complement numerator and a second step the interior became exact two decades further
-/// out, and the threshold had to follow it. Below `1e-9` Giles's seed is too far gone for any
-/// number of steps — `2.0e9` ulp at `1e-11` — and the asymptotic seed takes over.
+/// So both routes are correctly rounded across `[1e-8, 1.8e-3]`, five and a half decades wide,
+/// and the threshold's job is to sit *inside* it. `1e-6` is two decades above the interior's
+/// floor and two and three-quarters below the tail's ceiling.
+///
+/// # The previous `1e-9` was derived from a table that the same commit invalidated
+///
+/// It was chosen against a measurement of the tail route taking **two** Newton steps, and the
+/// commit that chose it gave the tail a **third** step. The third step moves the tail's clean
+/// range from `1e-9` up to `1.8e-3` — five decades — so the crossover it was weighed against no
+/// longer existed by the end of the same diff. Nothing re-derived it.
+///
+/// The cost was a live band immediately *above* the threshold, where arguments fell to the
+/// interior route past its floor:
+///
+/// ```text
+/// 1 − x        [1e-9, 1e-8]   elsewhere below 1e-2
+/// was                  6277                    1.0   ulp
+/// now                   1.0                    1.0
+/// ```
+///
+/// It survived because the sampling that checked it used decade boundaries, and `1e-9` *exactly*
+/// takes the tail route and is fine. `erf_inv_round_trips_through_erf` now samples within
+/// decades for that reason.
 ///
 /// Placing this at `1e-3`, where [`tail_seed`]'s `ln(1 − 1/(2r²))` merely stops being
-/// undefined, would have been wrong by six decades: the tail route is `4.4e5` ulp at `1e-4`
-/// against Giles's `17.5`.
+/// undefined, would still be wrong — but by a quarter decade rather than the six it would have
+/// been under the two-step tail.
 ///
 /// `1 − |x|` is exact here by Sterbenz — `|x| ≥ ½` covers every argument this admits — so the
 /// complement costs nothing to form and the tail route sees the full precision of the input.
-const ERF_INV_TAIL_MAX: f64 = 1e-9;
+const ERF_INV_TAIL_MAX: f64 = 1e-6;
 
 /// `L = −ln c`, the scale the tail expansion is written in.
 fn tail_log_scale(complement: f64) -> f64 {
@@ -287,10 +323,25 @@ fn tail_magnitude(complement: f64) -> f64 {
 /// One Newton step against `erfc(r) = c`.
 ///
 /// Three of them are taken, and the count is measured rather than cautious. The seed lands
-/// about `2e-4` from the root; Newton is quadratic here, so each step roughly squares that. Two
-/// steps leave `215` ulp at the shallow end of this route's range — where the seed is at its
-/// worst — and the third takes it to rounding. Deeper in, two were already enough; the third
-/// costs one `erfc` on a branch that handles `1 − |x| ≤ 1e-9`.
+/// about `2e-4` from the root; Newton is quadratic here, so each step roughly squares that.
+///
+/// The third step is what gives this route its range, and that is worth stating precisely
+/// because the two facts were once recorded the wrong way round. Two steps against three, worst
+/// ulp per decade with the route forced over the whole domain:
+///
+/// ```text
+/// 1 − x      1e-6    1e-7    1e-8   1e-9   1e-11   1e-13   1e-15   1.1e-16
+/// two       16467    4225     653    231      40      19       3       1.0   ulp
+/// three       1.0     1.0     1.0    1.0     1.0     1.0     1.0       1.0
+/// ```
+///
+/// So two steps are not enough anywhere this route runs except below about `1e-15` — the
+/// opposite of the note that stood here, which said two were already enough deeper in and put
+/// the third step's value at `215` ulp in one decade. That figure was the shallow end of the
+/// route's range *when the range stopped at `1e-9`*. With [`ERF_INV_TAIL_MAX`] at `1e-6` the
+/// shallow end is three decades up and the third step is worth `16467` ulp there.
+///
+/// A fourth buys nothing: three already reach `1.0` ulp across the whole range.
 fn erfc_newton_step(r: f64, complement: f64) -> f64 {
     r + (erfc(r) - complement) / erf_density(r)
 }
@@ -373,10 +424,35 @@ const RESIDUAL_COMPLEMENT_MIN: f64 = 0.5;
 /// still cancels, but `erf′` is `O(1)` rather than vanishing, so `ε` in the numerator stays `ε`
 /// in the root. **It is the tiny denominator that makes the cancellation matter**, not the
 /// cancellation on its own — which is why this is a separate decision from
-/// [`ERF_INV_TAIL_MAX`], and why the two thresholds are three decades apart.
+/// [`ERF_INV_TAIL_MAX`], and why the two thresholds are nowhere near each other: `½` against
+/// `1e-6`, better than five decades apart, with the complement numerator carrying the whole gap
+/// on its own. (This line read "three decades apart" from the commit that introduced it, when
+/// the other threshold was `1e-7`. It was never true.)
 ///
 /// The sign work is the odd symmetry: for `x < 0` both `erf` and the root change sign, so
 /// `erf(r) − x = −[(1 − |x|) − erfc(|r|)]`.
+///
+/// # The direct form's floor is `erf`'s own accuracy, one for one
+///
+/// Below the threshold there is no cancellation worth avoiding and no vanishing denominator to
+/// amplify anything — which also means there is nothing to hide behind. The step divides the
+/// residual by `erf′(r) = O(1)`, so a *relative* error `δ` in `erf(r)` lands as a relative
+/// error `δ` in the root, undamped. Measured against a 400-bit reference, log-uniformly within
+/// each decade, `erf_inv` on `|x|` against `erf` on the matching `r ≈ 0.886|x|`:
+///
+/// ```text
+/// band      1e-3…1e-2  1e-4…1e-3  1e-5…1e-4  1e-6…1e-5  1e-7…1e-6  1e-8…1e-7  below 1e-8
+/// erf_inv          13         22         25         26         29         33         1.0  ulp
+/// erf              12         19         23         25         24         32         1.0
+/// ```
+///
+/// The rows track, and **both recover at `1e-8`** — which is where `erf` itself stops
+/// evaluating its series and returns the linear term. So this band belongs to `erf`, not to its
+/// inverse: no change to the seed, to this numerator or to the step count moves it, and it is
+/// the reason `erf_inv_round_trips_through_erf` needs a bar of sixteen rather than two.
+///
+/// Recorded rather than fixed, because the fix is in another kernel and is that kernel's own
+/// measurement to make.
 fn newton_residual(x: f64, r: f64) -> f64 {
     if x.abs() < RESIDUAL_COMPLEMENT_MIN {
         return erf(r) - x;
@@ -390,175 +466,4 @@ fn newton_residual(x: f64, r: f64) -> f64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The tail, repaired — and why the route exists rather than a better fit.
-    ///
-    /// Giles's seed is untouched and still eleven percent below the root out here; that is the
-    /// defect the split located and it is still measurable, because the seed is still what the
-    /// *interior* route uses. What changed is that `1 − |x| ≤ ERF_INV_TAIL_MAX` no longer goes
-    /// through it.
-    #[test]
-    fn the_tail_route_reaches_the_root_the_seed_could_not() {
-        let x = 0.9999999999999999_f64;
-        let root = 5.863_584_748_755_167_6_f64;
-
-        // The seed is unchanged and still the reason the tail route is needed.
-        let seed = erf_inv_seed(x);
-        assert!(
-            (seed - root).abs() / root > 0.11,
-            "Giles's tail seed has changed; it was 5.1764, eleven percent below the root"
-        );
-
-        // And `erf_inv` no longer uses it there.
-        let got = erf_inv(x);
-        assert!(
-            (got - root).abs() <= 4.0 * crate::Real::ulp(root),
-            "erf_inv({x}) = {got}, which is not within four ulp of {root}"
-        );
-        // Odd, and the sign survives the complement.
-        assert_eq!(erf_inv(-x), -got);
-    }
-
-    /// `erf(erf_inv(x)) == x`, across the whole domain and both routes.
-    ///
-    /// The module header named this as the test the suite did not make near `±1`, and it is why
-    /// nothing caught the tail defect: a round trip is the only check that needs no reference
-    /// and still sees a wrong root. It straddles both thresholds, so a misplaced handover shows
-    /// up as a cluster of failures on one side of it.
-    ///
-    /// **Six ulp, measured.** I set this bar twice without measuring it — bit-exact first,
-    /// which fails by one ulp at `x = 0.9637`, then two, which fails by three at `0.8555`. A
-    /// round trip carries the forward function's rounding as well as the inverse's, so the bar
-    /// is a property of the pair and there is no deriving it from one side.
-    ///
-    /// Measured over the 800 arguments below: worst **`3.0`** ulp at `x = 0.8555`, two points
-    /// above `2`, none above `4`. Six is that with the usual headroom.
-    #[test]
-    fn erf_inv_round_trips_through_erf() {
-        let mut checked = 0usize;
-        for i in 0..=400 {
-            // `|x|` from `1e-9` to `1 − 1e-16`, log-spaced, so both routes and both thresholds
-            // are crossed many times.
-            let complement = 10f64.powf(-16.0 + 16.0 * f64::from(i) / 400.0);
-            for x in [1.0 - complement, -(1.0 - complement)] {
-                if x == 0.0 || x.abs() >= 1.0 {
-                    continue;
-                }
-                let round_tripped = erf(erf_inv(x));
-                let ulps = (round_tripped - x).abs() / crate::Real::ulp(x);
-                assert!(
-                    ulps <= 6.0,
-                    "erf(erf_inv({x:e})) = {round_tripped:e}, which is {ulps} ulp away"
-                );
-                checked += 1;
-            }
-        }
-        assert!(
-            checked > 700,
-            "only {checked} arguments reached the assertion"
-        );
-    }
-
-    /// The two forms of the Newton numerator are the same quantity.
-    ///
-    /// Asserted where both are trustworthy — around `|x| = ½`, the threshold itself — because
-    /// that is the only place a disagreement would mean an algebra error rather than the
-    /// cancellation the complement form exists to avoid. Further out the direct form is the one
-    /// that is wrong, so agreement there would prove nothing.
-    #[test]
-    fn the_two_newton_numerators_agree_where_both_are_sound() {
-        for &x in &[0.5_f64, 0.55, 0.6, -0.5, -0.6] {
-            let r = erf_inv_seed(x);
-            let complement = newton_residual(x, r);
-            let direct = erf(r) - x;
-            assert!(
-                (complement - direct).abs() <= 1e-15,
-                "at x = {x} the complement form gives {complement:e} and the direct {direct:e}"
-            );
-        }
-        // And the odd symmetry the sign branch implements.
-        let r = erf_inv_seed(0.9);
-        assert_eq!(newton_residual(-0.9, -r), -newton_residual(0.9, r));
-    }
-
-    /// The three tail pieces, each asserted on its own.
-    #[test]
-    fn the_tail_pieces_each_do_their_part() {
-        let complement = 1.110_223_024_625_156_5e-16_f64;
-        let root = 5.863_584_748_755_167_6_f64;
-
-        // The scale is just the logarithm, but it is what every later term is written against.
-        assert!((tail_log_scale(complement) - 36.736_800_569_677_1).abs() < 1e-12);
-
-        // The seed lands close enough for Newton to be quadratic — two orders inside the
-        // eleven percent Giles's fit leaves, which is the whole point of the route.
-        let seed = tail_seed(complement);
-        assert!(
-            (seed - root).abs() / root < 1e-3,
-            "the tail seed is {seed}, which is not within 1e-3 of the root"
-        );
-
-        // One step is not enough and two are; both halves of that are asserted, because
-        // dropping to one step is the cheap-looking change a later reader might make.
-        let once = erfc_newton_step(seed, complement);
-        let twice = erfc_newton_step(once, complement);
-        assert!((once - root).abs() > (twice - root).abs());
-        assert!((twice - root).abs() <= 4.0 * crate::Real::ulp(root));
-    }
-
-    /// The inverse's domain routes and its two seed tables.
-    ///
-    /// `AtNegativeOne` and `AtOne` are the ends of `erf`'s range, where the inverse diverges;
-    /// `AtOrigin` is the signed zero the polynomial cannot produce. The seed split is a separate
-    /// decision in a separate variable — the central table is a polynomial in `w − 5/2` and the
-    /// tail's in `√w − 3` — so neither is a continuation of the other.
-    #[test]
-    fn the_inverse_routes_split_the_range_and_the_seed_tables() {
-        use ErfInvRoute::{AtNegativeOne, AtOne, AtOrigin, Interior};
-        use ErfInvSeed::{Central, Tail};
-
-        for x in [-1.0, (-1.0_f64).next_down(), -2.0, f64::NEG_INFINITY] {
-            assert_eq!(ErfInvRoute::for_argument(x), AtNegativeOne, "at {x:e}");
-            assert_eq!(erf_inv(x), f64::NEG_INFINITY, "at {x:e}");
-        }
-        for x in [1.0, 1.0_f64.next_up(), 2.0, f64::INFINITY] {
-            assert_eq!(ErfInvRoute::for_argument(x), AtOne, "at {x:e}");
-            assert_eq!(erf_inv(x), f64::INFINITY, "at {x:e}");
-        }
-        // Odd at the origin, which is what `copysign` is for.
-        for x in [0.0_f64, -0.0] {
-            assert_eq!(ErfInvRoute::for_argument(x), AtOrigin);
-            assert_eq!(erf_inv(x).to_bits(), x.to_bits(), "signed zero at {x:e}");
-        }
-        for x in [
-            (-1.0_f64).next_up(),
-            -0.5,
-            -f64::MIN_POSITIVE,
-            f64::MIN_POSITIVE,
-            0.5,
-            1.0_f64.next_down(),
-            f64::NAN,
-        ] {
-            assert_eq!(ErfInvRoute::for_argument(x), Interior, "at {x:e}");
-        }
-        // `NaN` reaches the interior and propagates rather than being caught by a guard.
-        assert!(erf_inv(f64::NAN).is_nan());
-
-        // The seed tables, at and either side of the boundary.
-        assert_eq!(ErfInvSeed::for_log_weight(5.0), Tail);
-        assert_eq!(ErfInvSeed::for_log_weight(5.0_f64.next_down()), Central);
-        assert_eq!(ErfInvSeed::for_log_weight(5.0_f64.next_up()), Tail);
-        assert_eq!(ErfInvSeed::for_log_weight(0.0), Central);
-        assert_eq!(ErfInvSeed::for_log_weight(f64::NAN), Tail);
-        // Both tables are evaluated in different variables, so they are genuinely two fits —
-        // yet they agree at the join, which is what makes the split free.
-        let join = 5.0_f64;
-        let (central, tail) = (Central.evaluate(join), Tail.evaluate(join));
-        assert!(
-            (central - tail).abs() <= 2e-2 * tail.abs(),
-            "the seed tables disagree at the join: {central} vs {tail}"
-        );
-    }
-}
+mod tests;
