@@ -500,6 +500,24 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// error `O(1/a)`. That is `3e-8` at the crossover and shrinks from there, reaching exact
     /// in the limit; it is the more accurate of the two routes at every shape above it.
     ///
+    /// **Below** that crossover the same front factor is already costing digits, and this is the
+    /// one part of the surface where accuracy degrades with the shape rather than holding.
+    /// Measured against MPFR at 256 bits, worst relative error over `x = a + z√a` for
+    /// `z ∈ {−2, −1, 0, 1, 2}`:
+    ///
+    /// | `shape` | 1e3 | 1e4 | 1e5 | 1e6 | 1e7 | 3e7 |
+    /// |---------|-----|-----|-----|-----|-----|-----|
+    /// | series (used below `3e7`) | `4.2e-13` | `8.5e-12` | `1.4e-10` | `4.2e-10` | `2.9e-8` | `5.6e-8` |
+    /// | Edgeworth (used above) | `1.3e-3` | `1.2e-4` | `1.2e-5` | `1.2e-6` | `1.2e-7` | `4.0e-8` |
+    ///
+    /// The two cross within a factor of `1.4` of `3e7`, so the threshold above is where it should
+    /// be — that is a measurement rather than a restatement of the choice. What the table also
+    /// shows is that **`5.6e-8` at the handover is the weakest point of this surface**, reached
+    /// from both sides: the series has lost `ε·a·ln a` by then and the Edgeworth correction is
+    /// still `O(1/a)`. A uniform asymptotic in the Temme form would be accurate across the whole
+    /// band and `O(1)` in cost, where the series spends up to 32,200 terms; nothing here needs it
+    /// yet, and this is the measurement that would justify it.
+    ///
     /// `P` and `Q` are probabilities at every shape: both lie in `[0, 1]`, sum to `1`, and are
     /// monotone in `self`.
     fn gamma_lr(self, shape: Self) -> Self;
