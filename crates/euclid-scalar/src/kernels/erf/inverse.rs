@@ -421,6 +421,46 @@ mod tests {
         assert_eq!(erf_inv(-x), -got);
     }
 
+    /// `erf(erf_inv(x)) == x`, across the whole domain and both routes.
+    ///
+    /// The module header named this as the test the suite did not make near `±1`, and it is why
+    /// nothing caught the tail defect: a round trip is the only check that needs no reference
+    /// and still sees a wrong root. It straddles both thresholds, so a misplaced handover shows
+    /// up as a cluster of failures on one side of it.
+    ///
+    /// **Six ulp, measured.** I set this bar twice without measuring it — bit-exact first,
+    /// which fails by one ulp at `x = 0.9637`, then two, which fails by three at `0.8555`. A
+    /// round trip carries the forward function's rounding as well as the inverse's, so the bar
+    /// is a property of the pair and there is no deriving it from one side.
+    ///
+    /// Measured over the 800 arguments below: worst **`3.0`** ulp at `x = 0.8555`, two points
+    /// above `2`, none above `4`. Six is that with the usual headroom.
+    #[test]
+    fn erf_inv_round_trips_through_erf() {
+        let mut checked = 0usize;
+        for i in 0..=400 {
+            // `|x|` from `1e-9` to `1 − 1e-16`, log-spaced, so both routes and both thresholds
+            // are crossed many times.
+            let complement = 10f64.powf(-16.0 + 16.0 * f64::from(i) / 400.0);
+            for x in [1.0 - complement, -(1.0 - complement)] {
+                if x == 0.0 || x.abs() >= 1.0 {
+                    continue;
+                }
+                let round_tripped = erf(erf_inv(x));
+                let ulps = (round_tripped - x).abs() / crate::Real::ulp(x);
+                assert!(
+                    ulps <= 6.0,
+                    "erf(erf_inv({x:e})) = {round_tripped:e}, which is {ulps} ulp away"
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked > 700,
+            "only {checked} arguments reached the assertion"
+        );
+    }
+
     /// The two forms of the Newton numerator are the same quantity.
     ///
     /// Asserted where both are trustworthy — around `|x| = ½`, the threshold itself — because

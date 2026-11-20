@@ -722,9 +722,15 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// have worked. See `math::gamma::stirling_gamma`, and `stirling_half_power` for why the
     /// base has to be `x` rather than the `x/e` the formula is usually written with.
     ///
-    /// Below `20` the Lanczos route remains, at `11.5` and `21.4` ulp. Its truncation is small
-    /// there — that is why the handover sits where it does — and what limits those two bands has
-    /// not been attributed. `ln_gamma` is unaffected throughout and is still the better route
+    /// Below `20` the Lanczos route remains, at `11.5` and `21.4` ulp, and that is **also its
+    /// truncation** rather than its arithmetic. The same test settles it — evaluating the
+    /// formula and its coefficients at 60 digits against true `Γ` gives `1.5`, `4.0`, `7.7`,
+    /// `9.3`, `9.2` and `6.4` ulp at `x = 1.5, 3.5, 7.5, 11.5, 15.5, 19.5`, against a kernel
+    /// that measures `2.5`, `0.0`, `6.8`, `14.2`, `1.6` and `3.6`. The approximation is the
+    /// floor over most of it.
+    ///
+    /// So lowering this band needs better coefficients — a larger `g`, or more of them — not a
+    /// better evaluation. That is a fitted table rather than a reformulation, and it is unbuilt. `ln_gamma` is unaffected throughout and is still the better route
     /// for anything that can take a logarithm.
     fn gamma(self) -> Self;
 
