@@ -204,10 +204,7 @@ pub(crate) fn j0(x: f64) -> f64 {
         JRoute::Undefined => f64::NAN,
         JRoute::AtOrigin => 1.0,
         JRoute::AtInfinity => 0.0,
-        JRoute::Hankel => {
-            let (first, _) = hankel(0.0, ax);
-            first
-        }
+        JRoute::Hankel => hankel(0.0, ax).first_kind,
         JRoute::Series => j_series(0, ax),
         JRoute::Aliased => j_aliased(0, ax),
     }
@@ -236,10 +233,7 @@ pub(crate) fn j1(x: f64) -> f64 {
         // only to rounding, leaving ~3e-17 where the true value is 0.
         JRoute::AtOrigin => x,
         JRoute::AtInfinity => 0.0,
-        JRoute::Hankel => {
-            let (first, _) = hankel(1.0, ax);
-            odd_about_the_origin(first, x)
-        }
+        JRoute::Hankel => odd_about_the_origin(hankel(1.0, ax).first_kind, x),
         JRoute::Series => odd_about_the_origin(j_series(1, ax), x),
         JRoute::Aliased => odd_about_the_origin(j_aliased(1, ax), x),
     }

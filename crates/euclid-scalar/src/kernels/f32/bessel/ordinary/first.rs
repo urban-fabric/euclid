@@ -16,6 +16,8 @@ use super::*;
 /// The `m <= half` clause keeps the walk going until it is past the peak at `m ≈ x/2`: the terms
 /// *grow* before they decay, so stopping at the first small value would otherwise return `m = 1`
 /// for every argument above a few.
+use crate::math::pair::Solutions;
+
 pub(super) fn alias_nodes(n: u32, x: f32) -> u32 {
     let half = x * 0.5;
     let mut m = 1.0f32;
@@ -85,7 +87,7 @@ pub(super) fn j_aliased(n: u32, x: f32) -> f32 {
 /// Both series are divergent and truncated at their minimum term; continuing past it makes them
 /// worse, which the growth check watches for. Returning the pair costs nothing — `P`, `Q` and
 /// `ω` are shared — and keeps `J` and `Y` consistent in the tail.
-pub(in crate::kernels::f32) fn hankel(nu: f32, x: f32) -> (f32, f32) {
+pub(in crate::kernels::f32) fn hankel(nu: f32, x: f32) -> Solutions<f32> {
     debug_assert!(x > 0.0);
     let four_nu_sq = 4.0 * nu * nu;
     let mut a = 1.0f32;
@@ -146,7 +148,7 @@ pub(in crate::kernels::f32) fn hankel(nu: f32, x: f32) -> (f32, f32) {
     let sin_omega = sin_x * cos_c - cos_x * sin_c;
     let cos_omega = cos_x * cos_c + sin_x * sin_c;
     let amplitude = (2.0 / (PI * x)).sqrt();
-    (
+    Solutions::new(
         amplitude * (cos_omega * p - sin_omega * q),
         amplitude * (sin_omega * p + cos_omega * q),
     )
@@ -180,7 +182,7 @@ impl JRoute {
 /// `Jₙ(|x|)` for `n ∈ {0, 1}`, routed by magnitude.
 pub(super) fn j_magnitude(n: u32, ax: f32) -> f32 {
     match JRoute::for_magnitude(ax) {
-        JRoute::Hankel => hankel(n as f32, ax).0,
+        JRoute::Hankel => hankel(n as f32, ax).first_kind,
         JRoute::Series => j_series(n, ax),
         JRoute::Aliased => j_aliased(n, ax),
     }

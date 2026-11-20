@@ -22,10 +22,12 @@
 //! growth check in [`step_coefficient`]'s callers watches for.
 
 use crate::constants::f64::SQRT_TAU;
+use crate::math::arithmetic::term_is_negligible;
+use crate::math::pair::{Converged, Solutions};
 use core::f64::consts::PI;
 
 /// Term cap for the expansions; the minimum-term check normally stops them far sooner.
-const MAX_TERMS: u32 = 200;
+pub(crate) const MAX_TERMS: u32 = 200;
 
 /// Relative size at which a term stops contributing.
 ///
@@ -64,7 +66,20 @@ fn step_coefficient(a: f64, four_nu_sq: f64, k: f64) -> f64 {
 /// transcribed here either. Divergent, and truncated at its minimum term; continuing past it
 /// makes the result worse, which the growth check watches for.
 pub(crate) fn i_scaled(nu: f64, x: f64) -> f64 {
+    i_scaled_terms(nu, x).value
+}
+
+/// `Iνᵉ`'s expansion, with the number of terms it took.
+///
+/// Instrumented because the two exits are otherwise indistinguishable. The expansion is
+/// divergent, so `magnitude >= previous` always fires eventually and the second exit —
+/// `magnitude < TERM_EPS`, for an argument large enough that the series reaches the format's
+/// floor first — only ever saves terms. Mutation testing finds every spelling of it unkillable
+/// for exactly that reason: weaken it and the growth check still stops the loop at the same
+/// value, having summed more terms to get there. The count is what separates them.
+pub(crate) fn i_scaled_terms(nu: f64, x: f64) -> Converged<f64> {
     debug_assert!(x > 0.0);
+    let mut terms = 0;
     let four_nu_sq = 4.0 * nu * nu;
     let mut a = 1.0;
     let mut inv_power = 1.0;
@@ -85,7 +100,8 @@ pub(crate) fn i_scaled(nu: f64, x: f64) -> f64 {
         } else {
             a * inv_power
         };
-        if magnitude < TERM_EPS {
+        terms += 1;
+        if term_is_negligible(magnitude, 1.0, TERM_EPS) {
             break;
         }
     }
@@ -95,31 +111,34 @@ pub(crate) fn i_scaled(nu: f64, x: f64) -> f64 {
     // quotient zero, where the true `4e-20` is perfectly representable. `f64` had the same
     // latent failure above `x = 2.9e307`. Splitting the root keeps every intermediate in
     // range and is exact to the same rounding.
-    total / (SQRT_TAU * x.sqrt())
+    Converged::new(total / (SQRT_TAU * x.sqrt()), terms)
 }
 
-/// `(Jν(x), Yν(x))` from the Hankel asymptotic expansion, for large `x`.
+/// The Hankel expansion's two coefficient sums, with the number of terms they took.
 ///
 /// ```text
-/// Jν ~ √(2/πx)[cos ω · P − sin ω · Q]      Yν ~ √(2/πx)[sin ω · P + cos ω · Q]
-/// ω = x − (ν/2 + ¼)π
 /// P = Σ (−1)^k a_{2k}(ν)/x^{2k}            Q = Σ (−1)^k a_{2k+1}(ν)/x^{2k+1}
 /// ```
 ///
-/// with `a₀ = 1` and `a_k(ν) = a_{k−1}·(4ν² − (2k−1)²)/(8k)`, so the coefficients are
-/// generated in the loop and nothing is transcribed.
+/// with `a₀ = 1` and `a_k(ν) = a_{k−1}·(4ν² − (2k−1)²)/(8k)`, so the coefficients are generated
+/// in the loop and nothing is transcribed. Both series are divergent and are truncated at their
+/// minimum term; continuing past it makes them worse, which the growth check watches for.
 ///
-/// Both series are divergent and are truncated at their minimum term; continuing past it makes
-/// them worse, which the growth check watches for. Returning the pair together costs nothing —
-/// `P`, `Q` and `ω` are shared — and keeps `J` and `Y` consistent in the tail, which is what
-/// the Wronskian test checks.
-pub(crate) fn hankel(nu: f64, x: f64) -> (f64, f64) {
+/// Extracted from [`hankel`] because the loop's second exit was otherwise unobservable. `P` and
+/// `Q` are summed together — the terms alternate between them by parity — and the loop has two
+/// ways out: the growth check, which always fires because the expansion is divergent, and
+/// `magnitude < TERM_EPS`, which fires first for an argument large enough that the terms reach
+/// the format's floor before they turn. Weaken the second and the first still stops the loop at
+/// the same `P` and `Q`, having summed more terms to get there, so `hankel`'s own output cannot
+/// see the difference. The term count can, and that is the whole reason this is a function.
+pub(crate) fn hankel_sums(nu: f64, x: f64) -> Converged<Solutions<f64>> {
     debug_assert!(x > 0.0);
     let four_nu_sq = 4.0 * nu * nu;
     let mut a = 1.0f64;
     let mut inv_power = 1.0f64; // x^{-m}
     let (mut p, mut q) = (0.0f64, 0.0f64);
     let mut previous = f64::INFINITY;
+    let mut terms = 0;
 
     for m in 0..MAX_TERMS {
         if m > 0 {
@@ -142,15 +161,31 @@ pub(crate) fn hankel(nu: f64, x: f64) -> (f64, f64) {
         } else {
             q += signed;
         }
-        if magnitude < TERM_EPS {
+        terms += 1;
+        if term_is_negligible(magnitude, 1.0, TERM_EPS) {
             break;
         }
     }
+    Converged::new(Solutions::new(p, q), terms)
+}
 
+/// `(Jν(x), Yν(x))` from the Hankel asymptotic expansion, for large `x`.
+///
+/// ```text
+/// Jν ~ √(2/πx)[cos ω · P − sin ω · Q]      Yν ~ √(2/πx)[sin ω · P + cos ω · Q]
+/// ω = x − (ν/2 + ¼)π
+/// ```
+///
+/// where `P` and `Q` come from [`hankel_sums`]. Returning the pair together costs nothing —
+/// `P`, `Q` and `ω` are all shared between the two — and keeps `J` and `Y` consistent in the
+/// tail, which is what the Wronskian test checks.
+pub(crate) fn hankel(nu: f64, x: f64) -> Solutions<f64> {
+    let sums = hankel_sums(nu, x).value;
+    let (p, q) = (sums.first_kind, sums.second_kind);
     let omega = x - (nu * 0.5 + 0.25) * PI;
     let (sin_omega, cos_omega) = omega.sin_cos();
     let amplitude = (2.0 / (PI * x)).sqrt();
-    (
+    Solutions::new(
         amplitude * (cos_omega * p - sin_omega * q),
         amplitude * (sin_omega * p + cos_omega * q),
     )

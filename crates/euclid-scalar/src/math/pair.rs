@@ -42,6 +42,67 @@ impl<T: HostReal> Slope<T> {
     }
 }
 
+/// The two independent solutions of a second-order equation, at one argument.
+///
+/// `J` and `Y` for Bessel, `Ai` and `Bi` for Airy. Like [`Slope`], the two have the same type
+/// and no intrinsic order, so an anonymous pair makes transposing them a silent error — and
+/// unlike `Slope`, the call sites here mostly want *one* of the two, which is where `.0` and
+/// `.1` are at their least readable: `hankel(0.0, x).1` says nothing, `hankel(0.0, x).second_kind`
+/// says which function is being asked for.
+///
+/// It composes with `Slope`: a pair of solutions each carrying its derivative — the Airy
+/// quadruple — is a `Solutions<Slope<T>>` rather than a fourth distinct shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Solutions<T> {
+    /// The first-kind solution, regular at the origin: `J` for Bessel, `Ai` for Airy.
+    pub(crate) first_kind: T,
+    /// The second-kind solution: `Y` for Bessel, `Bi` for Airy.
+    pub(crate) second_kind: T,
+}
+
+impl<T> Solutions<T> {
+    /// Carry both solutions together.
+    pub(crate) fn new(first_kind: T, second_kind: T) -> Self {
+        Self {
+            first_kind,
+            second_kind,
+        }
+    }
+}
+
+/// A series' value together with the number of terms it took to reach it.
+///
+/// # Why a count travels with a value
+///
+/// A truncated series' **cost** is invisible to every accuracy assertion in this tree: the
+/// stopping rule decides how many terms are summed, and because the tolerances here sit below
+/// the format's resolution, stopping one term early or late moves no result. Mutation testing
+/// duly finds those comparisons unkillable — widening `t < sum·ε` to `<=`, or to `==` so the
+/// break never fires at all, leaves every value identical and silently runs the loop to its cap.
+///
+/// The term count is the deterministic observable that *does* separate them, so the kernels that
+/// have a stopping rule worth protecting return it. The public entry point discards it; nothing
+/// branches on it. `Slope` exists for the same reason one step up — a quantity that was being
+/// passed around anonymously and so could not be asserted.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Converged<T> {
+    /// The summed value.
+    pub(crate) value: T,
+    /// Terms the loop entered before its stopping rule fired, or the cap if it never did.
+    pub(crate) terms: u32,
+}
+
+impl<T> Converged<T> {
+    /// Carry a value and the term count that produced it.
+    ///
+    /// Unbounded in `T`: a counted result is sometimes a *pair* of sums rather than one number —
+    /// the Hankel expansion accumulates `P` and `Q` together — so this wraps whatever the loop
+    /// accumulated rather than requiring it to be a scalar.
+    pub(crate) fn new(value: T, terms: u32) -> Self {
+        Self { value, terms }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

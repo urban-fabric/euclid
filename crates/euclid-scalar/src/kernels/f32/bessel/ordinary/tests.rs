@@ -14,6 +14,7 @@ use super::second::{
 };
 use super::*;
 use crate::kernels::bessel::{ordinary_first, ordinary_second};
+use crate::math::pair::{Converged, Slope};
 use euclid_utils::assert_close_f32;
 
 /// Both kinds against the `f64` kernel, at budgets a native path earns.
@@ -231,18 +232,22 @@ fn every_route_tracks_the_wide_kernel_on_its_own_band() {
 #[test]
 fn the_taylor_step_transports_bessels_equation() {
     // A zero step is the identity, exactly.
-    assert_eq!(taylor_step(3.0, 2.0, -1.0, 0.0, 0.0), (2.0, -1.0));
+    assert_eq!(
+        taylor_step(3.0, Slope::new(2.0, -1.0), 0.0, 0.0),
+        Slope::new(2.0, -1.0)
+    );
     // `x²y″ + xy′ + (x² − ν²)y = 0` fixes the second coefficient: `a₂ = −(x₀y′ + (x₀² − ν²)y)
     // / (2x₀²)`, so a small step is `y + y′δ + a₂δ²` and the rest is negligible.
     let (x0, y, dy, order_sq) = (4.0_f32, 0.5_f32, -0.25_f32, 1.0_f32);
     let delta = 0.01_f32;
-    let (value, _) = taylor_step(x0, y, dy, delta, order_sq);
+    let value = taylor_step(x0, Slope::new(y, dy), delta, order_sq).value;
     let a2 = -(x0 * dy + (x0 * x0 - order_sq) * y) / (2.0 * x0 * x0);
     let taylor = y + dy * delta + a2 * delta * delta;
     assert!((value - taylor).abs() <= 2e-6, "{value} vs {taylor}");
     // And it reproduces `J₀` when seeded from it, which is the march's whole purpose.
     let x0 = 3.0_f32;
-    let (value, derivative) = taylor_step(x0, j0(x0), -j1(x0), 0.25, 0.0);
+    let stepped = taylor_step(x0, Slope::new(j0(x0), -j1(x0)), 0.25, 0.0);
+    let (value, derivative) = (stepped.value, stepped.derivative);
     let wide = f64::from(x0) + 0.25;
     assert!(
         (value - ordinary_first::j0(wide) as f32).abs() <= 1e-5,
@@ -270,19 +275,19 @@ fn both_y_series_converge_well_inside_the_term_cap() {
         (1.0, 6, 7),
         (Y_SERIES_MAX, 8, 9),
     ] {
-        let (value, terms) = y0_series_terms(x);
+        let Converged { value, terms } = y0_series_terms(x);
         assert_eq!(terms, y0_want, "y0 at x = {x}");
         assert!(value.is_finite());
         assert!(terms < Y_MAX_TERMS, "y0 at x = {x} reached the cap");
-        let (value, terms) = y1_series_terms(x);
+        let Converged { value, terms } = y1_series_terms(x);
         assert_eq!(terms, y1_want, "y1 at x = {x}");
         assert!(value.is_finite());
         assert!(terms < Y_MAX_TERMS, "y1 at x = {x} reached the cap");
     }
     // Monotone in the argument: more terms are needed further from the origin, which is what
     // makes the break a convergence test rather than a fixed schedule.
-    assert!(y0_series_terms(Y_SERIES_MAX).1 > y0_series_terms(0.01).1);
-    assert!(y1_series_terms(Y_SERIES_MAX).1 > y1_series_terms(0.01).1);
+    assert!(y0_series_terms(Y_SERIES_MAX).terms > y0_series_terms(0.01).terms);
+    assert!(y1_series_terms(Y_SERIES_MAX).terms > y1_series_terms(0.01).terms);
 }
 
 /// `J₁` is **odd**, including at zero, which only the sign bit records.

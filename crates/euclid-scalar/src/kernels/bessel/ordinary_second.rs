@@ -30,6 +30,8 @@ use super::asymptotic::hankel;
 use super::ln_half_x;
 use super::ordinary_first::{HANKEL_MIN, j0, j1};
 use crate::constants::f64::EULER_GAMMA;
+use crate::math::arithmetic::term_is_negligible;
+use crate::math::pair::{Converged, Slope};
 use core::f64::consts::PI;
 
 /// At or below this argument `Y₀`/`Y₁` use their power series. Chosen where the series is
@@ -44,7 +46,7 @@ const MARCH_RATIO: f64 = 0.25;
 const MARCH_TERMS: usize = 40;
 
 /// Iteration cap for the power series.
-const MAX_TERMS: u32 = 1_000;
+pub(super) const MAX_TERMS: u32 = 1_000;
 
 /// Relative size at which a term stops contributing.
 ///
@@ -71,17 +73,34 @@ const TERM_EPS: f64 = 1e-19;
 ///
 /// `Y₀ = (2/π)(ln(x/2) + γ)J₀(x) + (2/π)Σ_{k≥1}(−1)^{k+1}H_k(x²/4)^k/(k!)²`.
 pub(super) fn y0_series(x: f64) -> f64 {
+    y0_series_terms(x).value
+}
+
+/// `Y₀`'s series, with the number of terms it took.
+///
+/// Instrumented because the stopping rule is otherwise unassertable: `TERM_EPS` is `1e-19`,
+/// below `f64`'s resolution, so stopping a term early or late moves no value and every mutation
+/// of `t < sum·ε` survives. The count is what separates them. See [`Converged`].
+pub(super) fn y0_series_terms(x: f64) -> Converged<f64> {
     let q = x * x * 0.25;
     let mut term = 1.0f64; // (x²/4)^k/(k!)²
     let mut harmonic = 0.0f64;
     let mut sum = 0.0f64;
+    let mut terms = 0;
     for k in 1..MAX_TERMS {
         let kf = f64::from(k);
         term *= q / (kf * kf);
         harmonic += 1.0 / kf;
         let t = term * harmonic;
         sum += if k % 2 == 1 { t } else { -t };
-        if t < sum.abs() * TERM_EPS {
+        terms += 1;
+        // `t == 0` is a *separate* exit from the tolerance, and it is not redundant: the
+        // tolerance is relative, so when `x²/4` underflows to zero both `t` and `sum` are
+        // exactly zero and `0 < 0·ε` is false. Without this the loop ran to `MAX_TERMS` for
+        // every argument below about `3e-162`, summing nothing — 999 iterations to return the
+        // leading term. `term` only ever shrinks, so a zero term means every later one is zero
+        // too and stopping is exact rather than a truncation.
+        if t == 0.0 || term_is_negligible(t, sum.abs(), TERM_EPS) {
             break;
         }
     }
@@ -89,7 +108,10 @@ pub(super) fn y0_series(x: f64) -> f64 {
     // underflows for the smallest subnormals — `x*0.5` rounds to zero at `x = 5e-324`, making
     // `ln` return `−∞` where the true value is a perfectly representable `−474` — and the
     // difference is marginally more accurate everywhere else too.
-    2.0 / PI * (ln_half_x(x) + EULER_GAMMA) * j0(x) + 2.0 / PI * sum
+    Converged::new(
+        2.0 / PI * (ln_half_x(x) + EULER_GAMMA) * j0(x) + 2.0 / PI * sum,
+        terms,
+    )
 }
 
 /// `Y₁(x)` by its power series, for small `x`.
@@ -97,10 +119,20 @@ pub(super) fn y0_series(x: f64) -> f64 {
 /// `Y₁ = −2/(πx) + (2/π)ln(x/2)J₁(x) − (x/2π)Σ_{k≥0}(H_k + H_{k+1} − 2γ)(−x²/4)^k/(k!(k+1)!)`.
 /// The `−2/(πx)` carries the pole and is kept exact.
 pub(super) fn y1_series(x: f64) -> f64 {
+    y1_series_terms(x).value
+}
+
+/// `Y₁`'s series, with the number of terms it took.
+///
+/// Instrumented for the reason [`y0_series_terms`] records, and with one more comparison to
+/// protect: the `k > 1` guard on the break forces at least two terms, and nothing but the count
+/// can see it.
+pub(super) fn y1_series_terms(x: f64) -> Converged<f64> {
     let q = x * x * 0.25;
     let mut term = 1.0f64; // (x²/4)^k/(k!(k+1)!)
     let mut h_k = 0.0f64;
     let mut sum = 0.0f64;
+    let mut terms = 0;
     for k in 0..MAX_TERMS {
         let kf = f64::from(k);
         if k > 0 {
@@ -110,11 +142,15 @@ pub(super) fn y1_series(x: f64) -> f64 {
         let h_k1 = h_k + 1.0 / (kf + 1.0);
         let t = term * (h_k + h_k1 - 2.0 * EULER_GAMMA);
         sum += if k % 2 == 0 { t } else { -t };
-        if t.abs() < sum.abs() * TERM_EPS && k > 1 {
+        terms += 1;
+        if term_is_negligible(t, sum.abs(), TERM_EPS) && k > 1 {
             break;
         }
     }
-    -2.0 / (PI * x) + 2.0 / PI * ln_half_x(x) * j1(x) - x / (2.0 * PI) * sum
+    Converged::new(
+        -2.0 / (PI * x) + 2.0 / PI * ln_half_x(x) * j1(x) - x / (2.0 * PI) * sum,
+        terms,
+    )
 }
 
 // --- second kind: the Taylor march --------------------------------------
@@ -131,10 +167,10 @@ pub(super) fn y1_series(x: f64) -> f64 {
 /// which is seeded by `a₀ = y(x₀)` and `a₁ = y′(x₀)` and needs no derivatives of the
 /// coefficients. Both the value and the derivative are returned, by Horner on `Σaₖδᵏ` and
 /// `Σk·aₖδ^{k−1}`.
-fn taylor_step(x0: f64, y: f64, dy: f64, delta: f64, order_sq: f64) -> (f64, f64) {
+pub(super) fn taylor_step(x0: f64, at: Slope<f64>, delta: f64, order_sq: f64) -> Slope<f64> {
     let mut a = [0.0f64; MARCH_TERMS];
-    a[0] = y;
-    a[1] = dy;
+    a[0] = at.value;
+    a[1] = at.derivative;
     let x0_sq = x0 * x0;
     for m in 0..MARCH_TERMS - 2 {
         let mf = m as f64;
@@ -155,22 +191,55 @@ fn taylor_step(x0: f64, y: f64, dy: f64, delta: f64, order_sq: f64) -> (f64, f64
     for k in (1..MARCH_TERMS).rev() {
         derivative = derivative * delta + (k as f64) * a[k];
     }
-    (value, derivative)
+    Slope::new(value, derivative)
 }
 
 /// `(Y₀(x), Y₁(x))` for `x > Y_SERIES_MAX`, by marching out from the series.
 ///
 /// `Y₀′ = −Y₁`, so the `n = 0` march carries both.
-pub(super) fn y_march(target: f64) -> (f64, f64) {
+pub(super) fn y_march(target: f64) -> Slope<f64> {
+    y_march_steps(target).value
+}
+
+/// Cap on the outward march, in steps.
+///
+/// **Every other loop in this crate has a backstop and this one did not.** The march advances by
+/// `x·MARCH_RATIO` from `Y_SERIES_MAX = 4` to at most `HANKEL_MIN = 18`, so a factor of `1.25`
+/// per step reaches the far end in `log(18/4)/log(1.25) ≈ 6.7` — **seven** measured, the last
+/// step being short because it is clamped to `target − x`.
+///
+/// Sixteen is a little over twice that, which is where this crate's other backstops sit:
+/// `W_STEPS` is 2.6x its measured worst and the incomplete gamma's `MAX_ITER` 3.1x. The first
+/// draft used sixty-four, and mutation testing showed why that is too loose — a mutated advance
+/// then spends all sixty-four steps on a forty-term recurrence and merely becomes *slow*, which
+/// surfaces as a timeout rather than a failed assertion. A cap close to the real requirement
+/// turns the same mutation into a wrong answer the accuracy tests catch at once.
+///
+/// Mutation testing is what asked for it. Three mutants here — `x < target` widened, and `x +=
+/// step` turned into `-=` or `*=` — stopped the march advancing and the suite **hung** instead of
+/// failing. A hang is the worst outcome available: it is detected only by a timeout, it says
+/// nothing about which mutation caused it, and in a library it would be an unkillable process
+/// rather than a wrong number. With the cap those three produce a bounded wrong answer, which the
+/// accuracy tests catch immediately.
+pub(super) const MARCH_MAX_STEPS: u32 = 16;
+
+/// The march, with the number of steps it took.
+///
+/// The count is the observable that `MARCH_MAX_STEPS` needs: a cap is only a backstop if
+/// something asserts nothing reaches it, and the step count is the only way to see that.
+pub(super) fn y_march_steps(target: f64) -> Converged<Slope<f64>> {
     let mut x = Y_SERIES_MAX;
-    let mut value = y0_series(x);
-    let mut derivative = -y1_series(x);
-    while x < target {
+    // `Y₀` and its derivative `Y₀′ = −Y₁` are what the equation is marched in; the caller wants
+    // `Y₁`, so the sign comes back off at the end.
+    let mut at = Slope::new(y0_series(x), -y1_series(x));
+    let mut steps = 0;
+    while x < target && steps < MARCH_MAX_STEPS {
         let step = (x * MARCH_RATIO).min(target - x);
-        (value, derivative) = taylor_step(x, value, derivative, step, 0.0);
+        at = taylor_step(x, at, step, 0.0);
         x += step;
+        steps += 1;
     }
-    (value, -derivative)
+    Converged::new(Slope::new(at.value, -at.derivative), steps)
 }
 
 /// The Bessel function of the second kind `Y₀(x)`, for `x > 0`.
@@ -214,14 +283,8 @@ pub(crate) fn y0(x: f64) -> f64 {
     match YRoute::for_argument(x) {
         YRoute::Value(value) => value,
         YRoute::Series => y0_series(x),
-        YRoute::Hankel => {
-            let (_, second) = hankel(0.0, x);
-            second
-        }
-        YRoute::March => {
-            let (value, _) = y_march(x);
-            value
-        }
+        YRoute::Hankel => hankel(0.0, x).second_kind,
+        YRoute::March => y_march(x).value,
     }
 }
 
@@ -229,13 +292,9 @@ pub(crate) fn y1(x: f64) -> f64 {
     match YRoute::for_argument(x) {
         YRoute::Value(value) => value,
         YRoute::Series => y1_series(x),
-        YRoute::Hankel => {
-            let (_, second) = hankel(1.0, x);
-            second
-        }
-        YRoute::March => {
-            let (_, derivative) = y_march(x);
-            derivative
-        }
+        YRoute::Hankel => hankel(1.0, x).second_kind,
+        // `y_march` carries `Y₀` and `Y₁` as a value and its derivative, so this is the same
+        // march the `y0` arm runs — the field says which half is wanted.
+        YRoute::March => y_march(x).derivative,
     }
 }

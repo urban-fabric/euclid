@@ -276,3 +276,38 @@ fn zero_is_unsigned_and_the_first_kind_is_odd() {
         assert_eq!(i1e(-x), -i1e(x), "i1e must be odd at x = {x:e}");
     }
 }
+
+/// The asymptotic expansion's **term count**, which is all its second exit changes.
+///
+/// `i_scaled` has two ways out: the growth check, which always fires because the expansion is
+/// divergent, and `magnitude < TERM_EPS`, which fires first once the argument is large enough
+/// that the terms reach the format's floor before they turn. Weaken the second and the first
+/// still stops the loop at the same value, having summed more terms — so no accuracy assertion
+/// can see it and mutation testing finds every spelling unkillable. The count can.
+#[test]
+fn the_asymptotic_expansion_truncates_sooner_as_the_argument_grows() {
+    use crate::kernels::bessel::asymptotic::{i_scaled, i_scaled_terms};
+
+    // Further out, fewer terms: `a_k/x^k` reaches the floor earlier, so the tolerance exit wins
+    // and wins sooner. This is the monotone relation the second exit exists to produce.
+    let near = i_scaled_terms(0.0, 25.0);
+    let far = i_scaled_terms(0.0, 1.0e6);
+    assert!(
+        far.terms < near.terms,
+        "x = 1e6 should truncate sooner than x = 25: {} vs {}",
+        far.terms,
+        near.terms
+    );
+    // Both inside the cap, which is what says the loop is converging rather than running out.
+    for &x in &[25.0_f64, 1.0e3, 1.0e6, 1.0e300] {
+        let counted = i_scaled_terms(0.0, x);
+        assert!(
+            counted.terms < 200,
+            "x = {x:e} took {} terms",
+            counted.terms
+        );
+        assert!(counted.value > 0.0 && counted.value.is_finite());
+        // And the counted variant is the plain one.
+        assert_eq!(counted.value, i_scaled(0.0, x));
+    }
+}

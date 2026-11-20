@@ -17,10 +17,10 @@ pub(super) fn negative_asymptotic(ax: f32) -> (f32, f32, f32, f32) {
         // Accuracy departs far earlier, around `|x| ≈ 1e5`, where `ulp(ζ)` passes `2π`.
         return (0.0, 0.0, 0.0, 0.0);
     }
-    let (j_third, _) = hankel(1.0 / 3.0, z);
-    let (j_neg_third, _) = hankel(-1.0 / 3.0, z);
-    let (j_two_thirds, _) = hankel(2.0 / 3.0, z);
-    let (j_neg_two_thirds, _) = hankel(-2.0 / 3.0, z);
+    let j_third = hankel(1.0 / 3.0, z).first_kind;
+    let j_neg_third = hankel(-1.0 / 3.0, z).first_kind;
+    let j_two_thirds = hankel(2.0 / 3.0, z).first_kind;
+    let j_neg_two_thirds = hankel(-2.0 / 3.0, z).first_kind;
     (
         (ax.sqrt() / 3.0) * (j_third + j_neg_third),
         (ax / 3.0) * (j_two_thirds - j_neg_two_thirds),

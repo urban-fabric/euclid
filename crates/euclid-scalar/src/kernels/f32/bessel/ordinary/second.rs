@@ -6,6 +6,8 @@
 //! [`YRoute`].
 
 use super::*;
+use crate::math::arithmetic::term_is_negligible;
+use crate::math::pair::{Converged, Slope};
 
 /// At or below this argument `Y₀`/`Y₁` use their power series; above it, the march.
 ///
@@ -51,7 +53,7 @@ pub(super) const Y_MAX_TERMS: u32 = 32;
 ///
 /// `Y₀ = (2/π)(ln(x/2) + γ)J₀(x) + (2/π)Σ_{k≥1}(−1)^{k+1}H_k(x²/4)^k/(k!)²`.
 pub(super) fn y0_series(x: f32) -> f32 {
-    y0_series_terms(x).0
+    y0_series_terms(x).value
 }
 
 /// `Y₀` from its power series, with the number of terms it summed.
@@ -63,7 +65,7 @@ pub(super) fn y0_series(x: f32) -> f32 {
 /// leaves the value identical and costs the remaining iterations. `<=` differs only when a term
 /// lands exactly on the tolerance, and is an equivalent mutant. The count separates the first
 /// from the second.
-pub(super) fn y0_series_terms(x: f32) -> (f32, u32) {
+pub(super) fn y0_series_terms(x: f32) -> Converged<f32> {
     let q = x * x * 0.25;
     let mut term = 1.0f32; // (x²/4)^k/(k!)²
     let mut harmonic = 0.0f32;
@@ -76,11 +78,17 @@ pub(super) fn y0_series_terms(x: f32) -> (f32, u32) {
         let t = term * harmonic;
         sum += if k % 2 == 1 { t } else { -t };
         terms += 1;
-        if t < sum.abs() * TERM_EPS {
+        // `t == 0` is a *separate* exit from the tolerance, and it is not redundant: the
+        // tolerance is relative, so when `x²/4` underflows to zero both `t` and `sum` are
+        // exactly zero and `0 < 0·ε` is false. Without this the loop ran to `MAX_TERMS` for
+        // every argument below about `3e-162`, summing nothing — 999 iterations to return the
+        // leading term. `term` only ever shrinks, so a zero term means every later one is zero
+        // too and stopping is exact rather than a truncation.
+        if t == 0.0 || term_is_negligible(t, sum.abs(), TERM_EPS) {
             break;
         }
     }
-    (
+    Converged::new(
         2.0 / PI * (ln_half_x(x) + EULER_GAMMA) * j0(x) + 2.0 / PI * sum,
         terms,
     )
@@ -90,14 +98,14 @@ pub(super) fn y0_series_terms(x: f32) -> (f32, u32) {
 ///
 /// The `−2/(πx)` carries the pole, so it is kept as a separate exact term rather than folded in.
 pub(super) fn y1_series(x: f32) -> f32 {
-    y1_series_terms(x).0
+    y1_series_terms(x).value
 }
 
 /// `Y₁` from its power series, with the number of terms it summed.
 ///
 /// Instrumented for the reason [`y0_series_terms`] records; the `k > 1` guard on its break adds
 /// three more mutants of the same kind, each of which forces the loop to its cap.
-pub(super) fn y1_series_terms(x: f32) -> (f32, u32) {
+pub(super) fn y1_series_terms(x: f32) -> Converged<f32> {
     let q = x * x * 0.25;
     let mut term = 1.0f32; // (x²/4)^k/(k!(k+1)!)
     let mut h_k = 0.0f32;
@@ -113,11 +121,11 @@ pub(super) fn y1_series_terms(x: f32) -> (f32, u32) {
         let t = term * (h_k + h_k1 - 2.0 * EULER_GAMMA);
         sum += if k % 2 == 0 { t } else { -t };
         terms += 1;
-        if t.abs() < sum.abs() * TERM_EPS && k > 1 {
+        if term_is_negligible(t, sum.abs(), TERM_EPS) && k > 1 {
             break;
         }
     }
-    (
+    Converged::new(
         -2.0 / (PI * x) + 2.0 / PI * ln_half_x(x) * j1(x) - x / (2.0 * PI) * sum,
         terms,
     )
@@ -133,10 +141,10 @@ pub(super) fn ln_half_x(x: f32) -> f32 {
 /// The coefficient recurrence is seeded by `a₀ = y(x₀)` and `a₁ = y′(x₀)` and needs no
 /// derivatives of the equation's coefficients. Both the value and the derivative are returned,
 /// by Horner on `Σaₖδᵏ` and `Σk·aₖδ^{k−1}`.
-pub(super) fn taylor_step(x0: f32, y: f32, dy: f32, delta: f32, order_sq: f32) -> (f32, f32) {
+pub(super) fn taylor_step(x0: f32, at: Slope<f32>, delta: f32, order_sq: f32) -> Slope<f32> {
     let mut a = [0.0f32; MARCH_TERMS];
-    a[0] = y;
-    a[1] = dy;
+    a[0] = at.value;
+    a[1] = at.derivative;
     let x0_sq = x0 * x0;
     for m in 0..MARCH_TERMS - 2 {
         let mf = m as f32;
@@ -156,7 +164,7 @@ pub(super) fn taylor_step(x0: f32, y: f32, dy: f32, delta: f32, order_sq: f32) -
     for k in (1..MARCH_TERMS).rev() {
         derivative = derivative * delta + (k as f32) * a[k];
     }
-    (value, derivative)
+    Slope::new(value, derivative)
 }
 
 /// `(Y₀(x), Y₁(x))` for `x > Y_SERIES_MAX`, by marching out from the series.
@@ -164,16 +172,17 @@ pub(super) fn taylor_step(x0: f32, y: f32, dy: f32, delta: f32, order_sq: f32) -
 /// `Y₀′ = −Y₁`, so the `n = 0` march carries both. Forward integration is stable here precisely
 /// because `J` and `Y` both decay like `x^{−1/2}`: neither dominates, so an error introduced at
 /// one step is not amplified at the next.
-pub(super) fn y_march(target: f32) -> (f32, f32) {
+pub(super) fn y_march(target: f32) -> Slope<f32> {
     let mut x = Y_SERIES_MAX;
-    let mut value = y0_series(x);
-    let mut derivative = -y1_series(x);
+    // `Y₀` and its derivative `Y₀′ = −Y₁` are what the equation is marched in; the caller wants
+    // `Y₁`, so the sign comes back off at the end.
+    let mut at = Slope::new(y0_series(x), -y1_series(x));
     while x < target {
         let step = (x * MARCH_RATIO).min(target - x);
-        (value, derivative) = taylor_step(x, value, derivative, step, 0.0);
+        at = taylor_step(x, at, step, 0.0);
         x += step;
     }
-    (value, -derivative)
+    Slope::new(at.value, -at.derivative)
 }
 
 /// Which route evaluates `Y₀`/`Y₁`.
@@ -212,8 +221,8 @@ pub(crate) fn y0(x: f32) -> f32 {
     match YRoute::for_argument(x) {
         YRoute::Value(value) => value,
         YRoute::Series => y0_series(x),
-        YRoute::Hankel => hankel(0.0, x).1,
-        YRoute::March => y_march(x).0,
+        YRoute::Hankel => hankel(0.0, x).second_kind,
+        YRoute::March => y_march(x).value,
     }
 }
 
@@ -222,7 +231,9 @@ pub(crate) fn y1(x: f32) -> f32 {
     match YRoute::for_argument(x) {
         YRoute::Value(value) => value,
         YRoute::Series => y1_series(x),
-        YRoute::Hankel => hankel(1.0, x).1,
-        YRoute::March => y_march(x).1,
+        YRoute::Hankel => hankel(1.0, x).second_kind,
+        // `y_march` carries `Y₀` and `Y₁` as a value and its derivative; the field says which
+        // half is wanted.
+        YRoute::March => y_march(x).derivative,
     }
 }
