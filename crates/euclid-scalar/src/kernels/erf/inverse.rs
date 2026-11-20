@@ -1,5 +1,36 @@
 //! The inverse error function: Giles's rational approximation plus one Newton step.
 //!
+//! # Known defect: this loses most of its digits as `|x| -> 1`
+//!
+//! Measured against a reference that polishes the answer with Newton in MPFR at 300 bits:
+//!
+//! ```text
+//! erf_inv(0.9999999999999999)  = 5.271293105187273   (this kernel)
+//!                                5.8635847487551676  (correct, and it round-trips)
+//! ```
+//!
+//! Ten percent out, and it is a defect rather than conditioning — which was the first thing
+//! checked, because `erf` *is* vertical out there and a plateau of `w` does share one `erf`
+//! value. It does not excuse this one. `erf(5.271293105187273)` is `0.99999999999991`, a
+//! **different double** from the argument, while `erf(5.8635847487551676)` returns it exactly.
+//! The smallest `w` whose `erf` reaches the argument is `5.829395261518418`, so the answer is
+//! not merely at the wrong end of a plateau — it is short of it.
+//!
+//! The round trip `erf(erf_inv(x)) == x` is the test that states this cleanly, and it is the one
+//! the suite does not make near `±1`.
+//!
+//! # The fix, and why it is not applied here yet
+//!
+//! `erfc_inv` is the conditioned route for this region and measures **12 ulp** over the same
+//! sweep, so `erf_inv(x) = sign(x)·erfc_inv(1 − |x|)` is the answer for large `|x|`. The
+//! subtraction is exact where it matters: `1 − |x|` is exact for `|x| ≥ ½` by Sterbenz, so
+//! nothing is lost reaching it.
+//!
+//! Left unapplied because `erf_inv` feeds `ndtri` and the normal quantile family, the crossover
+//! wants its own measured no-regression search, and the round-trip test that should have caught
+//! this needs writing first. The diagnosis and the reproduction above are what that work starts
+//! from.
+//!
 //! A child module so the parent stays inside the crate's 400-line budget. `erf`, `erfc` and
 //! `erfcx` are one topic — all three reduce to the same incomplete gamma or the same continued
 //! fraction — and the *inverse* is another: it shares no machinery with them beyond calling

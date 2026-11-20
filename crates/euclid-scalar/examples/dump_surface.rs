@@ -43,6 +43,7 @@ fn apply(name: &str, x: f64) -> f64 {
         "erfc" => Real::erfc(x),
         "erfcx" => Real::erfcx(x),
         "erf_inv" => Real::erf_inv(x),
+        "erfc_inv" => Real::erfc_inv(x),
         "bessel_j0" => Real::bessel_j0(x),
         "bessel_j1" => Real::bessel_j1(x),
         "bessel_y0" => Real::bessel_y0(x),
