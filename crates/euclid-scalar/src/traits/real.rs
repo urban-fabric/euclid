@@ -694,7 +694,7 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// against the `1.0e-13` measured — a match to one significant figure, and wrong.
     ///
     /// `powf` is correctly rounded here. Forming `b^p·e^{−b}` at `b = 176.5, p = 170.5` the way
-    /// [`crate::math::gamma::lanczos_half_power`] does, against a 80-digit reference:
+    /// `math::gamma::lanczos_half_power` does, against an 80-digit reference:
     ///
     /// | split | 2 | 4 | 8 | 16 |
     /// |-------|---|---|---|----|
