@@ -41,9 +41,30 @@
 //! is *worse* there — see [`ERF_INV_TAIL_MAX`] for the table that places the crossover, which is
 //! three decades below where the seed merely becomes defined.
 //!
-//! What is left is the band from `1e-6` to about `1e-2`, where Giles's fit carries `9187` and
-//! `48.9` ulp. That is the same seed and the same cause, just milder, and it wants the same
-//! treatment: a seed valid over that range, which the asymptotic expansion is not.
+//! # The middle band had a different cause, and a different fix
+//!
+//! From `1e-6` to `1e-2` the seed is fine and the *numerator* was the problem: `erf(r) − x`
+//! differences two numbers near `1`, so it carries `ε` absolute however small the result is,
+//! and Newton divides that by a vanishing `erf′`. At `1 − x = 1e-6`, `ε/7.1e-6` is `3.1e-11` of
+//! error in the root. [`newton_residual`] now forms `(1 − x) − erfc(r)` above
+//! [`RESIDUAL_COMPLEMENT_MIN`], where both terms are the size of the answer:
+//!
+//! ```text
+//! 1 − x      1e-1    1e-2   1e-3   1e-4    1e-5    1e-6
+//! was        18.9    48.9    2.6   17.5   204.3    9187   ulp
+//! now        18.9    47.2    0.9   20.4   298.5     6.9   ulp
+//! ```
+//!
+//! **`1e-6` improves thirteen hundredfold.** `1e-4` and `1e-5` move up by 17% and 46%, and that
+//! is worth stating rather than hiding: with the denominator amplification gone, those two are
+//! limited by Giles's seed instead — about `6.6e-8` of error there, which one Newton step
+//! squares into what is measured — so the change only reshuffles which rounding they land on.
+//! They were seed-limited before and still are.
+//!
+//! So the two defects in this file had opposite causes: the far tail was a bad *seed* that a
+//! good step could not rescue, and the middle band a bad *numerator* under a seed that was
+//! fine. Splitting the function is what let them be told apart — together they look like one
+//! function that is inaccurate near `±1`.
 //!
 //! A child module so the parent stays inside the crate's 400-line budget. `erf`, `erfc` and
 //! `erfcx` are one topic — all three reduce to the same incomplete gamma or the same continued
@@ -291,9 +312,49 @@ fn erf_density(r: f64) -> f64 {
     2.0 / PI.sqrt() * (-r * r).exp()
 }
 
-/// `erf(r) − x`, the Newton numerator.
+/// Above this magnitude the Newton numerator is formed through `erfc`.
+///
+/// `½`, because that is where `1 − |x|` stops being exact — Sterbenz gives it exactly on
+/// `[½, 2]` — so the complementary form costs nothing to reach and the direct form has nothing
+/// left to offer.
+const RESIDUAL_COMPLEMENT_MIN: f64 = 0.5;
+
+/// `erf(r) − x`, the Newton numerator, formed so it keeps its digits as `|x| → 1`.
+///
+/// # The subtraction this avoids is what the middle band was losing
+///
+/// `erf(r) − x` differences two numbers that both approach `1`, so the result carries an
+/// absolute error of `ε` however small it is. Newton then divides by `erf′(r)`, which is
+/// vanishing — `7.1e-6` at `1 − x = 1e-6` — and `ε/7.1e-6` is `3.1e-11` of error in the root.
+/// Measured there: `9187` ulp.
+///
+/// The complementary form is the same quantity with no cancellation against `1`:
+///
+/// ```text
+/// erf(r) − x = (1 − erfc(r)) − x = (1 − x) − erfc(r)
+/// ```
+///
+/// Both terms are now `O(1 − |x|)`, so the difference is between small accurate quantities and
+/// its error scales with them rather than with `1`.
+///
+/// Below [`RESIDUAL_COMPLEMENT_MIN`] the direct form is kept and is right there: the residual
+/// still cancels, but `erf′` is `O(1)` rather than vanishing, so `ε` in the numerator stays `ε`
+/// in the root. **It is the tiny denominator that makes the cancellation matter**, not the
+/// cancellation on its own — which is why this is a separate decision from
+/// [`ERF_INV_TAIL_MAX`], and why the two thresholds are three decades apart.
+///
+/// The sign work is the odd symmetry: for `x < 0` both `erf` and the root change sign, so
+/// `erf(r) − x = −[(1 − |x|) − erfc(|r|)]`.
 fn newton_residual(x: f64, r: f64) -> f64 {
-    erf(r) - x
+    if x.abs() < RESIDUAL_COMPLEMENT_MIN {
+        return erf(r) - x;
+    }
+    let complement = (1.0 - x.abs()) - erfc(r.abs());
+    if x.is_sign_negative() {
+        -complement
+    } else {
+        complement
+    }
 }
 
 #[cfg(test)]
@@ -326,6 +387,28 @@ mod tests {
         );
         // Odd, and the sign survives the complement.
         assert_eq!(erf_inv(-x), -got);
+    }
+
+    /// The two forms of the Newton numerator are the same quantity.
+    ///
+    /// Asserted where both are trustworthy — around `|x| = ½`, the threshold itself — because
+    /// that is the only place a disagreement would mean an algebra error rather than the
+    /// cancellation the complement form exists to avoid. Further out the direct form is the one
+    /// that is wrong, so agreement there would prove nothing.
+    #[test]
+    fn the_two_newton_numerators_agree_where_both_are_sound() {
+        for &x in &[0.5_f64, 0.55, 0.6, -0.5, -0.6] {
+            let r = erf_inv_seed(x);
+            let complement = newton_residual(x, r);
+            let direct = erf(r) - x;
+            assert!(
+                (complement - direct).abs() <= 1e-15,
+                "at x = {x} the complement form gives {complement:e} and the direct {direct:e}"
+            );
+        }
+        // And the odd symmetry the sign branch implements.
+        let r = erf_inv_seed(0.9);
+        assert_eq!(newton_residual(-0.9, -r), -newton_residual(0.9, r));
     }
 
     /// The three tail pieces, each asserted on its own.
