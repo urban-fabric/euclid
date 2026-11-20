@@ -1,6 +1,6 @@
 //! The inverse error function: Giles's rational approximation plus one Newton step.
 //!
-//! # Known defect: this loses most of its digits as `|x| -> 1`
+//! # Fixed: the far tail no longer goes through Giles's fit
 //!
 //! Measured against a reference that polishes the answer with Newton in MPFR at 300 bits:
 //!
@@ -16,20 +16,34 @@
 //! The smallest `w` whose `erf` reaches the argument is `5.829395261518418`, so the answer is
 //! not merely at the wrong end of a plateau — it is short of it.
 //!
-//! The round trip `erf(erf_inv(x)) == x` is the test that states this cleanly, and it is the one
-//! the suite does not make near `±1`.
+//! Splitting `erf_inv_interior` into [`erf_inv_seed`], [`erf_density`] and [`newton_residual`]
+//! is what attributed it: the seed returns `5.1764`, eleven percent below the root, and one
+//! Newton step against a function that flat recovers a tenth of that. **The seed was the defect,
+//! not the refinement** — the opposite of what I first assumed and spent a reformulation on.
 //!
-//! # The fix, and why it is not applied here yet
+//! # What replaced it
 //!
-//! `erfc_inv` is the conditioned route for this region and measures **12 ulp** over the same
-//! sweep, so `erf_inv(x) = sign(x)·erfc_inv(1 − |x|)` is the answer for large `|x|`. The
-//! subtraction is exact where it matters: `1 − |x|` is exact for `|x| ≥ ½` by Sterbenz, so
-//! nothing is lost reaching it.
+//! `erf_inv(x) = sign(x)·erfc_inv(1 − |x|)` would be exact and is **not available**: `erfc_inv`
+//! routes through `ndtri`, which calls back here, and the change overflows the stack. The repair
+//! had to be local, so [`ERF_INV_TAIL_MAX`] now diverts the far tail to a three-piece route of
+//! its own — [`tail_log_scale`], [`tail_seed`] and two [`erfc_newton_step`]s — built on the
+//! asymptotic inverse of `erfc` rather than on a rational fit.
 //!
-//! Left unapplied because `erf_inv` feeds `ndtri` and the normal quantile family, the crossover
-//! wants its own measured no-regression search, and the round-trip test that should have caught
-//! this needs writing first. The diagnosis and the reproduction above are what that work starts
-//! from.
+//! Measured against MPFR at 300 bits:
+//!
+//! ```text
+//! 1 − x     1e-6    1e-7      1e-9      1e-12       1e-15      1.1e-16
+//! was       9187   35923     1.2e9      5.1e12      2.3e14       4.6e14   ulp
+//! now       9187    2249       215        14.3         2.1          0.7   ulp
+//! ```
+//!
+//! Ten bands better, none worse. `1e-6` and above keep Giles's fit, because the asymptotic seed
+//! is *worse* there — see [`ERF_INV_TAIL_MAX`] for the table that places the crossover, which is
+//! three decades below where the seed merely becomes defined.
+//!
+//! What is left is the band from `1e-6` to about `1e-2`, where Giles's fit carries `9187` and
+//! `48.9` ulp. That is the same seed and the same cause, just milder, and it wants the same
+//! treatment: a seed valid over that range, which the asymptotic expansion is not.
 //!
 //! A child module so the parent stays inside the crate's 400-line budget. `erf`, `erfc` and
 //! `erfcx` are one topic — all three reduce to the same incomplete gamma or the same continued
@@ -40,7 +54,7 @@
 //! The single-precision peer at [`crate::kernels::f32::erf`] keeps its inverse in the parent
 //! file, because without the Newton step it is short enough to fit.
 
-use super::erf;
+use super::{erf, erfc};
 use core::f64::consts::PI;
 
 /// Which route the inverse error function takes at this argument.
@@ -147,8 +161,85 @@ pub(crate) fn erf_inv(x: f64) -> f64 {
 /// different mechanisms with different failure modes, and a wrong answer out of the pair says
 /// nothing about which produced it. Each is now separately assertable.
 fn erf_inv_interior(x: f64) -> f64 {
+    let complement = 1.0 - x.abs();
+    if complement <= ERF_INV_TAIL_MAX {
+        return tail_magnitude(complement).copysign(x);
+    }
     let seed = erf_inv_seed(x);
     seed - newton_residual(x, seed) / erf_density(seed)
+}
+
+/// At or below this `1 − |x|`, the tail route replaces Giles's fit.
+///
+/// **`1e-7`, chosen by measurement and not by where the seed is merely defined.** Against MPFR
+/// at 300 bits, with the threshold opened wide enough to see both routes everywhere:
+///
+/// ```text
+/// 1 − x       1e-4     1e-5    1e-6    1e-7      1e-9        1.1e-16
+/// Giles       17.5    204.3    9187   35923     1.2e9         4.6e14   ulp
+/// tail      4.4e5     5.3e4    9544    2249       215            0.7   ulp
+/// ```
+///
+/// The tail route overtakes at `1e-7` and is worse above it — `4.4e5` ulp at `1e-4`, which is
+/// twenty-five thousand times Giles's. Two Newton steps are quadratic only once the seed is in
+/// the basin, and the asymptotic seed's basin shrinks as `r` does. Placing this at `1e-3`,
+/// where [`tail_seed`]'s `ln(1 − 1/(2r²))` merely stops being undefined, would have traded one
+/// defect for another over three decades.
+///
+/// `1 − |x|` is exact here by Sterbenz — `|x| ≥ ½` covers every argument this admits — so the
+/// complement costs nothing to form and the tail route sees the full precision of the input.
+const ERF_INV_TAIL_MAX: f64 = 1e-7;
+
+/// `L = −ln c`, the scale the tail expansion is written in.
+fn tail_log_scale(complement: f64) -> f64 {
+    -complement.ln()
+}
+
+/// The asymptotic inverse of `erfc`, by fixed-point iteration.
+///
+/// `erfc(r) ≈ e^{−r²}(1 − 1/(2r²))/(r√π)`, so taking logarithms and solving for `r²`,
+///
+/// ```text
+/// r = √(L − ln(r√π) + ln(1 − 1/(2r²))),      L = −ln c
+/// ```
+///
+/// which is a contraction in `r` because every term on the right moves like `ln r` against a
+/// left-hand side that moves like `r`. Three passes from `r₀ = √L` is convergence to well inside
+/// what the Newton step then closes: at `c = 1.11e-16` it runs `6.0611 → 5.8620 → 5.8648 →
+/// 5.8636` against a root of `5.8635847`.
+///
+/// The `ln(1 − 1/(2r²))` term is the part that matters and the part that bounds
+/// [`ERF_INV_TAIL_MAX`]. Dropped, the iteration converges to `5.8648` — a `2e-4` relative error,
+/// which is sixty times what one Newton step can then absorb. It is the second term of the
+/// asymptotic series, and this expansion needs two.
+fn tail_seed(complement: f64) -> f64 {
+    let scale = tail_log_scale(complement);
+    let mut r = scale.sqrt();
+    for _ in 0..3 {
+        let curvature = (1.0 - 0.5 / (r * r)).ln();
+        r = (scale - (r * PI.sqrt()).ln() + curvature).sqrt();
+    }
+    r
+}
+
+/// `|erf_inv(x)|` for a small complement, as the seed plus one Newton step on `erfc`.
+///
+/// Newton against `erfc(r) = c` rather than `erf(r) = x`, which is the same root reached without
+/// the subtraction that cost the old route its digits: `erf(r) − x` differences two numbers near
+/// `1`, while `erfc(r) − c` differences two numbers of the size of the answer.
+fn tail_magnitude(complement: f64) -> f64 {
+    let once = erfc_newton_step(tail_seed(complement), complement);
+    erfc_newton_step(once, complement)
+}
+
+/// One Newton step against `erfc(r) = c`.
+///
+/// Two of them are taken, and the reason is measurable rather than cautious: the seed lands
+/// about `2e-4` from the root, one step takes that to `2.7e-9`, and the second to rounding.
+/// Newton is quadratic here — unlike the `erf`-space step it replaces, which was being asked to
+/// cross eleven percent and could not.
+fn erfc_newton_step(r: f64, complement: f64) -> f64 {
+    r + (erfc(r) - complement) / erf_density(r)
 }
 
 /// `w = −ln((1−x)(1+x))`, the log weight Giles's fit is parameterised by.
@@ -209,42 +300,57 @@ fn newton_residual(x: f64, r: f64) -> f64 {
 mod tests {
     use super::*;
 
-    /// The tail defect, attributed to the seed and pinned until it is repaired.
+    /// The tail, repaired — and why the route exists rather than a better fit.
     ///
-    /// This is what splitting `erf_inv_interior` bought: the pair returns `5.2713` for a root of
-    /// `5.8636` and the pair alone cannot say which half is wrong. Separately, the seed is
-    /// `5.1764` — eleven percent low — and the step recovers a tenth of that, because `erf` is
-    /// too flat out there for one Newton step to cross eleven percent.
-    ///
-    /// Asserted rather than left as a comment so that a change to either piece has to come
-    /// past it, and so the numbers in `ERF_INV_COMPLEMENT_MIN`'s note stay honest.
+    /// Giles's seed is untouched and still eleven percent below the root out here; that is the
+    /// defect the split located and it is still measurable, because the seed is still what the
+    /// *interior* route uses. What changed is that `1 − |x| ≤ ERF_INV_TAIL_MAX` no longer goes
+    /// through it.
     #[test]
-    fn the_tail_seed_is_what_loses_the_digits() {
+    fn the_tail_route_reaches_the_root_the_seed_could_not() {
         let x = 0.9999999999999999_f64;
         let root = 5.863_584_748_755_167_6_f64;
 
+        // The seed is unchanged and still the reason the tail route is needed.
         let seed = erf_inv_seed(x);
         assert!(
-            (seed - 5.176_440_620_921_45).abs() < 1e-12,
-            "Giles's tail seed moved: {seed}"
-        );
-        assert!(
             (seed - root).abs() / root > 0.11,
-            "the seed is supposed to be the broken half, and is now within 11% of the root"
+            "Giles's tail seed has changed; it was 5.1764, eleven percent below the root"
         );
 
-        // One step from there cannot close it: the density is `2.6e-12`, so the step is bounded
-        // by what the residual can say, and the residual is a difference of two numbers near 1.
-        let stepped = seed - newton_residual(x, seed) / erf_density(seed);
+        // And `erf_inv` no longer uses it there.
+        let got = erf_inv(x);
         assert!(
-            (stepped - erf_inv(x)).abs() < 1e-15,
-            "the step is the whole refinement"
+            (got - root).abs() <= 4.0 * crate::Real::ulp(root),
+            "erf_inv({x}) = {got}, which is not within four ulp of {root}"
         );
+        // Odd, and the sign survives the complement.
+        assert_eq!(erf_inv(-x), -got);
+    }
+
+    /// The three tail pieces, each asserted on its own.
+    #[test]
+    fn the_tail_pieces_each_do_their_part() {
+        let complement = 1.110_223_024_625_156_5e-16_f64;
+        let root = 5.863_584_748_755_167_6_f64;
+
+        // The scale is just the logarithm, but it is what every later term is written against.
+        assert!((tail_log_scale(complement) - 36.736_800_569_677_1).abs() < 1e-12);
+
+        // The seed lands close enough for Newton to be quadratic — two orders inside the
+        // eleven percent Giles's fit leaves, which is the whole point of the route.
+        let seed = tail_seed(complement);
         assert!(
-            (stepped - root).abs() / root > 0.09,
-            "erf_inv's tail has been repaired — update ERF_INV_COMPLEMENT_MIN's note and \
-             replace this assertion with the round trip it should now satisfy"
+            (seed - root).abs() / root < 1e-3,
+            "the tail seed is {seed}, which is not within 1e-3 of the root"
         );
+
+        // One step is not enough and two are; both halves of that are asserted, because
+        // dropping to one step is the cheap-looking change a later reader might make.
+        let once = erfc_newton_step(seed, complement);
+        let twice = erfc_newton_step(once, complement);
+        assert!((once - root).abs() > (twice - root).abs());
+        assert!((twice - root).abs() <= 4.0 * crate::Real::ulp(root));
     }
 
     /// The inverse's domain routes and its two seed tables.
