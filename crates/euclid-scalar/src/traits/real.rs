@@ -704,11 +704,30 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// libm's `pow` carries extra precision internally, so the exponent's magnitude does not
     /// reach the result. The agreement was a coincidence of two numbers near `1e-13`.
     ///
-    /// So the `458` ulp comes from somewhere else in the Lanczos product — the coefficient sum,
-    /// the formation of `base` and `power`, or the final multiplications — and attributing it
-    /// needs the same treatment `erf_inv` got: split the product into named pieces and measure
-    /// each against the reference. Until that is done, the figure above is a measurement and
-    /// the explanation is an open question.
+    /// Two of the three candidates are now eliminated, by measuring the pieces separately.
+    ///
+    /// **Not `powf`**, per the table above.
+    ///
+    /// **Not the rounding of `base`**, and the reason is worth keeping. `base = x + g − ½` is
+    /// rounded, and `base^{p/2}` would amplify that by `p/2` — `2.7e-14` at `x = 171`, which is
+    /// the right size to be the answer. It does not, because the `e^{−base/2}` factor beside it
+    /// has the opposite sensitivity: together they respond to `base` as `(p/2)/b − ½` per unit,
+    /// and with `p = x − ½` against `b = x + g − ½` that ratio tends to one, so the two nearly
+    /// cancel. Measured response to one ulp of `base`, after squaring:
+    ///
+    /// | `x` | 20 | 60 | 120 | 171 |
+    /// |-----|----|----|-----|-----|
+    /// | relative | `6.7e-16` | `1.6e-15` | `4.5e-16` | `1.2e-15` |
+    ///
+    /// Twenty-three times below the naive prediction. The Lanczos form is self-stabilising in
+    /// `base`, which is not obvious from reading it and is worth not rediscovering.
+    ///
+    /// **The remaining candidate is the coefficient sum.** Its terms alternate and are large
+    /// against their total — at `x = 171` they run `+3.96, −7.32, +4.46, −1.02, …` to a sum of
+    /// `1.15`, so about `47×` of cancellation, or `1.0e-14` of inherited error. That is within
+    /// an order of the `1.0e-13` measured and is the only piece left unaccounted for, but the
+    /// gap is a factor of ten and I have not closed it. The figure above is a measurement; this
+    /// is a narrowed search, not yet an explanation.
     fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
