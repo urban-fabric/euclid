@@ -409,6 +409,69 @@ fn beta_cf(a: f64, b: f64, x: f64) -> Option<f64> {
 }
 
 #[cfg(test)]
+mod stirling_tests {
+    use super::*;
+
+    /// A grid of `(a, b)` straddling [`STIRLING_MIN`] in `min(a, b)`, so both arms are covered
+    /// and the handover sits inside the sweep rather than beside it.
+    const SHAPES: &[f64] = &[0.5, 2.0, 7.0, 15.0, 19.0, 21.0, 50.0, 500.0, 1e5];
+
+    /// `ln B(a, b) = ln B(b, a)`, exactly.
+    ///
+    /// Not approximately: `ln_beta` orders its arguments before doing anything else, so
+    /// symmetry is a property of that ordering and any disagreement means the ordering broke.
+    /// Measured `0` over the whole grid, so the assertion is equality.
+    #[test]
+    fn ln_beta_is_exactly_symmetric_across_the_stirling_handover() {
+        for &a in SHAPES {
+            for &b in SHAPES {
+                assert_eq!(ln_beta(a, b), ln_beta(b, a), "at a = {a}, b = {b}");
+            }
+        }
+    }
+
+    /// `ln B(a+1, b) = ln B(a, b) + ln a − ln(a+b)`, with no reference at all.
+    ///
+    /// The property that guards the Stirling arm: it holds for every `(a, b)`, it compares two
+    /// *different* evaluations of the kernel — one of which may take the other arm — and it
+    /// needs nothing but `ln`. A handover that lands in the wrong place shows up as a step.
+    ///
+    /// **Absolute, not relative.** `ln B` passes near zero for small shapes, and a relative
+    /// figure there measures the conditioning of that crossing rather than the kernel: the
+    /// worst relative residual is `2.2e-14` at `a = 2, b = 0.5`, where `ln B` is `0.288`, and
+    /// the same point is unremarkable in absolute terms. For a logarithm the absolute error is
+    /// what the exponential downstream will see.
+    ///
+    /// One caveat on the bound, since it is easy to read as stronger than it is: the worst
+    /// absolute residual is `5.8e-11` at `a = b = 1e5`, where `ln B` is `−138629` — a relative
+    /// `4.2e-16`. So a single absolute bound is set by the largest `|ln B|` in the grid and is
+    /// correspondingly loose for the small shapes. It catches a gross regression in either arm,
+    /// which is what it is for; it is not a tight statement about small `(a, b)`.
+    #[test]
+    fn ln_beta_satisfies_its_recurrence_across_the_stirling_handover() {
+        let mut worst = 0.0_f64;
+        let mut worst_at = (0.0, 0.0);
+        for &a in SHAPES {
+            for &b in SHAPES {
+                let want = ln_beta(a, b) + a.ln() - (a + b).ln();
+                let residual = (ln_beta(a + 1.0, b) - want).abs();
+                if residual > worst {
+                    worst = residual;
+                    worst_at = (a, b);
+                }
+            }
+        }
+        assert!(
+            worst < 1.2e-09,
+            "the recurrence drifts to {worst:e} at a = {}, b = {}; it measured 5.821e-11 \
+             when the Stirling arm was given its remainder terms",
+            worst_at.0,
+            worst_at.1
+        );
+    }
+}
+
+#[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
