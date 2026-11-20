@@ -89,6 +89,31 @@ fn apply2(name: &str, a: f64, b: f64) -> f64 {
     }
 }
 
+/// The single-precision surface, selected by an `f32:` prefix on the function name.
+///
+/// Reads and writes `f64` bit patterns like everything else — the argument is narrowed on the way
+/// in and widened on the way out — so the driver needs no second encoding. Narrowing means the
+/// sweep must pass arguments that are exactly representable in `f32` to be comparing like with
+/// like, which is the driver's job.
+fn apply_f32(name: &str, x: f64) -> f64 {
+    let y = x as f32;
+    let out = match name {
+        "bessel_i0" => Real::bessel_i0(y),
+        "bessel_i1" => Real::bessel_i1(y),
+        "bessel_i0e" => Real::bessel_i0e(y),
+        "bessel_k0" => Real::bessel_k0(y),
+        "gamma" => Real::gamma(y),
+        "erf" => Real::erf(y),
+        "erfc" => Real::erfc(y),
+        "bessel_j0" => Real::bessel_j0(y),
+        "bessel_y0" => Real::bessel_y0(y),
+        "airy_ai" => Real::airy_ai(y),
+        "airy_bi" => Real::airy_bi(y),
+        other => panic!("unknown single-precision function {other}"),
+    };
+    f64::from(out)
+}
+
 fn main() {
     let name = std::env::args()
         .nth(1)
@@ -108,7 +133,10 @@ fn main() {
         let first = u64::from_str_radix(words.next().expect("a hex word"), 16)
             .expect("a 16-digit hex word");
         let value = match words.next() {
-            None => apply(&name, f64::from_bits(first)),
+            None => match name.strip_prefix("f32:") {
+                Some(single) => apply_f32(single, f64::from_bits(first)),
+                None => apply(&name, f64::from_bits(first)),
+            },
             Some(second) => apply2(
                 &name,
                 f64::from_bits(first),

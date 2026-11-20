@@ -287,7 +287,16 @@ fn the_remaining_unscanned_kernels_stay_within_their_wiggle_budgets() {
         24_000,
         10.0,
     );
-    assert_budget("bessel_k1", Real::bessel_k1, 1.0, false, 2_400, 4.0);
+    // `2_800`, raised from `2_400` when `I₁` stopped recovering its unscaled value through
+    // `exp(ln I₁ + x)`. `k1_series` is `1/x + ln(x/2)·I₁(x) − x·Σ/4`, a cancelling combination
+    // in which `ln(x/2)` passes through zero at `x = 2`, so any change to `I₁`'s low bits moves
+    // this count. It measured 2,514.
+    //
+    // Raised rather than investigated, because the accuracy went the other way: against a
+    // reference built from the Wronskian `I₀K₁ + I₁K₀ = 1/x` with MPFR's `I₀`, `I₁` and `K₀`,
+    // `K₁`'s worst relative error over `(0.05, 2]` *fell* from `1.653e-15` to `1.490e-15`. An
+    // inversion count at this spacing is a count of ulp-level noise, and the noise moved.
+    assert_budget("bessel_k1", Real::bessel_k1, 1.0, false, 2_800, 4.0);
     assert_budget("bessel_j0", Real::bessel_j0, 5.0, true, 40, 2.0);
     assert_budget("bessel_j1", Real::bessel_j1, 5.0, false, 4_000, 6.0);
     assert_budget("bessel_y1", Real::bessel_y1, 1.0, true, 40, 2.0);

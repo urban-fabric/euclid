@@ -27,7 +27,15 @@ pub(crate) fn i0(x: f64) -> f64 {
     if ax.is_infinite() {
         return f64::INFINITY;
     }
-    ln_i0_sum(ax).exp()
+    match IForm::for_magnitude(ax) {
+        // The peak *is* the `k = 0` term, which is exactly 1, so the peak-relative sum is `I₀`
+        // itself and no logarithm is formed at all. Reaching this through `ln_i0_sum(ax).exp()`
+        // spent a `ln` and an `exp` to return the number it already had.
+        IForm::NoLog => i0_rel_sum(ax * 0.5, 0.0),
+        // The scaled form is the primitive one; see `scaling::unscale` for why applying the
+        // exponential to it beats folding `ax` into the logarithm first.
+        IForm::PeakFactored | IForm::Asymptotic => crate::math::scaling::unscale(i0e(ax), ax),
+    }
 }
 
 /// `I₁(|x|)` for `|x| < I1_NO_LOG_MAX`, straight from the series with no logarithm.
@@ -54,7 +62,7 @@ pub(crate) fn i1(x: f64) -> f64 {
         // every argument that would reach the expansion has already overflowed and `exp` returns
         // `+∞` either way. The expansion earns its place in `i1e`, where the scaling keeps the
         // result representable.
-        IForm::PeakFactored | IForm::Asymptotic => ln_i1_sum(ax).exp(),
+        IForm::PeakFactored | IForm::Asymptotic => crate::math::scaling::unscale(i1e(ax), ax),
     };
     // `x < 0.0`, not `copysign`: this family returns an **unsigned** zero by convention, so
     // `-0.0` must take the `else` arm. See `zero_is_unsigned_and_the_first_kind_is_odd`, which

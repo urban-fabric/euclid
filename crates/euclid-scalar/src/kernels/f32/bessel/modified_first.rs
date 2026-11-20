@@ -231,11 +231,6 @@ fn ln_i1_minus_x(ax: f32) -> f32 {
     h.ln() - (k_peak + 1.0).ln() + ln_peak_core_scaled(h, k_peak) + i1_rel_sum(h, k_peak).ln()
 }
 
-/// `ln I₁(|x|)`.
-fn ln_i1_sum(ax: f32) -> f32 {
-    ln_i1_minus_x(ax) + ax
-}
-
 mod scaled;
 
 // Re-exported so the family keeps one path per function: every caller reached

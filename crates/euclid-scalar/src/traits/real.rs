@@ -581,7 +581,23 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// route to `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`.
     ///
     /// # Precision
-    /// Machine precision (measured worst case 1.7e-14), from a peak-factored power series.
+    /// Machine precision, from a peak-factored power series. Measured against MPFR at 256 bits,
+    /// worst relative error over 40 points per decade:
+    ///
+    /// | `x` | 1e0 | 1e1 | 1e2 | `[300, 700]` |
+    /// |-----|-----|-----|-----|--------------|
+    /// | was | `5.2e-15` | `1.3e-14` | `4.7e-14` | `5.6e-14` |
+    /// | now | `5.2e-15` | `1.1e-14` | `4.2e-16` | `5.5e-16` |
+    ///
+    /// The old worst case was quoted as `1.7e-14` and the top of the range was in fact `5.6e-14`,
+    /// because the unscaled value was recovered as `exp(ln I₀ + x)`. That sum is an `f64` of
+    /// magnitude `x`, so it carried `ulp(x)/2` of absolute rounding and `exp` turned it straight
+    /// into relative error — `5.7e-14` predicted at `x = 688` against `5.56e-14` measured. It is
+    /// now `I₀ᵉ(x)·e^{x}`, two separately-rounded factors, which costs two or three ulp and
+    /// nothing that grows with `x`.
+    ///
+    /// The remaining `1.1e-14` at `1e1` is the peak-relative sum's own accumulation over the
+    /// `O(√x)` terms that matter there, and is unrelated.
     /// Every term of that series is positive, so there is no cancellation at any argument, and
     /// the scale is carried in the log domain so nothing overflows.
     fn bessel_i0e(self) -> Self;

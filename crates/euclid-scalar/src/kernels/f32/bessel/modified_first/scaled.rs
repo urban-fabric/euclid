@@ -115,7 +115,15 @@ pub(crate) fn i0(x: f32) -> f32 {
     if ax.is_infinite() {
         return f32::INFINITY;
     }
-    ln_i0_sum(ax).exp()
+    match IForm::for_magnitude(ax) {
+        // The peak is the `k = 0` term, exactly 1, so the peak-relative sum *is* `I₀`.
+        IForm::NoLog => i0_rel_sum(ax * 0.5, 0.0),
+        // `I₀ᵉ(x)·e^{x}` rather than `exp(ln I₀ + x)`: the sum carries `ulp(x)/2` of absolute
+        // rounding and `exp` makes it relative. This format overflows by `x ≈ 88`, where
+        // `ulp(88)/2` is `3.8e-6` — **thirty-two times** `f32::EPSILON`, so the cost here is
+        // proportionally worse than the `f64` peer's. See `crate::math::scaling::unscale`.
+        IForm::PeakFactored | IForm::Asymptotic => crate::math::scaling::unscale(i0e(ax), ax),
+    }
 }
 
 /// Below this argument the `k = 0` term is the peak, and `I₁` is formed without a logarithm.
@@ -156,7 +164,7 @@ pub(crate) fn i1(x: f32) -> f32 {
         // before it gets there and the final `exp` returns `+∞` on either route. Switching forms
         // would cost a branch to compute the same infinity. The expansion earns its place in
         // [`i1e`], where the scaling keeps the result representable.
-        IForm::PeakFactored | IForm::Asymptotic => ln_i1_sum(ax).exp(),
+        IForm::PeakFactored | IForm::Asymptotic => crate::math::scaling::unscale(i1e(ax), ax),
     };
     // `x < 0.0`, not `copysign`: this family returns an **unsigned** zero by convention, so
     // `-0.0` must take the `else` arm. See `zero_is_unsigned_and_the_first_kind_is_odd`, which

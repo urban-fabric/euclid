@@ -359,11 +359,6 @@ fn ln_i1_minus_x(ax: f64) -> f64 {
     h.ln() - (k_peak + 1.0).ln() + ln_peak_core_scaled(h, k_peak) + i1_rel_sum(h, k_peak).ln()
 }
 
-/// `ln I₁(|x|)`.
-fn ln_i1_sum(ax: f64) -> f64 {
-    ln_i1_minus_x(ax) + ax
-}
-
 // Visible across the family rather than private, because the sibling test module asserts
 // `LnI0Form`'s table directly and says so by naming this path.
 pub(in crate::kernels::bessel) mod scaled;

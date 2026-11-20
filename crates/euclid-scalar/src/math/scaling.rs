@@ -43,6 +43,40 @@ impl PairGrowth {
     }
 }
 
+/// Multiply one value by `e^z`, splitting the exponential where it would overflow.
+///
+/// # Why this is better than `exp(ln v + z)`
+///
+/// Recovering an unscaled value by adding `z` to a logarithm and exponentiating once looks
+/// cheaper, and it loses **`z·ε` of relative accuracy**: the sum `ln v + z` is an `f64` of
+/// magnitude `z`, so it carries `ulp(z)/2` of absolute rounding, and `exp` turns that straight
+/// into relative error. `I₀` was reached that way and the cost was exactly as predicted —
+/// `ulp(684)/2 = 5.7e-14` at `x = 688`, against a documented worst case of `1.7e-14`:
+///
+/// ```text
+/// x                  1e0       1e1       1e2       688
+/// exp(ln v + x)    5.2e-15   1.3e-14   4.7e-14   5.6e-14
+/// v·e^x            4.4e-16   8.9e-16   1.6e-15   2.2e-15
+/// ```
+///
+/// Two separately-rounded factors multiplied together cost two or three ulp and *nothing* that
+/// grows with `z`, which is the whole point: the scaled form is the primitive one, and the
+/// exponential is applied to it rather than inside it.
+pub(crate) fn unscale<T: HostReal>(scaled: T, z: T) -> T {
+    let growth = z.exp();
+    match PairGrowth::for_growth(growth) {
+        PairGrowth::Direct => scaled * growth,
+        // `e^z` has left the format while the product has not. Applying `e^{z/2}` twice keeps
+        // both factors in range — the band is narrow but real: `exp` overflows at `z = 709.78`
+        // while `I₀` stays finite to `713.76`, so four units of argument would otherwise return
+        // `+∞` for a representable value.
+        PairGrowth::Split => {
+            let half = (z * T::HALF).exp();
+            scaled * half * half
+        }
+    }
+}
+
 /// Multiply a value and its derivative by `e^ζ`, splitting the exponential where it would
 /// overflow.
 ///
