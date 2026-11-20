@@ -106,6 +106,7 @@ fn apply_f32(name: &str, x: f64) -> f64 {
         "gamma" => Real::gamma(y),
         "rgamma" => Real::rgamma(y),
         "erf" => Real::erf(y),
+        "erf_inv" => Real::erf_inv(y),
         "erfc" => Real::erfc(y),
         "bessel_j0" => Real::bessel_j0(y),
         "bessel_y0" => Real::bessel_y0(y),

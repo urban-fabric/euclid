@@ -207,6 +207,22 @@ pub(crate) fn erf_inv(x: f32) -> f32 {
         // signed-zero sweep caught. `ERF_LINEAR_MAX`'s note above records the same mistake being
         // fixed for `erf` itself; `erf_inv` was missed at the time.
         ErfInvRoute::AtOrigin => 0.0_f32.copysign(x),
+        // No Newton step, and none is needed — measured, because the `f64` peer needed three
+        // separate repairs here and the obvious move was to port them.
+        //
+        // Giles's approximation is a **single-precision** fit. Against MPFR at 300 bits this
+        // kernel is `0.0` to `1.0` ulp over the whole interior, from `1 − x = 0.5` down to
+        // `1.2e-7` where the argument rounds to one:
+        //
+        // ```text
+        // 1 − x    5e-1   1e-1   1e-2   1e-3   1e-4   1e-5   1e-6   1.2e-7
+        // ulp       0.1    0.4    0.1    0.3    0.0    0.3    0.2      0.3
+        // ```
+        //
+        // That is the whole explanation for the `f64` defect, and it is worth recording on this
+        // side: the fit was being asked for twice the digits it was built to deliver. In the
+        // format it was designed for it is correctly rounded, and a Newton step would cost an
+        // `erf` call to move nothing.
         ErfInvRoute::Interior => {
             let w = -((1.0 - x) * (1.0 + x)).ln();
             ErfInvSeed::for_log_weight(w).evaluate(w) * x

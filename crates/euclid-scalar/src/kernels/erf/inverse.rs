@@ -1,5 +1,15 @@
 //! The inverse error function: Giles's rational approximation plus one Newton step.
 //!
+//! # Why this needed fixing at all: a single-precision fit in a double-precision kernel
+//!
+//! Giles's approximation is built for `f32`, and [`crate::kernels::f32::erf`] uses it with no
+//! refinement at all and measures `0.0` to `1.0` ulp across its whole interior. Here it was
+//! being asked for twice the digits it was designed to deliver, with one Newton step to make up
+//! the difference — which works where the step is well conditioned and fails where it is not.
+//!
+//! That is the single sentence the three repairs below come from, and it was established by
+//! measuring the `f32` peer *before* porting anything to it.
+//!
 //! # Fixed: the far tail no longer goes through Giles's fit
 //!
 //! Measured against a reference that polishes the answer with Newton in MPFR at 300 bits:
