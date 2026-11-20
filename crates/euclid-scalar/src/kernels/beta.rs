@@ -74,9 +74,19 @@ use crate::math::continued_fraction::{LENTZ_TINY_F64, converged, lentz_step, non
 /// now             6.9         1.0          0.9           1.0
 /// ```
 ///
-/// Five to nine times better wherever the gate now reaches, and about one ulp throughout. `[1,
-/// 50]` is unchanged because most of its pairs have `min(a, b) < 20` and still take the path
-/// below; that band's `6.9` ulp is a separate matter this does not address.
+/// Five to nine times better wherever the gate now reaches, and about one ulp throughout.
+///
+/// `[1, 50]` is unchanged because most of its pairs have `min(a, b) < 20` and still take the
+/// path below. I first recorded that band's `6.9` ulp as "a separate matter"; measured, it is
+/// not a matter at all. The direct route inherits the cancellation
+/// `max|lnΓ term| / |ln B|`, which reaches `10.6` over that grid, and `lnΓ` is itself `1.5` to
+/// `3.6` ulp — so the floor this route can be held to is about `38` ulp and it is delivering
+/// `6.9`. The worst point, `a = 1.70, b = 3.40`, has a cancellation ratio of only `1.43`, so the
+/// residual is not tracking cancellation either: it is ordinary rounding across three `lnΓ`
+/// evaluations and a subtraction.
+///
+/// So `ln_beta` is at its floor across the whole surface now, and the way to lower it further is
+/// to lower `ln_gamma`'s — not to do anything here.
 ///
 /// A caution on how this was measured, because it nearly went the other way: an earlier sweep
 /// over *randomly* drawn pairs reported no improvement at all, and the reason was that the two
