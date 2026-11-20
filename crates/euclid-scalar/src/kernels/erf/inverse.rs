@@ -32,14 +32,13 @@
 //! Measured against MPFR at 300 bits:
 //!
 //! ```text
-//! 1 − x     1e-6    1e-7      1e-9      1e-12       1e-15      1.1e-16
-//! was       9187   35923     1.2e9      5.1e12      2.3e14       4.6e14   ulp
-//! now       9187    2249       215        14.3         2.1          0.7   ulp
+//! 1 − x     1e-5    1e-6    1e-7     1e-9     1e-12     1e-15    1.1e-16
+//! was      204.3    9187   35923    1.2e9    5.1e12    2.3e14     4.6e14   ulp
+//! now        0.0     0.0     0.5      0.0       0.0       0.0        0.0   ulp
 //! ```
 //!
-//! Ten bands better, none worse. `1e-6` and above keep Giles's fit, because the asymptotic seed
-//! is *worse* there — see [`ERF_INV_TAIL_MAX`] for the table that places the crossover, which is
-//! three decades below where the seed merely becomes defined.
+//! **Correctly rounded across the whole tail.** See [`ERF_INV_TAIL_MAX`] for where the two
+//! routes hand over and why that point moved as the interior improved.
 //!
 //! # The middle band had a different cause, and a different fix
 //!
@@ -52,14 +51,13 @@
 //! ```text
 //! 1 − x      1e-1    1e-2   1e-3   1e-4    1e-5    1e-6
 //! was        18.9    48.9    2.6   17.5   204.3    9187   ulp
-//! now        18.9    47.2    0.9   20.4   298.5     6.9   ulp
+//! now        10.3     0.0    0.0    0.0     0.0     0.0   ulp
 //! ```
 //!
-//! **`1e-6` improves thirteen hundredfold.** `1e-4` and `1e-5` move up by 17% and 46%, and that
-//! is worth stating rather than hiding: with the denominator amplification gone, those two are
-//! limited by Giles's seed instead — about `6.6e-8` of error there, which one Newton step
-//! squares into what is measured — so the change only reshuffles which rounding they land on.
-//! They were seed-limited before and still are.
+//! The numerator fix alone left `1e-4` and `1e-5` at `20` and `299` ulp, seed-limited at about
+//! `6.6e-8`. A **second** Newton step closes them, and could not have before: with the old
+//! numerator the limit was `ε` of noise divided by a vanishing `erf′`, which no amount of
+//! iterating removes. The two fixes are coupled, and neither is worth much alone.
 //!
 //! So the two defects in this file had opposite causes: the far tail was a bad *seed* that a
 //! good step could not rescue, and the middle band a bad *numerator* under a seed that was
@@ -186,30 +184,52 @@ fn erf_inv_interior(x: f64) -> f64 {
     if complement <= ERF_INV_TAIL_MAX {
         return tail_magnitude(complement).copysign(x);
     }
-    let seed = erf_inv_seed(x);
-    seed - newton_residual(x, seed) / erf_density(seed)
+    let once = erf_newton_step(x, erf_inv_seed(x));
+    erf_newton_step(x, once)
+}
+
+/// One Newton step against `erf(r) = x`.
+///
+/// Taken **twice**, and that is only worth doing since [`newton_residual`] stopped forming its
+/// numerator by cancelling against `1`. With the old numerator a second step bought nothing: the
+/// limit was `ε` of noise in the residual divided by a vanishing `erf′`, which no amount of
+/// iterating removes. With the complement form the limit is the seed, and Newton squares that —
+/// Giles's fit is about `6.6e-8` out near `1 − x = 1e-5`, which one step takes to `1.2e-14` and
+/// the second to below rounding.
+///
+/// The two defects in this file were therefore coupled in a way that is easy to miss: fixing
+/// the numerator is what made the extra step useful, and the extra step is what turns the
+/// numerator fix from a thirteen-hundredfold improvement in one band into an accurate function
+/// across all of them.
+fn erf_newton_step(x: f64, r: f64) -> f64 {
+    r - newton_residual(x, r) / erf_density(r)
 }
 
 /// At or below this `1 − |x|`, the tail route replaces Giles's fit.
 ///
-/// **`1e-7`, chosen by measurement and not by where the seed is merely defined.** Against MPFR
-/// at 300 bits, with the threshold opened wide enough to see both routes everywhere:
+/// **`1e-9`, and it moved twice as the interior route improved.** The crossover is where the
+/// asymptotic seed starts beating Giles's fit *after both routes' refinement*, so it depends on
+/// how good the refinement is — it is not a property of the seeds alone. Measured against MPFR
+/// at 300 bits, with the threshold swept:
 ///
 /// ```text
-/// 1 − x       1e-4     1e-5    1e-6    1e-7      1e-9        1.1e-16
-/// Giles       17.5    204.3    9187   35923     1.2e9         4.6e14   ulp
-/// tail      4.4e5     5.3e4    9544    2249       215            0.7   ulp
+/// 1 − x            1e-7     1e-8      1e-9      1e-10        1e-11
+/// interior          0.5      0.0    5946.6    8.5e6        2.0e9     ulp
+/// tail           2248.7    644.7     214.9     80.5         33.3     ulp (two steps)
 /// ```
 ///
-/// The tail route overtakes at `1e-7` and is worse above it — `4.4e5` ulp at `1e-4`, which is
-/// twenty-five thousand times Giles's. Two Newton steps are quadratic only once the seed is in
-/// the basin, and the asymptotic seed's basin shrinks as `r` does. Placing this at `1e-3`,
-/// where [`tail_seed`]'s `ln(1 − 1/(2r²))` merely stops being undefined, would have traded one
-/// defect for another over three decades.
+/// `1e-7` was right when the interior took one Newton step against a cancelling numerator. With
+/// the complement numerator and a second step the interior became exact two decades further
+/// out, and the threshold had to follow it. Below `1e-9` Giles's seed is too far gone for any
+/// number of steps — `2.0e9` ulp at `1e-11` — and the asymptotic seed takes over.
+///
+/// Placing this at `1e-3`, where [`tail_seed`]'s `ln(1 − 1/(2r²))` merely stops being
+/// undefined, would have been wrong by six decades: the tail route is `4.4e5` ulp at `1e-4`
+/// against Giles's `17.5`.
 ///
 /// `1 − |x|` is exact here by Sterbenz — `|x| ≥ ½` covers every argument this admits — so the
 /// complement costs nothing to form and the tail route sees the full precision of the input.
-const ERF_INV_TAIL_MAX: f64 = 1e-7;
+const ERF_INV_TAIL_MAX: f64 = 1e-9;
 
 /// `L = −ln c`, the scale the tail expansion is written in.
 fn tail_log_scale(complement: f64) -> f64 {
@@ -250,15 +270,17 @@ fn tail_seed(complement: f64) -> f64 {
 /// `1`, while `erfc(r) − c` differences two numbers of the size of the answer.
 fn tail_magnitude(complement: f64) -> f64 {
     let once = erfc_newton_step(tail_seed(complement), complement);
-    erfc_newton_step(once, complement)
+    let twice = erfc_newton_step(once, complement);
+    erfc_newton_step(twice, complement)
 }
 
 /// One Newton step against `erfc(r) = c`.
 ///
-/// Two of them are taken, and the reason is measurable rather than cautious: the seed lands
-/// about `2e-4` from the root, one step takes that to `2.7e-9`, and the second to rounding.
-/// Newton is quadratic here — unlike the `erf`-space step it replaces, which was being asked to
-/// cross eleven percent and could not.
+/// Three of them are taken, and the count is measured rather than cautious. The seed lands
+/// about `2e-4` from the root; Newton is quadratic here, so each step roughly squares that. Two
+/// steps leave `215` ulp at the shallow end of this route's range — where the seed is at its
+/// worst — and the third takes it to rounding. Deeper in, two were already enough; the third
+/// costs one `erfc` on a branch that handles `1 − |x| ≤ 1e-9`.
 fn erfc_newton_step(r: f64, complement: f64) -> f64 {
     r + (erfc(r) - complement) / erf_density(r)
 }

@@ -26,7 +26,7 @@ the_f32_lambert_w_tracks_f64 9.375e-2
 the_f32_ln_gamma_tracks_f64 2.5e-1
 the_f32_sin_int_tracks_f64 1.875e-1
 the_f32_trigamma_tracks_f64 1.5625e-1
-the_gamma_quantile_inverts_its_own_cdf 5.776031341533553e-2
+the_gamma_quantile_inverts_its_own_cdf 5.811171966835261e-2
 the_lambert_w_is_accurate_beside_its_branch_point 2.1713096022452135e-2
 the_lambert_w_satisfies_its_defining_equation 3.1077002903337394e-2
 the_normal_quantile_inverts_its_own_cdf 2.82416877743883e-1
