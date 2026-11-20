@@ -670,6 +670,31 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     // for their carrier rather than inheriting a generic stability policy.
 
     /// `Γ(x)`.
+    ///
+    /// # Precision
+    ///
+    /// Unlike its neighbours this degrades with the argument, and the surface had no figure for
+    /// it. Measured against MPFR at 256 bits, worst relative error over 80 points per band:
+    ///
+    /// | `x` | `[1,5]` | `[5,20]` | `[20,60]` | `[60,120]` | `[120,171]` |
+    /// |-----|---------|----------|-----------|------------|-------------|
+    /// | `Γ` | `2.6e-15` | `4.7e-15` | `3.1e-14` | `7.8e-14` | `1.0e-13` |
+    /// | `lnΓ` | * | `8.0e-16` | `3.4e-16` | `6.4e-16` | `3.8e-16` |
+    ///
+    /// \* `lnΓ` has zeros at `x = 1` and `x = 2`, so a *relative* figure there measures the
+    /// conditioning of the zero rather than the kernel; it is `6.4e-14` and means nothing.
+    ///
+    /// **Prefer [`ln_gamma`](Self::ln_gamma) wherever the logarithm will do.** It is one to four
+    /// ulp across the whole range where `Γ` reaches four hundred and fifty — a factor of three
+    /// hundred — and anything that multiplies or divides gammas is better off doing it in the
+    /// log domain and exponentiating once at the end, if at all.
+    ///
+    /// The cause is not a defect to repair. `Γ` is formed by the Lanczos product, whose dominant
+    /// factor is `base^{(x−½)/2}` squared — already split in half to halve exactly this error.
+    /// `powf(b, p)` carries about `|p ln b|·ε`, and at `x = 171` that is `85 × 5.17 × ε =
+    /// 9.8e-14` against the `1.0e-13` measured. The exponent is `lnΓ`-sized by nature, so any
+    /// single-`f64` intermediate of that magnitude costs this much; carrying `ln(base)` as a
+    /// double-double is what would buy the digits back, and that is unbuilt.
     fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
