@@ -689,12 +689,26 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// hundred — and anything that multiplies or divides gammas is better off doing it in the
     /// log domain and exponentiating once at the end, if at all.
     ///
-    /// The cause is not a defect to repair. `Γ` is formed by the Lanczos product, whose dominant
-    /// factor is `base^{(x−½)/2}` squared — already split in half to halve exactly this error.
-    /// `powf(b, p)` carries about `|p ln b|·ε`, and at `x = 171` that is `85 × 5.17 × ε =
-    /// 9.8e-14` against the `1.0e-13` measured. The exponent is `lnΓ`-sized by nature, so any
-    /// single-`f64` intermediate of that magnitude costs this much; carrying `ln(base)` as a
-    /// double-double is what would buy the digits back, and that is unbuilt.
+    /// **The cause is not identified, and an earlier version of this note claimed it was.** It
+    /// said `powf(b, p)` carries `|p ln b|·ε`, which at `x = 171` is `85 × 5.17 × ε = 9.8e-14`
+    /// against the `1.0e-13` measured — a match to one significant figure, and wrong.
+    ///
+    /// `powf` is correctly rounded here. Forming `b^p·e^{−b}` at `b = 176.5, p = 170.5` the way
+    /// [`crate::math::gamma::lanczos_half_power`] does, against a 80-digit reference:
+    ///
+    /// | split | 2 | 4 | 8 | 16 |
+    /// |-------|---|---|---|----|
+    /// | relative error | `2.5e-17` | `2.6e-16` | `2.6e-16` | `2.6e-16` |
+    ///
+    /// Four orders below the `1.96e-13` the discredited model predicts, and flat in the split —
+    /// libm's `pow` carries extra precision internally, so the exponent's magnitude does not
+    /// reach the result. The agreement was a coincidence of two numbers near `1e-13`.
+    ///
+    /// So the `458` ulp comes from somewhere else in the Lanczos product — the coefficient sum,
+    /// the formation of `base` and `power`, or the final multiplications — and attributing it
+    /// needs the same treatment `erf_inv` got: split the product into named pieces and measure
+    /// each against the reference. Until that is done, the figure above is a measurement and
+    /// the explanation is an open question.
     fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
