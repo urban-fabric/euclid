@@ -146,8 +146,34 @@ pub(crate) fn zeta(s: f64) -> f64 {
     }
 }
 
+/// `ζ(s) = 2^s π^{s−1} sin(πs/2) Γ(1−s) ζ(1−s)`, for `s < 0`.
+///
+/// # The product form is more accurate on average and loses the closed forms
+///
+/// This is the one place in the family where `exp(a sum of logarithms)` survives a challenge, so
+/// the measurement is worth keeping. Formed as a product of its five factors — each of which is
+/// representable for `s > −170` — the reflection domain improves by about a factor of two:
+///
+/// ```text
+/// s              [-1, -50]   [-50, -170]   [-170, -250]
+/// log domain      3.29e-14      1.82e-13       3.41e-13
+/// product         1.99e-14      9.49e-14       3.41e-13
+/// ```
+///
+/// And it breaks `zeta_hits_its_closed_forms_exactly`, which requires `ζ(−1) = −1/12` to **zero
+/// ulp**. The reason is a cancellation the product form exposes: at `s = −1` the factors are
+/// `π^{−2}` and `ζ(2) = π²/6`, and separately rounded those two no longer cancel — one ulp.
+///
+/// Neither form is principled there; the log one is *lucky*, and the test has enshrined the luck
+/// as a contract. That is a defensible contract — `ζ(−1) = −1/12` is an identity a user will
+/// check — so the luck is kept until the closed forms are returned from a table of Bernoulli
+/// numbers, which is what would let the product form be used everywhere else. Until then the
+/// factor of two is not worth a famous identity.
+///
+/// The `[-170, -250]` column is identical because `Γ(1−s)` has left the format by then and the
+/// log domain is the only route either way.
 fn zeta_reflection(s: f64) -> f64 {
-    // Functional equation. Everything is formed in the log domain where it could overflow:
+    // Everything is formed in the log domain where it could overflow:
     // Gamma(1-s) grows without bound as s -> -inf, and zeta does too, so the product must be
     // allowed to reach infinity rather than producing NaN on the way.
     let one_minus_s = 1.0 - s;
