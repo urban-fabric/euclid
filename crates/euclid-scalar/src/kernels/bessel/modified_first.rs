@@ -34,7 +34,6 @@
 //! than a fixed-length polynomial.
 
 use super::asymptotic;
-use crate::kernels::gamma::ln_gamma;
 
 /// Cap on the outward walk in either direction from the peak. The significant terms span
 /// `O(√x)` indices, so this covers arguments past `1e8` before it binds.
@@ -99,29 +98,60 @@ fn i0_rel_sum(h: f64, k_peak: f64) -> f64 {
     sum
 }
 
-/// Above this peak index the Stirling remainder is taken from its asymptotic series; below it,
-/// from `ln_gamma` directly. At `k = 20` the first omitted term, `−691/(360360·k¹¹)`, is
-/// `1e-17`.
-const STIRLING_ASYMPTOTIC_MIN: f64 = 20.0;
-
-/// The Stirling remainder `μ(k) = lnΓ(k+1) − (k ln k − k + ½ln(2πk))`.
+/// The Stirling remainder `μ(k) = lnΓ(k+1) − (k ln k − k + ½ln(2πk))`, for integer `k`.
 ///
 /// Needed in its own right rather than as a difference, because `μ(k) ≈ 1/(12k)` is tiny
-/// while the two terms defining it are `O(k ln k)` — forming it by subtraction at `k = 5e5`
-/// would leave nothing. The asymptotic series `1/(12k) − 1/(360k³) + ⋯` has no such problem
-/// and is exact to rounding for any `k` large enough to matter.
+/// while the two terms defining it are `O(k ln k)`.
+///
+/// # A table, because only nine arguments are reachable and both formulas are poor there
+///
+/// This was `lnΓ(k+1) − (k ln k − k + ½ln(2πk))` below `k = 20` and the asymptotic series above,
+/// and the small-`k` arm carried a comment saying "the defining difference is between `O(1)`
+/// quantities, so it is safe". **It is not.** At `k = 7` the two terms are `8.525161` and
+/// `8.513265`, leaving `0.0119` — they are `O(8.5)`, and the subtraction discards:
+///
+/// ```text
+/// k         1     2     3     4     5     6     7     8
+/// bits lost  —   4.1   6.0   7.3   8.2   8.9   9.5  10.0
+/// ```
+///
+/// Those bits land in an exponent that [`ln_peak_core_scaled`] hands to `exp`, so they become
+/// relative error in `I₀ᵉ` and `I₁ᵉ` directly.
+///
+/// The asymptotic series is no help at that end — its first omitted term,
+/// `−691/(360360·k¹¹)`, is `9.7e-13` at `k = 7`, which is *worse* than the cancellation. Both
+/// forms are poor over exactly the range that is reachable, and the reachable range is small and
+/// discrete: `k = round(|x|/2)` with `|x| ∈ [I1_NO_LOG_MAX, I_ASYMPTOTIC_MIN) = [1, 17)`, so
+/// `k ∈ {1, …, 8}`. Nine entries cover it with one to spare.
+///
+/// Each is `μ(k)` evaluated at 256 bits in MPFR and rounded to nearest, so the only error left
+/// is the representation — half an ulp of a number near `0.01`, against the `10` bits the
+/// subtraction was losing. It is also cheaper than the `ln_gamma` call it replaces.
+const STIRLING_REMAINDER: [f64; 9] = [
+    0.081_061_466_795_327_26,  // k = 1
+    0.041_340_695_955_409_3,   // k = 2
+    0.027_677_925_684_998_34,  // k = 3
+    0.020_790_672_103_765_093, // k = 4
+    0.016_644_691_189_821_193, // k = 5
+    0.013_876_128_823_070_748, // k = 6
+    0.011_896_709_945_891_77,  // k = 7
+    0.010_411_265_261_972_096, // k = 8
+    0.009_255_462_182_712_733, // k = 9
+];
+
+/// `μ(k)` from the table, for the integer `k` the peak index always is.
+///
+/// Indexed rather than computed, and asserted rather than clamped: a `k` outside the table means
+/// the reachable range has changed — [`I_ASYMPTOTIC_MIN`] moved, or a new caller appeared — and
+/// that needs a longer table rather than a silent fallback to a formula this documents as unfit.
 fn stirling_remainder(k: f64) -> f64 {
-    if k >= STIRLING_ASYMPTOTIC_MIN {
-        let inv = 1.0 / k;
-        let inv2 = inv * inv;
-        inv * (1.0 / 12.0
-            + inv2
-                * (-1.0 / 360.0 + inv2 * (1.0 / 1260.0 + inv2 * (-1.0 / 1680.0 + inv2 / 1188.0))))
-    } else {
-        // Small k: the defining difference is between O(1) quantities, so it is safe, and the
-        // asymptotic series would not yet have converged.
-        ln_gamma(k + 1.0) - (k * k.ln() - k + 0.5 * crate::math::log_domain::ln_tau_times(k))
-    }
+    debug_assert!(
+        (1.0..=9.0).contains(&k) && k.fract() == 0.0,
+        "the Stirling table covers integer k in 1..=9; k = {k} is outside it"
+    );
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let index = (k as usize).clamp(1, 9) - 1;
+    STIRLING_REMAINDER[index]
 }
 
 /// `2k·ln h − 2·lnΓ(k+1) − 2h`, the shared log-domain core of both scaled peak terms.

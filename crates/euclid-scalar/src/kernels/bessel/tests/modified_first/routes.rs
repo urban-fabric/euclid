@@ -13,14 +13,21 @@ use crate::kernels::bessel::modified_first::{I1_NO_LOG_MAX, *};
 
 #[test]
 fn the_stirling_threshold_leaves_no_step_at_ulp_resolution() {
-    // `stirling_remainder` switches from `ln_gamma` to its asymptotic series at a peak index
-    // of 20. The peak index is `round(x/2)`, so the switch happens as `x` crosses 39 — an
-    // internal boundary with no outward sign, and one no reference table would ever probe.
-    // Measured disagreement across the switch is 1.5e-14 relative, and it is the *lower*
-    // side that carries it: below the threshold `mu(k)` is formed as a difference of two
-    // O(k ln k) quantities, costing about `eps*42/0.0042 = 1.5e-14`, while above it the
-    // asymptotic series is exact to rounding. That is the documented 1.7e-14 worst case for
-    // this family, and it is bounded here rather than merely asserted elsewhere.
+    // There is no Stirling threshold any more, and this comment is kept because the version it
+    // replaces had already found the defect and filed it as a fact of life:
+    //
+    //   "below the threshold `mu(k)` is formed as a difference of two O(k ln k) quantities,
+    //    costing about `eps*42/0.0042 = 1.5e-14` ... That is the documented 1.7e-14 worst case
+    //    for this family"
+    //
+    // Correct in every part, including that it was the family's worst case — and it was a
+    // *subtraction*, not a law. `stirling_remainder` is a table of correctly-rounded `mu(k)`
+    // now, over the nine integer indices that are reachable, and the family measures 1.3 to 4.2
+    // ulp from `x = 1` to `700` against MPFR where it used to reach 1.5e-14 here alone.
+    //
+    // `39` is kept as a probe even though it is the asymptotic route's territory now: it is
+    // where the peak index used to cross 20, so a future change that reinstates a threshold
+    // there would be caught.
     use euclid_utils::no_step_across;
     let threshold = 39.0;
     no_step_across(

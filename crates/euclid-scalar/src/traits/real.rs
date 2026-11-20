@@ -584,20 +584,32 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// Machine precision, from a peak-factored power series. Measured against MPFR at 256 bits,
     /// worst relative error over 40 points per decade:
     ///
-    /// | `x` | 1e0 | 1e1 | 1e2 | `[300, 700]` |
-    /// |-----|-----|-----|-----|--------------|
-    /// | was | `5.2e-15` | `1.3e-14` | `4.7e-14` | `5.6e-14` |
-    /// | now | `5.2e-15` | `1.1e-14` | `4.2e-16` | `5.5e-16` |
+    /// | `x` | `[1,5]` | `[5,11]` | `[11,17]` | `[17,100]` | `[100,700]` |
+    /// |-----|---------|----------|-----------|------------|-------------|
+    /// | `I₀` | `4.4e-16` | `6.6e-16` | `7.1e-16` | `6.3e-16` | `5.2e-16` |
+    /// | `I₁` | `6.5e-16` | `6.7e-16` | `9.4e-16` | `4.1e-16` | `2.8e-16` |
     ///
-    /// The old worst case was quoted as `1.7e-14` and the top of the range was in fact `5.6e-14`,
-    /// because the unscaled value was recovered as `exp(ln I₀ + x)`. That sum is an `f64` of
-    /// magnitude `x`, so it carried `ulp(x)/2` of absolute rounding and `exp` turned it straight
-    /// into relative error — `5.7e-14` predicted at `x = 688` against `5.56e-14` measured. It is
-    /// now `I₀ᵉ(x)·e^{x}`, two separately-rounded factors, which costs two or three ulp and
-    /// nothing that grows with `x`.
+    /// **One to four ulp, uniformly, from `1` to the overflow edge.** It reached `5.9e-14` and
+    /// was documented at `1.7e-14`; three separate things were costing it digits.
     ///
-    /// The remaining `1.1e-14` at `1e1` is the peak-relative sum's own accumulation over the
-    /// `O(√x)` terms that matter there, and is unrelated.
+    /// **The unscaling**, above `x ≈ 100`: the value was recovered as `exp(ln I₀ + x)`, whose
+    /// exponent is an `f64` of magnitude `x` and so carries `ulp(x)/2` of absolute rounding that
+    /// `exp` turns into relative error. `5.7e-14` predicted at `x = 688`, `5.56e-14` measured.
+    /// Now `I₀ᵉ(x)·e^{x}` — two separately-rounded factors, costing two or three ulp and nothing
+    /// that grows with `x`.
+    ///
+    /// **The crossover**, over `[17, 20)`: the asymptotic expansion is better than the series
+    /// from `x = 16` and was not used until `20`, leaving three units at 78, 79 and 25 ulp
+    /// beside a band at 5.
+    ///
+    /// **The Stirling remainder**, over the whole series band: `μ(k)` was formed as
+    /// `lnΓ(k+1) − (k ln k − k + ½ln(2πk))`, a subtraction that discards 4 to 10 bits over the
+    /// integer `k ∈ {1, …, 8}` the peak index can take. It is a table of correctly-rounded
+    /// values now, which took `[13,14)` from 71 ulp to 5 — and is *faster*, since it replaced an
+    /// `ln_gamma` call.
+    ///
+    /// Each of the three was found by sampling against MPFR at 256 bits; none was visible to a
+    /// test in this tree, and the third had been written down in one as a fact of life.
     /// Every term of that series is positive, so there is no cancellation at any argument, and
     /// the scale is carried in the log domain so nothing overflows.
     fn bessel_i0e(self) -> Self;
