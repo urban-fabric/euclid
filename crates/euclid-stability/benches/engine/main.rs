@@ -104,14 +104,21 @@
 //! from a fixed seed, so a change that perturbed the trajectory by one tape would have moved
 //! that number. An accuracy budget turns out to double as a regression test for the engine.
 
-use std::collections::HashSet;
-use std::hint::black_box;
-use std::time::Instant;
+//! # The split
+//!
+//! This file passed the 400-line budget. The measurements divide by *when* the cost is paid — on
+//! every case, or only on failure — and what stays here is the harness they share and `main`.
 
-use euclid_stability::generate::{self, Gen};
-use euclid_stability::runner::{Config, Failure, Outcome};
+mod search;
+mod tapes;
+
+use search::*;
+use tapes::*;
+
+use euclid_stability::generate::Gen;
+use euclid_stability::shrink;
 use euclid_stability::source::Source;
-use euclid_stability::{check, shrink};
+use std::time::Instant;
 
 /// Cases per measured loop. Large enough to swamp timer resolution, small enough that the whole
 /// benchmark stays under a few seconds.
@@ -202,94 +209,6 @@ fn ab(
     );
 }
 
-/// The search-path optimisations, each measured as an interleaved A/B.
-///
-/// Two separate changes, so two rows:
-///
-/// - **`Source::consumed` per case.** It allocates a `Vec` and copies the tape in, and the search
-///   used to call it on every case while using the result only on a failure or a new best score.
-///   For the overwhelming majority of cases it allocated, copied and dropped.
-/// - **Constructing a `Source` per case.** A tape grows from empty to a dozen-odd entries, so a
-///   fresh `Source` means an allocation plus several reallocations every case. `restart_generating`
-///   reuses the buffer, making it once per *property*.
-fn tape_materialisation_cost() {
-    let generator = generate::int(0, 1_000_000);
-    const DRAWS: usize = 200_000;
-
-    ab(
-        "per-case consumed(), A/B interleaved",
-        "draw only / draw + consumed()",
-        DRAWS,
-        || {
-            let mut source = Source::generating(0, 4_096);
-            for seed in 0..DRAWS {
-                source.restart_generating(seed as u64, 4_096);
-                black_box(generator.draw(&mut source).ok());
-            }
-        },
-        || {
-            let mut source = Source::generating(0, 4_096);
-            for seed in 0..DRAWS {
-                source.restart_generating(seed as u64, 4_096);
-                black_box(generator.draw(&mut source).ok());
-                black_box(source.consumed());
-            }
-        },
-    );
-
-    ab(
-        "per-case Source, A/B interleaved",
-        "restart_generating / fresh Source",
-        DRAWS,
-        || {
-            let mut source = Source::generating(0, 4_096);
-            for seed in 0..DRAWS {
-                source.restart_generating(seed as u64, 4_096);
-                black_box(generator.draw(&mut source).ok());
-            }
-        },
-        || {
-            for seed in 0..DRAWS {
-                let mut source = Source::generating(seed as u64, 4_096);
-                black_box(generator.draw(&mut source).ok());
-            }
-        },
-    );
-}
-
-/// The shrink-path optimisation: a `Source` per probe, or one reused across all of them.
-///
-/// `replay` used to take the candidate tape by value, so every probe handed it a fresh `Vec` —
-/// one allocation and copy per probe, and a minimisation spends hundreds to thousands of them.
-/// This is the row that matters most of the three, because shrinking is where a failure's time
-/// actually goes.
-fn probe_source_cost() {
-    let generator = generate::vec(generate::int(0, 1_000_000), 8, 16);
-    let tape: Vec<u64> = (0..24)
-        .map(|i| 0x9E37_79B9_7F4A_7C15u64.wrapping_mul(i + 1))
-        .collect();
-    const PROBES: usize = 200_000;
-
-    ab(
-        "per-probe Source, A/B interleaved",
-        "restart_replaying / fresh Source",
-        PROBES,
-        || {
-            let mut source = Source::replaying(Vec::new());
-            for _ in 0..PROBES {
-                source.restart_replaying(&tape);
-                black_box(generator.draw(&mut source).ok());
-            }
-        },
-        || {
-            for _ in 0..PROBES {
-                let mut source = Source::replaying(tape.clone());
-                black_box(generator.draw(&mut source).ok());
-            }
-        },
-    );
-}
-
 /// Run `body` once unmeasured, then `REPEATS` times, returning the best and worst durations.
 fn measure(mut body: impl FnMut()) -> (std::time::Duration, std::time::Duration) {
     body();
@@ -326,150 +245,10 @@ fn row(
     );
 }
 
-/// The floor: a scalar generator and an empty body, so this is engine overhead and nothing else.
-fn search_floor() {
-    let config = Config::default().cases(CASES);
-    let generator = generate::int(0, 1_000_000);
-
-    let timing = measure(|| {
-        check("floor", &config, &generator, |x| {
-            black_box(x);
-            Ok(())
-        });
-    });
-    row("search, scalar gen, empty body", timing, CASES, "cases/s");
-}
-
-/// The same with a generator that allocates, which is the common shape — most suites draw a
-/// `Vec` of something.
-fn search_with_allocation() {
-    let config = Config::default().cases(CASES);
-    let generator = generate::vec(generate::float::finite(), 1, 8);
-
-    let timing = measure(|| {
-        check("alloc", &config, &generator, |xs: Vec<f64>| {
-            black_box(xs.iter().sum::<f64>());
-            Ok(())
-        });
-    });
-    row("search, Vec<f64> generator", timing, CASES, "cases/s");
-}
-
-/// A tape that needs real minimisation: the property fails only when some element is large, so
-/// the shrinker has to delete the irrelevant elements and binary-search the one that matters.
-fn failing_tape() -> (Gen<Vec<i64>>, Vec<u64>) {
-    let generator = generate::vec(generate::int(0, 1_000_000), 20, 40);
-    // Draw until a tape that fails the property turns up, then hand that tape to the shrinker.
-    let mut seed = 1u64;
-    loop {
-        let mut source = Source::generating(seed, 4_096);
-        if let Ok(drawn) = generator.draw(&mut source)
-            && drawn.iter().any(|v| *v > 500_000)
-        {
-            return (generator, source.consumed());
-        }
-        seed = seed.wrapping_add(1);
-    }
-}
-
-fn is_failing(xs: &[i64]) -> bool {
-    xs.iter().any(|v| *v > 500_000)
-}
-
-/// How long a minimisation takes, and how many probes it spends.
-fn shrink_cost() {
-    let (generator, tape) = failing_tape();
-
-    let mut calls = 0usize;
-    let (minimal, cost) = shrink::minimise(tape.clone(), |candidate| {
-        calls += 1;
-        probe(&generator, candidate)
-    });
-    let timing = measure(|| {
-        let _ = shrink::minimise(tape.clone(), |candidate| probe(&generator, candidate));
-    });
-
-    row("shrink, 20-40 entry tape", timing, cost.probes, "probes/s");
-    println!(
-        "{:<40} {:>10} {:>16}",
-        "  -> tape entries",
-        format!("{} -> {}", tape.len(), minimal.len()),
-        format!("{} probes", cost.probes)
-    );
-    assert_eq!(
-        calls, cost.probes,
-        "the closure must be called exactly once per distinct candidate — a memo hit must not \
-         reach it, or the memo is not doing anything"
-    );
-}
-
-/// How many candidates the memo answered instead of re-running.
-///
-/// This is the number the fixpoint loop makes interesting. `minimise` runs its four passes
-/// repeatedly until a full round leaves the tape unchanged, which it has to — deleting a chunk
-/// makes entries newly reducible, and reducing a length makes chunks newly deletable. But the
-/// final round exists only to *prove* nothing more can be done, and it proves it by re-probing
-/// candidates earlier rounds already rejected.
-///
-/// Before the memo those were spent probes, each re-running the generator and the property:
-/// measured at **194 of 572, or 33.9%**. They are now answered from the table, which both saves
-/// the work and stops them consuming the [`shrink::MAX_PROBES`] budget — so the same cap explores
-/// strictly more distinct candidates than it used to.
-///
-/// The external `HashSet` below is the check that the memo is complete rather than a measurement:
-/// every candidate the shrinker repeats must be a memo hit, so the two counts have to agree.
-fn shrink_redundancy() {
-    let (generator, tape) = failing_tape();
-
-    let mut seen: HashSet<Vec<u64>> = HashSet::new();
-    let mut repeats_reaching_the_closure = 0usize;
-
-    let (_, cost) = shrink::minimise(tape.clone(), |candidate| {
-        if !seen.insert(candidate.to_vec()) {
-            repeats_reaching_the_closure += 1;
-        }
-        probe(&generator, candidate)
-    });
-    let timing = measure(|| {
-        let _ = shrink::minimise(tape.clone(), |candidate| probe(&generator, candidate));
-    });
-
-    let total = cost.probes + cost.reused;
-    #[allow(clippy::cast_precision_loss)]
-    let share = if total == 0 {
-        0.0
-    } else {
-        cost.reused as f64 * 100.0 / total as f64
-    };
-    row(
-        "shrink, same work, memo on",
-        timing,
-        cost.probes,
-        "probes/s",
-    );
-    println!(
-        "{:<40} {:>10} {:>16}",
-        "  -> answered from the memo",
-        format!("{}/{total}", cost.reused),
-        format!("{share:.1}%")
-    );
-    assert_eq!(
-        repeats_reaching_the_closure, 0,
-        "a repeated candidate reached the probe closure, so the memo missed it"
-    );
-}
-
 fn probe(generator: &Gen<Vec<i64>>, candidate: &[u64]) -> shrink::Probe {
     let mut source = Source::replaying(candidate.to_vec());
     match generator.draw(&mut source) {
         Ok(drawn) if is_failing(&drawn) => shrink::Probe::StillFails,
         _ => shrink::Probe::Discard,
     }
-}
-
-/// Unused, but keeps the `Failure`/`Outcome` import honest for readers copying this file as a
-/// template for their own benchmark.
-#[allow(dead_code)]
-fn example_failure() -> Outcome {
-    Err(Failure::new("example", "a benchmark"))
 }

@@ -83,13 +83,26 @@
 //! two forms are concatenated, and an outer comment resolves intra-doc links in the *parent's*
 //! scope, so a link to a function in here would silently fail from there.
 
-use euclid_scalar::{Compare, Element, Real};
-use euclid_tensor::Tensor;
+//! # The split
+//!
+//! This module passed the crate's 400-line budget. The residual machinery stays here, since every
+//! suite leans on it, and the laws divide by what they ask a backend for: a solution, or a
+//! factorization.
+
+mod factorization;
+mod solve;
+
+// Re-exported so every public path this module has ever had still resolves: the
+// split is an internal rearrangement and no carrier should have to notice it.
+pub use factorization::{determinant_laws, eigh_laws, qr_laws, svd_laws};
+pub use solve::{general_solve_laws, prepared_spd_laws, spd_solve_laws, triangular_solve_laws};
 
 use crate::{
     Determinant, GeneralSolve, MatrixTensor, PreparedSpd, QrDecomposition, SpdFactor, SpdSolve,
     TransposeMode, Triangle, TriangularSolve,
 };
+use euclid_scalar::{Compare, Element, Real};
+use euclid_tensor::Tensor;
 
 /// Assert that two tensors agree to within a scaled Frobenius tolerance.
 ///
@@ -203,252 +216,4 @@ fn normalized_frobenius<T: Tensor + Real>(
         .square()
         .sum(axes)
         .sqrt()
-}
-
-/// [`SpdSolve`]: applying the solve must undo the system.
-///
-/// Given a Hermitian-positive-definite `spd` and any `x`, forming `b = spd·x` and solving must
-/// recover `x`. That is the only property a caller relies on, and it holds whatever factorization
-/// the backend uses underneath.
-///
-/// `spd` must actually be HPD — the trait documents that as the caller's precondition and
-/// implementors need not verify it, so a non-HPD input here produces a meaningless failure
-/// rather than a useful one.
-pub fn spd_solve_laws<M>(spd: &M, x: &M, tolerance: f64, what: &str)
-where
-    M: SpdSolve,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    let b = spd.clone().matmul(x.clone());
-    let solved = spd.clone().solve_spd(b);
-    assert_close(&solved, x, tolerance, "solve_spd(Σ, Σ·x) = x", what);
-}
-
-/// [`GeneralSolve`]: the same round-trip for a nonsingular matrix.
-///
-/// `a` must be nonsingular. A singular input has no unique solution, so the law says nothing
-/// about it.
-pub fn general_solve_laws<M>(a: &M, x: &M, tolerance: f64, what: &str)
-where
-    M: GeneralSolve,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    let b = a.clone().matmul(x.clone());
-    let solved = a.clone().solve(b);
-    assert_close(&solved, x, tolerance, "solve(A, A·x) = x", what);
-}
-
-/// [`TriangularSolve`]: the round-trip, forward and transposed.
-///
-/// `lower` must be lower-triangular and nonsingular, and rank-2.
-///
-/// Two solves, and the second is the one that earns its place. Solving `L·x = b` exercises the
-/// forward path; solving `Lᴴ·x = b` with [`TransposeMode::Transpose`] exercises the flag — and a
-/// backend that **ignores `TransposeMode` entirely** passes the first and fails the second. That
-/// is the cheapest available check on a parameter nothing else constrains.
-///
-/// This function's documentation claimed to do that before it did: it said "both triangles are
-/// exercised by solving against it and against its transpose" while the body performed a single
-/// forward solve. A law that overstates what it checks is worse than a missing one, because a
-/// backend reads the claim and stops looking.
-pub fn triangular_solve_laws<M>(lower: &M, x: &M, tolerance: f64, what: &str)
-where
-    M: TriangularSolve,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    // Forward: L·x = b must recover x.
-    let b = lower.clone().matmul(x.clone());
-    let solved = lower
-        .clone()
-        .solve_triangular(b, Triangle::Lower, TransposeMode::None, false);
-    assert_close(&solved, x, tolerance, "solve_triangular(L, L·x) = x", what);
-
-    // Transposed: form the right-hand side with Lᴴ explicitly, then ask the backend to solve
-    // against L *with the transpose flag set*. The two must agree, which they cannot if the flag
-    // is being dropped.
-    let lower_h = lower.clone().conjugate().transpose_axes(&[1, 0]);
-    let b_h = lower_h.matmul(x.clone());
-    let solved_h =
-        lower
-            .clone()
-            .solve_triangular(b_h, Triangle::Lower, TransposeMode::Adjoint, false);
-    assert_close(
-        &solved_h,
-        x,
-        tolerance,
-        "solve_triangular(L, Lᴴ·x, transpose) = x",
-        what,
-    );
-}
-
-/// [`PreparedSpd`] / [`SpdFactor`]: a cached factor must solve what the direct path solves.
-///
-/// The seam exists to hoist an O(n³) factorization out of a per-call path, so the thing that can
-/// go wrong is the cache: a factor stored before some scaling step, reused after the matrix it
-/// came from was consumed, or built from the wrong triangle. None of that is visible in a single
-/// `solve_spd` call, and all of it shows here.
-///
-/// So the law is **agreement between the two paths**, not a residual: `prepare_spd().solve(b)`
-/// and `solve_spd(b)` are two routes to `Σ⁻¹b` and must land in the same place. Written as an
-/// agreement rather than against `x` deliberately — if both paths are wrong in the same way this
-/// passes, and [`spd_solve_laws`] is what catches that, so run both.
-///
-/// `spd` must be rank-2 and HPD, per [`PreparedSpd::prepare_spd`].
-pub fn prepared_spd_laws<M>(spd: &M, rhs: &M, tolerance: f64, what: &str)
-where
-    M: SpdSolve + PreparedSpd,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    let direct = spd.clone().solve_spd(rhs.clone());
-    let factored = spd.clone().prepare_spd().solve(rhs.clone());
-    assert_close(
-        &factored,
-        &direct,
-        tolerance,
-        "prepare_spd(Σ).solve(b) = solve_spd(Σ, b)",
-        what,
-    );
-
-    // The factor must be reusable, which is the entire point of the seam — a backend that
-    // invalidates or consumes its factor on first use passes the check above and fails this.
-    let factor = spd.clone().prepare_spd();
-    let first = factor.solve(rhs.clone());
-    let second = factor.solve(rhs.clone());
-    assert_close(
-        &second,
-        &first,
-        tolerance,
-        "a prepared factor solves the same way twice",
-        what,
-    );
-}
-
-/// [`QrDecomposition`]: `Q·R` reconstructs `A`, and `Q` has orthonormal columns.
-///
-/// Reconstruction alone is satisfied by `Q = A`, `R = I`, so the orthonormality check is what
-/// makes this a QR rather than any factorization at all. Neither law fixes the column signs,
-/// which a QR does not determine.
-///
-/// `a` must have full column rank with at least as many rows as columns.
-pub fn qr_laws<M>(a: &M, tolerance: f64, what: &str)
-where
-    M: QrDecomposition + euclid_tensor::TensorIndexing,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    let (q, r) = a.clone().qr();
-    assert_close(&q.clone().matmul(r), a, tolerance, "Q·R = A", what);
-
-    // QᴴQ = I over the reduced factor's columns.
-    let cols = q.shape().get(1).copied().unwrap_or(0);
-    let qh = q.conjugate().transpose_axes(&[1, 0]);
-    let identity: M = M::one_hot(&M::iota(cols), cols);
-    assert_close(
-        &qh.matmul(q),
-        &identity,
-        tolerance,
-        "Qᴴ·Q = I (orthonormal columns)",
-        what,
-    );
-}
-
-/// [`HermitianEigendecomposition`](crate::HermitianEigendecomposition): `A·V = V·diag(λ)`, and
-/// `V` is unitary.
-///
-/// The defining property, and it needs no reference eigenvalues: whatever `λ` and `V` a backend
-/// produces, applying `A` to the eigenvectors must equal scaling them by their eigenvalues. That
-/// holds for any correct implementation and for any phase convention, which asserting a
-/// particular `V` would not.
-///
-/// Unitarity is checked alongside, because the eigenvector relation alone is satisfied by a
-/// degenerate `V` — for `λ = 0` any `V` with `A·V = 0` passes — and `Vᴴ·V = I` is what makes it
-/// a decomposition rather than a collection of vectors.
-///
-/// Ascending order is **not** checked here. It is part of the contract, but checking it needs an
-/// ordering predicate over the spectrum that the rank-1 tensor surface does not offer portably;
-/// a backend should assert it in its own suite where it has concrete values to compare.
-///
-/// `a` must be rank-2, square and Hermitian.
-pub fn eigh_laws<M>(a: &M, tolerance: f64, what: &str)
-where
-    M: crate::HermitianEigendecomposition + euclid_tensor::TensorIndexing,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    let n = a.shape().first().copied().unwrap_or(0);
-    let (lambda, v) = a.clone().eigh();
-
-    // V·diag(λ) as a broadcast multiply rather than a materialised diagonal: mapping the
-    // spectrum's only axis onto output axis 1 makes λ vary along the columns, so element [i, j]
-    // becomes V[i, j]·λ[j].
-    let scaled = v.clone() * M::from_spectrum(lambda).broadcast_in_dim(&[n, n], &[1]);
-    assert_close(
-        &a.clone().matmul(v.clone()),
-        &scaled,
-        tolerance,
-        "A·V = V·diag(λ)",
-        what,
-    );
-
-    let vh = v.clone().conjugate().transpose_axes(&[1, 0]);
-    let identity: M = M::one_hot(&M::iota(n), n);
-    assert_close(
-        &vh.matmul(v),
-        &identity,
-        tolerance,
-        "Vᴴ·V = I (eigenvectors are unitary)",
-        what,
-    );
-}
-
-/// [`SingularValueDecomposition`](crate::SingularValueDecomposition):
-/// `U·diag(σ)·Vᴴ` reconstructs `A`.
-///
-/// Reconstruction is the whole claim, and it is insensitive to the matched phase pair an SVD
-/// leaves free — negate a column of `U` and the corresponding column of `V` and the product is
-/// unchanged, which is why this is a law and an expected `U` would not be.
-///
-/// Note the convention this depends on: [`svd`](crate::SingularValueDecomposition::svd) returns
-/// `V`, not `Vᴴ`. A backend that returns the conjugate transpose instead fails here, which is
-/// the intended outcome — that mismatch otherwise produces a correctly-shaped, silently wrong
-/// answer for every square input.
-///
-/// `a` must be rank-2. For a non-square `a` the reduced form is assumed, per the trait.
-pub fn svd_laws<M>(a: &M, tolerance: f64, what: &str)
-where
-    M: crate::SingularValueDecomposition,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    let (u, sigma, v) = a.clone().svd();
-
-    // Scale U's columns by σ, then apply Vᴴ. `k` comes from U's column count rather than from
-    // `a`'s shape, so this is correct for the reduced form on a non-square input.
-    let rows = u.shape().first().copied().unwrap_or(0);
-    let k = u.shape().get(1).copied().unwrap_or(0);
-    let scaled = u * M::from_spectrum(sigma).broadcast_in_dim(&[rows, k], &[1]);
-    let vh = v.conjugate().transpose_axes(&[1, 0]);
-
-    assert_close(&scaled.matmul(vh), a, tolerance, "U·diag(σ)·Vᴴ = A", what);
-}
-
-/// [`Determinant`]: the determinant is multiplicative.
-///
-/// `det(A·B) = det(A)·det(B)` is the law worth having, because it constrains the determinant
-/// without naming a value — it holds for any correct implementation and fails for a sign error
-/// or a missed pivot swap, which a single expected value would not distinguish from a different
-/// but equally valid elimination order.
-pub fn determinant_laws<M>(a: &M, b: &M, tolerance: f64, what: &str)
-where
-    M: Determinant,
-    M::RealPart: Tensor,
-    <M::RealPart as Compare>::Mask: PartialEq + core::fmt::Debug,
-{
-    let lhs = a.clone().matmul(b.clone()).determinant();
-    let rhs = a.determinant() * b.determinant();
-    assert_close(&lhs, &rhs, tolerance, "det(A·B) = det(A)·det(B)", what);
 }
