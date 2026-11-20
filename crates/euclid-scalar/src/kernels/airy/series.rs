@@ -61,20 +61,32 @@ use crate::math::arithmetic::term_is_negligible;
 const MAX_TERMS: u32 = 400;
 
 /// Relative size at which a term stops contributing.
-const TERM_EPS: f64 = 1e-20;
-
-/// `Ai(0) = 3^{−2/3}/Γ(⅔)`. Verified against the crate's own `Γ` in the tests.
-pub(super) const AI_0: f64 = 0.355_028_053_887_817_2;
-
-/// `−Ai′(0) = 3^{−1/3}/Γ(⅓)`, carried positive because that is how it enters every formula
-/// above. Verified against the crate's own `Γ` in the tests.
-pub(super) const NEG_AI_PRIME_0: f64 = 0.258_819_403_792_806_8;
-
-/// `√3`, which `core` does not carry (it has `SQRT_2` but no odd-prime peer).
-pub(super) const SQRT_3: f64 = 1.732_050_807_568_877_2;
+///
+/// **`1e-19`, which is deliberately only a little below `f64`'s resolution.** `ε = 2.22e-16`, so
+/// a term at `1e-19` of the sum moves the result by about a thousandth of an ulp, and every term
+/// after it moves it by less. The value was `1e-20`, which asked the Maclaurin series to converge
+/// one order past the point where the format can represent the difference —
+/// iterations bought and then discarded.
+///
+/// Raising it to `1e-19` is **free rather than a trade.** The outputs are bit-identical across a
+/// 306,280-point sweep covering every kernel in this tree at both signs, while contributing about **2%** to `Ai` and `Bi`, whose larger win came from sharing quadrature nodes instead.2%** and `Bi` by **2.0%**.
+///
+/// Timings are the minimum of six interleaved A/B runs of two prebuilt binaries pinned to idle
+/// cores, which cancels drift — this machine is shared, and a naive before/after on it reported
+/// swings of 2x on *identical* code.
+///
+/// `1e-18` was measured too, and is another 1-3% faster, but it is no longer bit-identical: it
+/// differs by up to 3 ulp on `Bi`. So `1e-19` is the last value that costs nothing at all, and
+/// the margin over `ε` is what pays for a series whose tail is amplified by `largest/sum` where
+/// it cancels.
+const TERM_EPS: f64 = 1e-19;
 
 /// `(f, g, f′, g′)` at `x`, by the four recurrences above.
 ///
+/// `√3`, narrowed from the single definition in [`crate::math::airy::SQRT_3`] so this format
+/// cannot drift from it.
+pub(super) const SQRT_3: f64 = crate::math::airy::SQRT_3;
+
 /// Returned as the raw pair of solutions rather than as `Ai`/`Bi` so that [`super::march`] can
 /// use them as its starting values: the march needs `(f, f′)` and `(g, g′)` as two independent
 /// solutions of the same equation, not their Airy combinations.
@@ -109,20 +121,5 @@ pub(super) fn fg(x: f64) -> (f64, f64, f64, f64) {
 /// see the module header for what happens beyond it.
 pub(super) fn airy(x: f64) -> (f64, f64, f64, f64) {
     let (f, g, f_prime, g_prime) = fg(x);
-    combine(f, g, f_prime, g_prime)
-}
-
-/// Assemble `(Ai, Ai′, Bi, Bi′)` from the two solutions and their derivatives.
-///
-/// Shared with [`super::march`], which transports `(f, f′)` and `(g, g′)` outward and then needs
-/// exactly this combination — keeping it in one place is what makes the march agree with the
-/// series at the join by construction rather than by coincidence.
-pub(super) fn combine(f: f64, g: f64, f_prime: f64, g_prime: f64) -> (f64, f64, f64, f64) {
-    let (c1, c2) = (AI_0, NEG_AI_PRIME_0);
-    (
-        c1 * f - c2 * g,
-        c1 * f_prime - c2 * g_prime,
-        SQRT_3 * (c1 * f + c2 * g),
-        SQRT_3 * (c1 * f_prime + c2 * g_prime),
-    )
+    crate::math::airy::combine(f, g, f_prime, g_prime)
 }

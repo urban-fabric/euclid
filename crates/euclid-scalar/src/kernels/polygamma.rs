@@ -23,6 +23,10 @@
 //! The Bernoulli coefficients are written as exact rationals rather than decimal digits, so
 //! there is nothing to transcribe wrongly.
 
+mod exprel;
+
+pub(crate) use exprel::exprel;
+
 use super::gamma::{digamma, ln_gamma, trigamma};
 
 /// Terms summed exactly before the Euler–Maclaurin tail takes over.
@@ -64,6 +68,24 @@ pub(crate) fn hurwitz_zeta(s: f64, a: f64) -> f64 {
     let mut rising = s; // (s)_1
     let mut power = b.powf(-s - 1.0); // b^{-s-2j+1} at j = 1
     for (j, &c) in EM_COEFFS.iter().enumerate() {
+        // `power` is `b^{-s-2j+1}`, which **underflows to zero** for any large `s` — `b` is
+        // `a + EM_SPLIT`, so `17^{-s}` is already zero by `s ≈ 250`. Meanwhile `rising` is
+        // `(s)_{2j-1}`, which grows like `s^{2j}` and **overflows to infinity**. Their product is
+        // then `inf * 0 = NaN`, and the whole sum is poisoned.
+        //
+        // That is not hypothetical: `zeta(s)` returned `NaN` for every `s` above `1.0548e28`,
+        // where `ζ` is exactly `1`. The boundary is where the overflow of `rising` moves from the
+        // sixth Bernoulli term to the fifth, so one of the six terms is `inf * 0` before the loop
+        // ends. Found by a range sweep asserting that no kernel returns a non-finite value where
+        // the true one is finite.
+        //
+        // Once `power` is zero every later term is zero too — the tail has nothing left to
+        // contribute — so stopping here is exact rather than a truncation. For every `s` where
+        // `power` is still non-zero the arithmetic is untouched, which is why this changes no
+        // value that was previously finite.
+        if power == 0.0 {
+            break;
+        }
         total += c * rising * power;
         // Advance to j+1: (s)_{2j+1} = (s)_{2j-1} · (s+2j-1)(s+2j)
         let m = 2.0 * (j as f64 + 1.0);
@@ -73,88 +95,154 @@ pub(crate) fn hurwitz_zeta(s: f64, a: f64) -> f64 {
     total
 }
 
+/// Which route evaluates `ψ⁽ⁿ⁾` at this order and argument.
+///
+/// Three arms return `NaN` for three different reasons, and they are kept apart because the
+/// reasons are not interchangeable: one is a propagated `NaN`, one is a genuine pole of the
+/// function, and one is a region where the function is perfectly well defined and *this
+/// implementation* declines to evaluate it. Collapsing them to a single `x <= 0.0` guard — which
+/// is what the arithmetic allows — would lose exactly the distinction a caller needs.
+///
+/// The order is tested before the argument, so `ψ` and `ψ₁` keep their own edge behaviour rather
+/// than inheriting the general route's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PolygammaRoute {
+    /// Order `0`: [`digamma`], which carries its own reflection and asymptotic machinery.
+    Digamma,
+    /// Order `1`: [`trigamma`], likewise.
+    Trigamma,
+    /// A `NaN` argument at order `≥ 2`, propagated.
+    Undefined,
+    /// The non-positive integers, which are poles of every order.
+    Pole,
+    /// The rest of the negative axis. `ψ⁽ⁿ⁾` is real and finite here, but reaching it needs a
+    /// reflection formula this implementation does not carry — no caller has needed one, and a
+    /// `NaN` is a better answer than a silently wrong one.
+    Unsupported,
+    /// Order `≥ 2` at positive `x`, as `(−1)^{n+1}·n!·ζ(n+1, x)` through the Hurwitz zeta.
+    Hurwitz,
+}
+
+impl PolygammaRoute {
+    fn for_arguments(order: u32, x: f64) -> Self {
+        match order {
+            0 => Self::Digamma,
+            1 => Self::Trigamma,
+            _ if x.is_nan() => Self::Undefined,
+            _ if x <= 0.0 && x.fract() == 0.0 => Self::Pole,
+            // A sign-bit test rather than `x < 0.0`: both signed zeros are integers, so the
+            // arm above has already taken them and `<` against `<=` cannot be told apart here.
+            // Mutation testing found that spelling unkillable; this one has no operator to flip.
+            _ if x.is_sign_negative() => Self::Unsupported,
+            _ => Self::Hurwitz,
+        }
+    }
+}
+
 /// `ψ⁽ⁿ⁾(x)`, the `n`-th derivative of `digamma`.
 pub(crate) fn polygamma(order: u32, x: f64) -> f64 {
-    match order {
-        0 => return digamma(x),
-        1 => return trigamma(x),
-        _ => {}
+    match PolygammaRoute::for_arguments(order, x) {
+        PolygammaRoute::Digamma => digamma(x),
+        PolygammaRoute::Trigamma => trigamma(x),
+        PolygammaRoute::Undefined | PolygammaRoute::Pole | PolygammaRoute::Unsupported => f64::NAN,
+        PolygammaRoute::Hurwitz => {
+            let n = f64::from(order);
+            // (-1)^{n+1} n! zeta(n+1, x)
+            let sign = if order.is_multiple_of(2) { -1.0 } else { 1.0 };
+            sign * (ln_gamma(n + 1.0)).exp() * hurwitz_zeta(n + 1.0, x)
+        }
     }
-    if x.is_nan() {
-        return f64::NAN;
+}
+
+/// Which route evaluates `1/Γ` at this argument.
+///
+/// `1/Γ` is *entire* — it has no poles anywhere — so unlike `Γ` itself none of these arms is a
+/// singularity being dodged. They divide the line by what stays in range: the positive axis
+/// through the log domain, the negative axis through reflection, and the integers on it by the
+/// exact zero that reflection would otherwise have to produce from a vanishing sine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RgammaRoute {
+    /// `NaN`, and `−∞` — where `Γ` oscillates without bound, so the reciprocal has no limit for
+    /// the sign of zero to be taken from, let alone a value.
+    Undefined,
+    /// `+∞`, where `Γ` diverges and the reciprocal vanishes.
+    AtPositiveInfinity,
+    /// The non-positive integers. The poles of `Γ` are the zeros of `1/Γ`, and they are returned
+    /// exactly rather than left to [`Self::Reflection`]'s `sin(πx)` to round to zero.
+    Pole,
+    /// `x > 0`, as `e^{−lnΓ(x)}` — not `gamma(x).recip()`, because `Γ` overflows from about
+    /// `x = 172` while `1/Γ` stays representable well past that.
+    Exponential,
+    /// `x < 0` and not an integer, by the reflection formula; see [`rgamma_reflection`].
+    Reflection,
+}
+
+impl RgammaRoute {
+    fn for_argument(x: f64) -> Self {
+        if x.is_nan() || x == f64::NEG_INFINITY {
+            Self::Undefined
+        } else if x == f64::INFINITY {
+            Self::AtPositiveInfinity
+        } else if x <= 0.0 && x.fract() == 0.0 {
+            Self::Pole
+        } else if x.is_sign_positive() {
+            // A sign-bit test rather than `x > 0.0`: both signed zeros are integers, so the arm
+            // above has already taken them and `>` against `>=` cannot be told apart here.
+            // Mutation testing found that spelling unkillable; this one has no operator to flip.
+            Self::Exponential
+        } else {
+            Self::Reflection
+        }
     }
-    if x <= 0.0 && x.fract() == 0.0 {
-        return f64::NAN; // poles at the non-positive integers
-    }
-    if x < 0.0 {
-        // No reflection formula is used here; the function is only defined for x > 0 in this
-        // implementation, which is where every caller needs it.
-        return f64::NAN;
-    }
-    let n = f64::from(order);
-    let s = n + 1.0;
-    // (-1)^{n+1} n! zeta(n+1, x)
-    let sign = if order.is_multiple_of(2) { -1.0 } else { 1.0 };
-    sign * (ln_gamma(n + 1.0)).exp() * hurwitz_zeta(s, x)
 }
 
 /// The reciprocal gamma `1/Γ(x)`, entire and zero at the non-positive integers.
 pub(crate) fn rgamma(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match RgammaRoute::for_argument(x) {
+        RgammaRoute::Undefined => f64::NAN,
+        RgammaRoute::AtPositiveInfinity => 0.0,
+        RgammaRoute::Pole => 0.0,
+        RgammaRoute::Exponential => (-ln_gamma(x)).exp(),
+        RgammaRoute::Reflection => rgamma_reflection(x),
     }
-    if x.is_infinite() {
-        // 1/Gamma -> 0 at +inf; the negative direction oscillates without limit.
-        return if x > 0.0 { 0.0 } else { f64::NAN };
-    }
-    if x <= 0.0 && x.fract() == 0.0 {
-        return 0.0; // the poles of Gamma are the zeros of 1/Gamma
-    }
-    if x > 0.0 {
-        // exp(-lnGamma) rather than gamma(x).recip(): Gamma overflows from about x = 172,
-        // while 1/Gamma stays representable well past that.
-        return (-ln_gamma(x)).exp();
-    }
-    // Reflection: 1/Gamma(x) = Gamma(1-x) sin(pi x) / pi.
-    let s = (core::f64::consts::PI * x).sin();
-    let magnitude = (ln_gamma(1.0 - x) + s.abs().ln() - core::f64::consts::PI.ln()).exp();
-    if s < 0.0 { -magnitude } else { magnitude }
 }
 
-/// `(eˣ − 1)/x`, continuous at the origin.
-pub(crate) fn exprel(x: f64) -> f64 {
-    if x == 0.0 {
-        return 1.0;
+/// `1/Γ(x) = Γ(1−x)·sin(πx)/π`, for the non-integer negative axis.
+///
+/// # Why the sine comes from `reflection_sine`
+///
+/// Through [`reflection_sine`](crate::math::gamma::reflection_sine) rather than `(PI * x).sin()`,
+/// for the reason `ln_gamma` gives at length: rounding `PI * x` discards the argument's distance
+/// to the nearest pole, and near a pole that distance is the whole magnitude of the sine. The
+/// absolute error in the rounded product is `ulp(PI |x|)`, which dividing by a sine of order
+/// `PI * offset` turns into a *relative* error that grows with `|x|`.
+///
+/// Measured as `|rgamma(x) Gamma(x) - 1|` just off the poles, over a sweep of 1e-5 to 2e-3
+/// offsets at every pole down to -39:
+///
+/// ```text
+///                    worst over the sweep        at x = -39.00001
+/// (PI * x).sin()     3.60e-10 at x = -39.00001   3.60e-10
+/// reflection_sine    4.55e-14 at x = -38.00141   9.55e-15
+/// ```
+///
+/// Four orders, and the shape of the error changes as well as its size: under the old form the
+/// worst case sat at the largest `|x|` swept, because that is where `ulp(PI |x|)` is largest. It
+/// no longer does. `euclid-stability` found this as `the_reciprocal_gamma_is_entire` at
+/// `x = -5.000412007793784`, where the metamorphic relation `rgamma(x) Gamma(x) = 1` missed its
+/// 1e-12 budget by `1.07e-12`.
+fn rgamma_reflection(x: f64) -> f64 {
+    let s = crate::math::gamma::reflection_sine(x);
+    let magnitude = (ln_gamma(1.0 - x) + s.abs().ln() - core::f64::consts::PI.ln()).exp();
+    // A sign-bit test rather than `s < 0.0`: the sine is never exactly zero here — that would
+    // need an integer `x`, which [`RgammaRoute::Pole`] has already taken — so the two spellings
+    // agree on every reachable argument and `<` against `<=` is an unkillable mutant. This one
+    // has no operator to flip.
+    if s.is_sign_negative() {
+        -magnitude
+    } else {
+        magnitude
     }
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    if x.is_infinite() {
-        return if x > 0.0 { f64::INFINITY } else { 0.0 };
-    }
-    // The series is better conditioned than expm1(x)/x for tiny x. Three terms, not four: below
-    // the crossover `x³/24` is at most `4.2e-17`, which is under f64's `2.22e-16` resolution
-    // there, and dropping it changed **none of 800,000 sampled results**.
-    //
-    // `x²/6` is a different matter and stays — at most `1.7e-11`, five orders *above* the
-    // resolution, and dropping it changes 798,238 of those same results. The two terms look
-    // alike and are not, which is the whole content of this file's cause 7: the cutoff is the
-    // format's resolution, so it has to be computed per precision rather than inherited.
-    //
-    // The f32 peer therefore keeps **two** terms where this keeps three. That asymmetry is
-    // correct, and it is what thirty-five unkillable mutants across the pair were reporting.
-    //
-    // One survivor here is *not* closed, and the reason is worth stating rather than leaving to
-    // be rediscovered: narrowing this comparison to `==` routes almost every argument to
-    // `exp_m1(x)/x`, which is accurate to 2 ulp where the series is correctly rounded. That is a
-    // genuine regression and it needs an instrument finer than `f64` to see — the f32 peer's
-    // version of this test uses `f64` as its reference, and there is no such type here. The
-    // honest fix is a pasted high-precision table via `bin/references/`, not a tolerance.
-    // Until then it stays visible.
-    if x.abs() < 1e-5 {
-        return 1.0 + x / 2.0 + x * x / 6.0;
-    }
-    x.exp_m1() / x
 }
 
 #[cfg(test)]
@@ -253,19 +341,89 @@ mod tests {
         close(r160.ln(), -ln_gamma(160.0), 1e-14);
     }
 
+    /// The five routes, asserted as decisions.
+    ///
+    /// [`RgammaRoute::Pole`] and [`RgammaRoute::AtPositiveInfinity`] return the same `0.0` for
+    /// different reasons, so no value assertion can tell them apart — nor tell either from a
+    /// reflection that happened to round to zero, which is exactly what the exact-zero arm is
+    /// there to prevent.
     #[test]
-    fn exprel_is_continuous_at_the_origin() {
-        assert_eq!(exprel(0.0), 1.0);
-        // `1 + x/2` is leading-order only; the x^2/6 term is 1.7e-3 at x = 0.1, so compare
-        // against it only where it is negligible.
-        for i in 6..40 {
-            let x = 10f64.powi(-i);
-            close(exprel(x), 1.0 + x / 2.0, 1e-12);
+    fn the_reciprocal_gamma_routes_split_the_line_at_the_integers() {
+        use RgammaRoute::{AtPositiveInfinity, Exponential, Pole, Reflection, Undefined};
+        for (x, want) in [
+            (f64::NAN, Undefined),
+            (f64::NEG_INFINITY, Undefined),
+            (f64::INFINITY, AtPositiveInfinity),
+            // The non-positive integers, and the signed zeros among them.
+            (0.0, Pole),
+            (-0.0, Pole),
+            (-1.0, Pole),
+            (-39.0, Pole),
+            (-f64::MAX, Pole),
+            // Either side of a pole is reflection, however close.
+            ((-1.0_f64).next_up(), Reflection),
+            ((-1.0_f64).next_down(), Reflection),
+            (-0.5, Reflection),
+            (-39.000_01, Reflection),
+            // The positive axis, including the subnormal floor and the top of the format.
+            (f64::MIN_POSITIVE, Exponential),
+            (0.5, Exponential),
+            (1.0, Exponential),
+            (175.0, Exponential),
+            (f64::MAX, Exponential),
+        ] {
+            assert_eq!(RgammaRoute::for_argument(x), want, "at {x:e}");
         }
-        for i in 1..40 {
-            let x = f64::from(i) * 0.25;
-            close(exprel(x), x.exp_m1() / x, 1e-14);
-            close(exprel(-x), (-x).exp_m1() / -x, 1e-14);
+        // The positive integers are *not* poles: `1/Γ(n)` is `1/(n−1)!`, finite and nonzero.
+        for n in 1..6 {
+            assert_eq!(RgammaRoute::for_argument(f64::from(n)), Exponential);
+            assert!(rgamma(f64::from(n)) > 0.0);
+        }
+    }
+
+    /// The six polygamma routes, including the three that all return `NaN`.
+    ///
+    /// The `Pole`/`Unsupported` split is invisible to any value assertion — both answer `NaN` —
+    /// but it is the difference between "this function has no value here" and "this
+    /// implementation does not reach a value that exists". Order is tested before argument, so
+    /// `ψ` and `ψ₁` keep their own edge behaviour: `polygamma(0, -0.5)` is a finite reflection
+    /// while `polygamma(2, -0.5)` is not reached at all.
+    #[test]
+    fn the_polygamma_routes_separate_a_pole_from_an_unimplemented_region() {
+        use PolygammaRoute::{Digamma, Hurwitz, Pole, Trigamma, Undefined, Unsupported};
+
+        // The two low orders take their own routes at every argument, `NaN` included.
+        for x in [f64::NAN, -3.0, -0.5, 0.0, 1.0, 1e10] {
+            assert_eq!(PolygammaRoute::for_arguments(0, x), Digamma, "at {x:e}");
+            assert_eq!(PolygammaRoute::for_arguments(1, x), Trigamma, "at {x:e}");
+        }
+        // And order 0 at a negative non-integer really does return a value, which is what makes
+        // the ordering load-bearing rather than cosmetic.
+        assert!(polygamma(0, -0.5).is_finite());
+        assert!(polygamma(2, -0.5).is_nan());
+
+        for order in [2, 3, 7] {
+            assert_eq!(PolygammaRoute::for_arguments(order, f64::NAN), Undefined);
+            // Poles at the non-positive integers, both signed zeros among them.
+            for x in [0.0, -0.0, -1.0, -2.0, -39.0] {
+                assert_eq!(PolygammaRoute::for_arguments(order, x), Pole, "at {x:e}");
+            }
+            // Real and finite there, but not reachable without a reflection formula.
+            for x in [-0.5, -1.5, -10.5, (-1.0_f64).next_up(), -1e10 - 0.5] {
+                assert_eq!(
+                    PolygammaRoute::for_arguments(order, x),
+                    Unsupported,
+                    "at {x:e}"
+                );
+            }
+            for x in [f64::MIN_POSITIVE, 0.5, 1.0, 1e10, f64::INFINITY] {
+                assert_eq!(PolygammaRoute::for_arguments(order, x), Hurwitz, "at {x:e}");
+            }
+            // Every NaN-returning arm agrees on the value, which is why only the route separates
+            // them.
+            for x in [f64::NAN, 0.0, -2.0, -0.5] {
+                assert!(polygamma(order, x).is_nan(), "at {x:e}");
+            }
         }
     }
 }

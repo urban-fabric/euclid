@@ -303,3 +303,102 @@ fn oddness_holds_in_every_branch() {
     assert_eq!(i1_over_i0(0.0), 0.0);
     assert_eq!(i1_over_i0(-0.0), 0.0);
 }
+
+/// `I₁ᵉ` returns `+0` at either zero, and `I₁`/`I₁ᵉ` are odd everywhere else.
+///
+/// The zero half is asserted through `is_sign_negative` rather than `==`, because `-0.0 == 0.0`:
+/// `replace < with <=` in `i1e`'s final sign step turns `+0.0` into `-0.0` and survived every
+/// other assertion in this crate. `cargo mutants` found it; review had not.
+///
+/// `i1_over_i0` is deliberately absent — it returns early on `ax == 0.0`, so the `x < 0.0` tests
+/// in its three branches cannot be reached with a zero argument and the same mutation there is
+/// *provably* equivalent rather than merely unkilled. See the module header.
+#[test]
+fn zero_is_unsigned_and_the_first_kind_is_odd() {
+    for (name, got) in [("i1e(+0)", i1e(0.0f64)), ("i1e(-0)", i1e(-0.0f64))] {
+        assert!(got == 0.0, "{name} must be zero, got {got:e}");
+        assert!(!got.is_sign_negative(), "{name} must be +0, not -0");
+    }
+    // Odd across the no-log, peak-factored and asymptotic forms in turn.
+    for &x in &[1e-30f64, 0.5, 0.999, 1.0, 3.0, 50.0, 700.0, 1e4, 1e6] {
+        assert_eq!(i1e(-x), -i1e(x), "i1e must be odd at x = {x:e}");
+    }
+}
+
+/// The regime split is one decision, so it is pinned in one place.
+///
+/// **`cargo mutants` asked for this test specifically.** `replace < with <=` on `i1e`'s
+/// `ax < I1_NO_LOG_MAX` survived the whole suite, and it is not an equivalent mutant — it moves
+/// `|x| = 1` from the peak-factored form to the no-logarithm one. No value assertion can see it,
+/// because a crossover is *sited* where its two forms agree. The routing is the thing with
+/// content, so it is asserted directly.
+///
+/// Both boundaries are checked at the constant and one ulp either side, since a `<` drifting to
+/// `<=` is exactly a one-ulp change.
+#[test]
+fn the_i_form_boundaries_sit_where_the_constants_say() {
+    use crate::kernels::bessel::modified_first::IForm;
+
+    assert_eq!(IForm::for_magnitude(0.0), IForm::NoLog);
+    assert_eq!(IForm::for_magnitude(5e-324), IForm::NoLog);
+    assert_eq!(
+        IForm::for_magnitude(f64::from_bits(I1_NO_LOG_MAX.to_bits() - 1)),
+        IForm::NoLog,
+        "one ulp below I1_NO_LOG_MAX must still skip the logarithm"
+    );
+    assert_eq!(
+        IForm::for_magnitude(I1_NO_LOG_MAX),
+        IForm::PeakFactored,
+        "I1_NO_LOG_MAX itself is peak-factored, as k_peak = round(0.5) = 1 already made it"
+    );
+    // An interior point of the peak-factored band. It was `700.0` while `I_ASYMPTOTIC_MIN` was
+    // `1e4`; that argument is on the expansion now, so this picks one that is still comfortably
+    // inside the series' range rather than one that merely used to be.
+    assert_eq!(IForm::for_magnitude(10.0), IForm::PeakFactored);
+    assert_eq!(IForm::for_magnitude(700.0), IForm::Asymptotic);
+    assert_eq!(
+        IForm::for_magnitude(f64::from_bits(I_ASYMPTOTIC_MIN.to_bits() - 1)),
+        IForm::PeakFactored,
+        "one ulp below I_ASYMPTOTIC_MIN must still use the series"
+    );
+    assert_eq!(
+        IForm::for_magnitude(I_ASYMPTOTIC_MIN),
+        IForm::Asymptotic,
+        "I_ASYMPTOTIC_MIN itself takes the expansion"
+    );
+    assert_eq!(IForm::for_magnitude(f64::MAX), IForm::Asymptotic);
+    assert_eq!(IForm::for_magnitude(f64::INFINITY), IForm::Asymptotic);
+
+    // The unification the enum rests on, and the only step of the refactor that was not a
+    // definitional rewrite: `NoLog` must coincide with `I₀`'s peak index falling below one,
+    // which is what `ln_i0_minus_x` used to test separately.
+    let mut ax = 1e-8f64;
+    while ax < 4.0 {
+        let k_peak = (ax * 0.5).round().max(0.0);
+        assert_eq!(
+            IForm::for_magnitude(ax) == IForm::NoLog,
+            k_peak < 1.0,
+            "NoLog must coincide with k_peak < 1 at {ax:e}"
+        );
+        ax *= 1.0005;
+    }
+}
+
+/// The `ln I₀` crossover, which is this format's own measurement.
+///
+/// The series the low arm sums, and its term count, moved to [`crate::math::bessel`] — generic,
+/// and tested there for both formats at once. What stays here is the threshold: it is a separate
+/// measurement in each precision, and the comparison that applies it survived the suite because
+/// the crossover is *sited* where the two forms agree, which is what makes it a good crossover.
+#[test]
+fn the_log_i0_crossover_is_half_open() {
+    use LnI0Form::{Series, Shifted};
+    assert_eq!(
+        LnI0Form::for_magnitude(LN_I0_SERIES_MAX.next_down()),
+        Series
+    );
+    assert_eq!(LnI0Form::for_magnitude(LN_I0_SERIES_MAX), Shifted);
+    assert_eq!(LnI0Form::for_magnitude(LN_I0_SERIES_MAX.next_up()), Shifted);
+    assert_eq!(LnI0Form::for_magnitude(0.0), Series);
+    assert_eq!(LnI0Form::for_magnitude(1e300), Shifted);
+}

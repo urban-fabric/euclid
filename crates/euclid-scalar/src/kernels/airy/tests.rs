@@ -15,14 +15,16 @@
 //! both: first by probing every crossover at ulp resolution, then by running each pair of
 //! neighbouring routes against *each other* across the overlap where both should be good.
 
+mod routes;
+
 use super::march;
-use super::series::{AI_0, NEG_AI_PRIME_0, SQRT_3};
+use super::series::SQRT_3;
 use super::{
     AI_SERIES_MAX, BI_SERIES_MAX, LEADING_MIN, MARCH_MAX, SERIES_MAX, ai, ai_pair_scaled, ai_prime,
-    bi, bi_pair_scaled, bi_prime, bie, leading_scaled, negative_asymptotic, positive_scaled,
-    series, zeta,
+    bi, bi_pair_scaled, bi_prime, bie, negative_asymptotic, positive_scaled, series, zeta,
 };
 use crate::Real;
+use crate::math::airy::{AI_0, NEG_AI_PRIME_0};
 use euclid_utils::{assert_close, no_step_across, rel, sweep};
 
 #[test]
@@ -143,7 +145,7 @@ fn the_series_and_the_k_quadrature_agree_across_their_overlap() {
     for x in sweep(0.3, AI_SERIES_MAX, 40) {
         let z = zeta(x);
         let (series_ai, series_ai_prime, _, _) = series::airy(x);
-        let (quad_ai, quad_ai_prime) = ai_pair_scaled(x, z);
+        let (quad_ai, quad_ai_prime) = ai_pair_scaled(x, z).into_parts();
         let decay = (-z).exp();
         assert_close(
             quad_ai * decay,
@@ -168,7 +170,7 @@ fn the_series_and_the_i_asymptotic_agree_across_their_overlap() {
     for x in sweep(BI_SERIES_MAX, 20.0, 40) {
         let z = zeta(x);
         let (_, _, series_bi, series_bi_prime) = series::airy(x);
-        let (asym_bi, asym_bi_prime) = bi_pair_scaled(x, z);
+        let (asym_bi, asym_bi_prime) = bi_pair_scaled(x, z).into_parts();
         let decay = (-z).exp();
         // The bound carries `ζ·ε`, because *this comparison* is what introduces it: the series
         // produces the unscaled value, so reaching the scaled one costs a multiplication by
@@ -235,7 +237,7 @@ fn the_leading_order_branch_matches_the_route_it_replaces() {
     // compared directly: if the threshold were set too low, this would catch it.
     for x in [LEADING_MIN * 0.5, LEADING_MIN * 0.9, LEADING_MIN] {
         let full = positive_scaled(x, zeta(x));
-        let leading = leading_scaled(x);
+        let leading = crate::math::airy::leading_scaled(x);
         for (name, got, want) in [
             ("Aie", leading.0, full.0),
             ("Aie'", leading.1, full.1),
@@ -277,7 +279,7 @@ fn bi_asymptotic_matches_the_sum_at_opposite_orders() {
         let z = super::zeta(x);
         let bi = (x / 3.0).sqrt() * (i_scaled(-1.0 / 3.0, z) + i_scaled(1.0 / 3.0, z));
         let bi_prime = (x / super::SQRT_3) * (i_scaled(-2.0 / 3.0, z) + i_scaled(2.0 / 3.0, z));
-        let (actual, actual_prime) = super::bi_pair_scaled(x, z);
+        let (actual, actual_prime) = super::bi_pair_scaled(x, z).into_parts();
         assert_eq!(actual.to_bits(), bi.to_bits());
         assert_eq!(actual_prime.to_bits(), bi_prime.to_bits());
     }
@@ -321,8 +323,8 @@ fn the_positive_crossover_agrees_from_both_sides() {
     let z = super::zeta(x);
     let (ai_a, aip_a, bi_a, bip_a) = super::positive_scaled(x, z);
     // The other side of the comparison: what the mutant would take at exactly this argument.
-    let (ai_b, aip_b) = super::ai_pair_scaled(x, z);
-    let (bi_b, bip_b) = super::bi_pair_scaled(x, z);
+    let (ai_b, aip_b) = super::ai_pair_scaled(x, z).into_parts();
+    let (bi_b, bip_b) = super::bi_pair_scaled(x, z).into_parts();
 
     for (name, from_series, from_asymptotic) in [
         ("Ai^e", ai_a, ai_b),

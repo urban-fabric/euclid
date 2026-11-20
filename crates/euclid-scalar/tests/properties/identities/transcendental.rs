@@ -279,6 +279,30 @@ property! {
     /// Euler–Maclaurin route cannot reach and reflection cannot escape.
     ///
     /// Measured `4.1e-15` on `(0, 1)` and `5.4e-14` on `(−1, 0)`.
+    ///
+    /// # The budget has to carry `1 − s`'s own rounding, which blows up near zero
+    ///
+    /// A flat `1e-12` here was wrong, and wrong in a way that looked exactly like a kernel
+    /// defect: `euclid-stability` reported a `1.0e-12` disagreement at
+    /// `s = −1.1100254952911559e-4` and the obvious reading was that one of the two `ζ`
+    /// evaluations had lost accuracy near the pole. Neither had. Measured against references
+    /// computed in `Decimal` at the *exact* `f64` arguments, both routes hold to `4.4e-16`
+    /// across `1 ± 2^{-13}`.
+    ///
+    /// The error is in this expression, not in what it calls. `ζ(1−s)` is evaluated at the `f64`
+    /// nearest to `1 − s`, and that rounding is worth `ulp(1)/2 = 2^{-53}` of absolute error in
+    /// the argument. Near the pole `ζ(1+d) ≈ 1/d`, so a perturbation of `d` is amplified by the
+    /// full condition number `|d ζ'/ζ| ≈ 1`: the *relative* error of `ζ(1−s)` is
+    /// `≈ 2^{-53}/|s|`, which is `1.0e-12` at the reported `s` — the discrepancy exactly, not
+    /// approximately.
+    ///
+    /// So the identity's two sides cannot agree more closely than `f64` can state the argument
+    /// of one of them, and the budget below says so. It grows without bound as `s → 0`, which is
+    /// the honest statement: the check genuinely weakens there, and it stops meaning anything at
+    /// `|s| < 2^{-53}` where `1 − s` rounds to `1` and `ζ` returns `+∞` — which the finiteness
+    /// guard below already drops. This is the same hazard CONTRIBUTING.md's "Provenance includes
+    /// the exact argument" rule covers, arising inside a test's own arithmetic rather than in a
+    /// pasted reference.
     fn zeta_satisfies_its_functional_equation_inside_the_strip(
         s in generate::float::in_range(-0.99, 0.99),
     ) {
@@ -296,12 +320,15 @@ property! {
         if !reflected.is_finite() {
             return Ok(());
         }
+        // `1e-12` is the floor the two kernels earn on their own; the second term is what
+        // rounding `1 - s` costs, with a factor of four of headroom over the derivation.
+        let argument_rounding = 8.0 * f64::EPSILON / s.abs();
         relation::agree(
             "zeta(s) = 2^s pi^(s-1) sin(pi s/2) Gamma(1-s) zeta(1-s)",
             (),
             |()| Real::zeta(s),
             |()| reflected,
-            &Relative(1e-12),
+            &Relative(1e-12 + argument_rounding),
         )?;
     }
 
@@ -365,6 +392,97 @@ property! {
         check!(
             Real::zeta(60.0f64) == 1.0,
             "zeta(60) saturates to exactly one"
+        );
+    }
+}
+
+property! {
+    // Floors on all four labelled regions, at roughly half the thinnest coverage measured over
+    // six seeds. `trig series` is the scarce one at 12.8–15.8%; the `Ei` split is near even.
+    // These are the two crossovers this property exists to straddle — `TRIG_SERIES_MAX` at 4 and
+    // `EI_ASYMPTOTIC_MIN` at 20 — so a run that stopped reaching either side should fail rather
+    // than report a clean pass over half the routes.
+    #![config(settings("f32_native_classical")
+        .cases(600)
+        .require("trig series", 6.0)
+        .require("trig fraction", 60.0)
+        .require("Ei series", 20.0)
+        .require("Ei asymptotic", 40.0))]
+
+    /// The native `f32` integrals and Lambert `W`, through identities rather than values.
+    ///
+    /// `Si`, `Ci`, `E₁`, `Ei` and `W` all became native in this tree, and none had generated
+    /// coverage before: while they narrowed, every identity they satisfied was `f64`'s identity
+    /// one rounding away. These are the laws that reach their branch structure — `Si`/`Ci` switch
+    /// series to continued fraction at `4`, `E₁` at `1`, `Ei` series to asymptotic at `20`, and
+    /// `W` between three seeds at `−1/e + 0.01` and `1.5`.
+    ///
+    /// Each law is chosen to fail in a way a value check would not:
+    ///
+    /// - **`W(x)·e^{W(x)} = x`** is the defining equation, so it holds at every argument with no
+    ///   reference value, and it is the only check that would catch a seed landing in the wrong
+    ///   basin — the result would still be *a* solution of a nearby problem, just not this one.
+    /// - **`Ei(x) = −E₁(−x)`** ties the two exponential integrals together across the origin,
+    ///   which is the one place their four routes meet.
+    /// - **`Si` odd, `Ci` real only for `x > 0`**, and both bounded: shape constraints the
+    ///   continued fraction would violate first if its Lentz recurrence stalled.
+    fn the_native_f32_classical_identities_hold(x in generate::float32::in_range(0.01, 60.0)) {
+        if !x.is_finite() || x <= 0.0 {
+            return Ok(());
+        }
+        classify!("trig series", x < 4.0);
+        classify!("trig fraction", x >= 4.0);
+        classify!("Ei series", x < 20.0);
+        classify!("Ei asymptotic", x >= 20.0);
+
+        // W's defining equation. Relative, because W spans decades over this range.
+        let w = Real::lambert_w(x);
+        check!(w.is_finite() && w > 0.0, "W({x:e}) = {w:e} off the branch");
+        let back = w * w.exp();
+        relation::agree(
+            "f32: W(x) e^W(x) = x",
+            (),
+            |()| f64::from(back),
+            |()| f64::from(x),
+            &Relative(64.0 * f64::from(f32::EPSILON)),
+        )?;
+
+        // Ei(-x) = -E1(x), across the origin where all four routes meet.
+        let reflected = Real::exp_int_ei(-x);
+        let negated = -Real::exp_int_e1(x);
+        if reflected.is_finite() && negated.is_finite() && negated != 0.0 {
+            relation::agree(
+                "f32: Ei(-x) = -E1(x)",
+                (),
+                |()| f64::from(reflected),
+                |()| f64::from(negated),
+                &Relative(64.0 * f64::from(f32::EPSILON)),
+            )?;
+        }
+
+        // Si is odd, and bounded by its limit plus the first lobe.
+        let si = Real::sin_int(x);
+        check!(
+            Real::sin_int(-x) == -si,
+            "f32 Si must be odd: Si({x:e}) = {si:e}, Si(-x) = {:e}",
+            Real::sin_int(-x)
+        );
+        check!(
+            si.abs() <= 1.86,
+            "f32 Si({x:e}) = {si:e} exceeds its global bound"
+        );
+        // Ci is real for positive argument and bounded above by its maximum.
+        let ci = Real::cos_int(x);
+        check!(
+            ci.is_finite() && ci <= 0.473,
+            "f32 Ci({x:e}) = {ci:e} is not a bounded real"
+        );
+        // E1 is positive and strictly decreasing.
+        let e1 = Real::exp_int_e1(x);
+        let further = Real::exp_int_e1(x * 1.5);
+        check!(
+            e1 > 0.0 && further <= e1,
+            "f32 E1 must be positive and decreasing: E1({x:e}) = {e1:e}, E1(1.5x) = {further:e}"
         );
     }
 }

@@ -25,10 +25,18 @@
 //! layout — see its header for which functions are evaluated natively in single precision and
 //! which deliberately narrow the `f64` result, and why that distinction is not a shortcut.
 //!
-//! [`erf`](crate::kernels::erf) is the exception to the mirror: its two precisions sit together in one directory, as
-//! `erf/mod.rs` and `erf/f32.rs`, with [`f32`](mod@crate::kernels::f32) re-exporting the latter so the call paths stay
-//! uniform. That is the shape the rest of the tree is intended to take; it is being migrated
-//! one family at a time rather than in a single sweep.
+//! **The mirror has no exceptions.** `erf` was briefly folded the other way — both precisions in
+//! one directory, with [`f32`](mod@crate::kernels::f32) re-exporting the child — and it has been
+//! folded back. One tree per precision is the layout: `kernels/<family>.rs` is the `f64`
+//! implementation and `kernels/f32/<family>.rs` is its peer, for every family without exception,
+//! so a reader never has to learn which shape a given family happens to use.
+//!
+//! What that layout deliberately does *not* duplicate is anything precision-generic. A step whose
+//! arithmetic carries no format-dependent constant belongs in [`crate::math`], where it is written
+//! once over `T: HostReal` and tested once for both formats; a *threshold* belongs beside the code
+//! it governs, because it is a separate measurement in each format rather than one value shared.
+//! That line — generic arithmetic up, measured constants down — is what keeps the two trees from
+//! drifting without pretending they are the same code.
 //!
 //! # Where the tests are
 //!

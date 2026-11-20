@@ -73,23 +73,83 @@ pub(crate) fn ndtri(p: f64) -> f64 {
 /// Derived from the quantile rather than from `erf_inv(1 - y)`, which cancels for small `y`.
 /// Since `erfc(x) = 2 Phi(-x sqrt 2)`, the inverse is `-ndtri(y/2) / sqrt 2`, which stays
 /// accurate as far into the tail as [`ndtri`] does.
+/// Which route inverts `erfc` at this probability.
+///
+/// `erfc` maps the whole line onto `(0, 2)`, so the two ends of that interval are limits rather
+/// than values and everything outside it is off the domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErfcInvRoute {
+    /// Outside `[0, 2]`. `NaN` included without a separate test: `contains` is already false for
+    /// it, so an `is_nan` arm here would be dead.
+    Undefined,
+    /// `y = 0`, the infimum of `erfc`'s range, approached as `x → +∞`.
+    AtZero,
+    /// `y = 2`, the supremum, approached as `x → −∞`.
+    AtTwo,
+    /// An interior probability: invert through the normal quantile, in whichever coordinate the
+    /// halving survives. See [`HalvingCoordinate`].
+    Interior,
+}
+
+impl ErfcInvRoute {
+    fn for_probability(y: f64) -> Self {
+        if !(0.0..=2.0).contains(&y) {
+            Self::Undefined
+        } else if y == 0.0 {
+            Self::AtZero
+        } else if y == 2.0 {
+            Self::AtTwo
+        } else {
+            Self::Interior
+        }
+    }
+}
+
+/// Which coordinate the half-probability `y/2` is formed in.
+///
+/// `erfc(x) = 2Φ(−x√2)`, so the inverse wants `Φ⁻¹(y/2)`. Halving is exact for every normal `y`
+/// — the exponent simply drops by one — but **not** once `y` is subnormal, where the mantissa has
+/// no bit left to shift into and `y/2` rounds, possibly to zero. That is a threshold on the
+/// *representation* rather than on the magnitude of the answer, so it is tested for directly as
+/// `half + half == y` rather than compared against a constant.
+///
+/// The same enum the `f32` peer in [`super::f32::normal`] carries, where the band matters more:
+/// subnormals start at `1.18e-38` there against `2.2e-308` here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HalvingCoordinate {
+    /// `y/2` is exact. Invert it directly through the quantile.
+    Exact,
+    /// `y/2` would round. Form `ln(y/2) = ln y − ln 2` instead and refine in the log domain,
+    /// where the probability stays representable far past where it underflows.
+    Logarithmic,
+}
+
+impl HalvingCoordinate {
+    fn for_probability(y: f64, half: f64) -> Self {
+        if half + half == y {
+            Self::Exact
+        } else {
+            Self::Logarithmic
+        }
+    }
+}
+
 pub(crate) fn erfc_inv(y: f64) -> f64 {
-    if y.is_nan() || !(0.0..=2.0).contains(&y) {
-        return f64::NAN;
+    match ErfcInvRoute::for_probability(y) {
+        ErfcInvRoute::Undefined => f64::NAN,
+        ErfcInvRoute::AtZero => f64::INFINITY,
+        ErfcInvRoute::AtTwo => f64::NEG_INFINITY,
+        ErfcInvRoute::Interior => {
+            let half = 0.5 * y;
+            match HalvingCoordinate::for_probability(y, half) {
+                HalvingCoordinate::Exact => -ndtri(half) * FRAC_1_SQRT_2,
+                HalvingCoordinate::Logarithmic => {
+                    let ln_half = y.ln() - LN_2;
+                    -refine_lower(ln_half, tail_start_from_log(ln_half)) * FRAC_1_SQRT_2
+                }
+            }
+        }
     }
-    if y == 0.0 {
-        return f64::INFINITY;
-    }
-    if y == 2.0 {
-        return f64::NEG_INFINITY;
-    }
-    let p = 0.5 * y;
-    if p + p != y {
-        // Halving rounded or erased the probability. Divide in the log domain.
-        let ln_p = y.ln() - LN_2;
-        return -refine_lower(ln_p, tail_start_from_log(ln_p)) * FRAC_1_SQRT_2;
-    }
-    -ndtri(p) * FRAC_1_SQRT_2
 }
 
 #[cfg(test)]
@@ -432,5 +492,57 @@ mod tests {
             // Check through the scaled form, since erfc(x) itself has underflowed.
             close(erfcx(x).ln() - x * x, y.ln(), 1e-9);
         }
+    }
+
+    /// The four routes that invert `erfc`, and the coordinate the halving is formed in.
+    ///
+    /// `erfc` maps the line onto `(0, 2)`, so `0` and `2` are limits rather than attained values
+    /// and everything outside `[0, 2]` is off the domain — `NaN` included, which `contains`
+    /// rejects without a separate test.
+    #[test]
+    fn the_erfc_inverse_routes_cover_its_range() {
+        use ErfcInvRoute::{AtTwo, AtZero, Interior, Undefined};
+        use HalvingCoordinate::{Exact, Logarithmic};
+
+        for y in [
+            f64::NAN,
+            -f64::MIN_POSITIVE,
+            -0.1,
+            2.0_f64.next_up(),
+            2.5,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert_eq!(ErfcInvRoute::for_probability(y), Undefined, "at {y:e}");
+            assert!(erfc_inv(y).is_nan(), "at {y:e}");
+        }
+        assert_eq!(ErfcInvRoute::for_probability(0.0), AtZero);
+        assert_eq!(ErfcInvRoute::for_probability(-0.0), AtZero);
+        assert_eq!(erfc_inv(0.0), f64::INFINITY);
+        assert_eq!(ErfcInvRoute::for_probability(2.0), AtTwo);
+        assert_eq!(erfc_inv(2.0), f64::NEG_INFINITY);
+        for y in [f64::MIN_POSITIVE, 0.5, 1.0, 1.5, 2.0_f64.next_down()] {
+            assert_eq!(ErfcInvRoute::for_probability(y), Interior, "at {y:e}");
+        }
+
+        // Halving is exact for every normal `y` — the exponent just drops — and rounds once `y`
+        // is subnormal, where the mantissa has no bit left to shift into.
+        for y in [1.0_f64, 0.5, 1.5, f64::MIN_POSITIVE] {
+            assert_eq!(
+                HalvingCoordinate::for_probability(y, 0.5 * y),
+                Exact,
+                "at {y:e}"
+            );
+        }
+        let subnormal = f64::from_bits(1);
+        assert_eq!(0.5 * subnormal, 0.0, "the least subnormal halves to zero");
+        assert_eq!(
+            HalvingCoordinate::for_probability(subnormal, 0.5 * subnormal),
+            Logarithmic
+        );
+        // And the log route still returns a finite, ordered answer out there, which is the whole
+        // reason it exists.
+        assert!(erfc_inv(subnormal).is_finite());
+        assert!(erfc_inv(subnormal) > erfc_inv(f64::from_bits(2)) - 1.0);
     }
 }

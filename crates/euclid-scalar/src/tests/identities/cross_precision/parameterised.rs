@@ -81,20 +81,27 @@ fn the_incomplete_gamma_tails_agree_across_precisions() {
     }
 }
 
-/// The regularised incomplete beta is **bit-exact** at every shape pair measured.
+/// The regularised incomplete beta, now a measured budget rather than bit-exact.
 ///
-/// A budget of zero across four parameter pairs and four hundred arguments each is not luck: it
-/// says the f32 path computes in f64 and rounds once. Pinning zero keeps that true and would
-/// catch someone converting it into a genuine f32 path — the change that would move this kernel
-/// into a budget rather than merely widen one.
+/// This test used to pin **zero** across four shape pairs, and said so explicitly: "it says the
+/// f32 path computes in f64 and rounds once. Pinning zero ... would catch someone converting it
+/// into a genuine f32 path". It did catch exactly that, which is the outcome it was written for.
+///
+/// `beta_reg` is native now. The budget below is the measured gap at these small shapes, where
+/// the continued fraction runs — and it is dominated by the deep tail rather than by the bulk:
+/// the worst point is `a = b = 10` at `x = 0.0185`, where `I` is `3.7e-13` and an ulp count
+/// against so small a value is mostly the metric. the function's worst case is elsewhere and much larger — about
+/// `6.1e-5` absolute near `min(a,b) = 1e3`, against narrowing's `1e-9`. See
+/// `kernels::f32::beta`'s `BETA_EDGEWORTH_MIN` for why that trade is the port rather than a
+/// defect in it.
 #[test]
-fn the_incomplete_beta_is_bit_exact_across_precisions() {
+fn the_incomplete_beta_agrees_across_precisions() {
     for &(a, b) in &[(0.5_f64, 0.5_f64), (2.0, 3.0), (5.0, 1.0), (10.0, 10.0)] {
         agrees_to!(
             format!("beta_reg(a={a}, b={b})"),
             0.001,
             0.999,
-            0,
+            49,
             move |x: f64| Real::beta_reg(x, a, b),
             #[allow(clippy::cast_possible_truncation)]
             move |x: f32| Real::beta_reg(x, a as f32, b as f32)
@@ -105,9 +112,10 @@ fn the_incomplete_beta_is_bit_exact_across_precisions() {
 /// The two quantile inverses — the iterative solvers, and the largest survivor cluster.
 ///
 /// Both are Newton or bisection loops over a CDF, so their agreement is bounded by the CDF's
-/// and then by how the iteration terminates. `beta_reg_inv` is the looser of the two despite
-/// `beta_reg` itself being bit-exact, which locates the disagreement in the solver rather than
-/// in the function it inverts — the two stop at different points.
+/// and then by how the iteration terminates. `beta_reg_inv` was the looser of the two while
+/// `beta_reg` was bit-exact, which located the disagreement in the solver rather than in the
+/// function it inverts. Both are native now, so these budgets carry the CDF's own gap too —
+/// `(0.5, 0.5)` went from `4` to `16` on that account.
 #[test]
 fn the_quantile_inverses_agree_across_precisions() {
     for &(a, budget) in &[(0.5_f64, 37_u32), (1.0, 30), (2.5, 18), (10.0, 15)] {
@@ -122,7 +130,7 @@ fn the_quantile_inverses_agree_across_precisions() {
         );
     }
     for &(a, b, budget) in &[
-        (0.5_f64, 0.5_f64, 4_u32),
+        (0.5_f64, 0.5_f64, 16_u32),
         (2.0, 3.0, 50),
         (5.0, 1.0, 7),
         (10.0, 10.0, 15),

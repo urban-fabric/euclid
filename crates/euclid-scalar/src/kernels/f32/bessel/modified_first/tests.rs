@@ -176,3 +176,120 @@ fn the_unscaled_forms_overflow_only_where_f32_itself_runs_out() {
         );
     }
 }
+
+/// The regime split is one decision, so it is pinned in one place.
+///
+/// Worth its own test because [`IForm`] replaced the same comparison re-tested in five
+/// functions, and the thing a reader cannot check by eye is that the boundaries did not move
+/// while being consolidated. Both are asserted at the constant *and* at its neighbouring
+/// representable values, since a `<` silently becoming a `<=` is exactly a one-ulp change.
+#[test]
+fn the_i_form_boundaries_sit_where_the_constants_say() {
+    // Open from below, closed from above, matching the constants' names.
+    assert_eq!(IForm::for_magnitude(0.0), IForm::NoLog);
+    assert_eq!(IForm::for_magnitude(f32::MIN_POSITIVE), IForm::NoLog);
+    assert_eq!(
+        IForm::for_magnitude(f32::from_bits(I1_NO_LOG_MAX.to_bits() - 1)),
+        IForm::NoLog,
+        "one ulp below I1_NO_LOG_MAX must still skip the logarithm"
+    );
+    assert_eq!(
+        IForm::for_magnitude(I1_NO_LOG_MAX),
+        IForm::PeakFactored,
+        "I1_NO_LOG_MAX itself is peak-factored, as k_peak = round(0.5) = 1 already made it"
+    );
+    assert_eq!(IForm::for_magnitude(50.0), IForm::PeakFactored);
+    assert_eq!(
+        IForm::for_magnitude(f32::from_bits(I_ASYMPTOTIC_MIN.to_bits() - 1)),
+        IForm::PeakFactored,
+        "one ulp below I_ASYMPTOTIC_MIN must still use the series"
+    );
+    assert_eq!(
+        IForm::for_magnitude(I_ASYMPTOTIC_MIN),
+        IForm::Asymptotic,
+        "I_ASYMPTOTIC_MIN itself takes the expansion"
+    );
+    assert_eq!(IForm::for_magnitude(f32::MAX), IForm::Asymptotic);
+    assert_eq!(IForm::for_magnitude(f32::INFINITY), IForm::Asymptotic);
+
+    // The unification the enum rests on: `NoLog` is exactly where `I₀`'s peak index falls below
+    // one, which is what `ln_i0_minus_x` used to test separately. If these ever disagree, the
+    // two boundaries are no longer one split and the enum's docs are wrong.
+    let mut ax = 1e-6f32;
+    while ax < 4.0 {
+        let k_peak = (ax * 0.5).round().max(0.0);
+        assert_eq!(
+            IForm::for_magnitude(ax) == IForm::NoLog,
+            k_peak < 1.0,
+            "NoLog must coincide with k_peak < 1 at {ax:e}"
+        );
+        ax *= 1.0009;
+    }
+}
+
+/// `I₁` and `I₁ᵉ` are odd, across every form the regime split selects.
+///
+/// **This gap was found by `cargo mutants`, not by review.** Both `delete -` and
+/// `replace < with ==` in `i1e`'s sign handling survived the whole suite, which means nothing
+/// here ever passed a negative argument — the kernel could have been *even* and every test
+/// still passed. The `f64` peer killed the same two mutants, so this was an `f32`-only hole,
+/// and the sibling `the_ratio_is_odd_in_every_branch` covers only `i1_over_i0`.
+///
+/// Arguments span all three [`IForm`] arms, because the sign is reapplied after the form is
+/// chosen and a mutation in one arm is invisible from another.
+#[test]
+fn the_first_kind_is_odd_in_every_form() {
+    // NoLog, PeakFactored, then Asymptotic.
+    for &x in &[
+        1e-20f32, 1e-6, 0.5, 0.999, 1.0, 1.5, 7.0, 50.0, 88.0, 100.0, 250.0, 1e30,
+    ] {
+        assert_eq!(i1e(-x), -i1e(x), "i1e must be odd at x = {x:e}");
+        // `I₁` itself overflows past |x| ≈ 89, where oddness still holds as ∓∞.
+        assert_eq!(i1(-x), -i1(x), "i1 must be odd at x = {x:e}");
+    }
+    assert_eq!(i1e(f32::INFINITY), 0.0);
+    assert_eq!(i1e(f32::NEG_INFINITY), 0.0);
+}
+
+/// Zero comes back **positive** from all three, whichever sign the argument carried.
+///
+/// Asserted through `is_sign_negative` rather than `==`, because `-0.0 == 0.0` and an equality
+/// test cannot see this: `replace < with <=` in the sign handling of `i1`, `i1e` and
+/// `i1_over_i0` flips `+0.0` to `-0.0` and survived every existing assertion, in both formats.
+///
+/// Note this is a *convention* rather than strict oddness, which would want `I₁(−0) = −0`. The
+/// `x < 0.0` test is false for `-0.0`, so the negation is skipped and `+0.0` is returned for
+/// both zeros. Pinned here so the choice is visible and a future change to it is deliberate.
+#[test]
+fn zero_is_unsigned_in_the_first_kind() {
+    for (name, got) in [
+        ("i1(+0)", i1(0.0f32)),
+        ("i1(-0)", i1(-0.0f32)),
+        ("i1e(+0)", i1e(0.0f32)),
+        ("i1e(-0)", i1e(-0.0f32)),
+        ("i1_over_i0(+0)", i1_over_i0(0.0f32)),
+        ("i1_over_i0(-0)", i1_over_i0(-0.0f32)),
+    ] {
+        assert!(got == 0.0, "{name} must be zero, got {got:e}");
+        assert!(!got.is_sign_negative(), "{name} must be +0, not -0");
+    }
+}
+
+/// The `ln I₀` crossover, which is this format's own measurement.
+///
+/// The series the low arm sums, and its term count, moved to [`crate::math::bessel`] — generic,
+/// and tested there for both formats at once. What stays here is the threshold: it is a separate
+/// measurement in each precision, and the comparison that applies it survived the suite because
+/// the crossover is *sited* where the two forms agree, which is what makes it a good crossover.
+#[test]
+fn the_log_i0_crossover_is_half_open() {
+    use LnI0Form::{Series, Shifted};
+    assert_eq!(
+        LnI0Form::for_magnitude(LN_I0_SERIES_MAX.next_down()),
+        Series
+    );
+    assert_eq!(LnI0Form::for_magnitude(LN_I0_SERIES_MAX), Shifted);
+    assert_eq!(LnI0Form::for_magnitude(LN_I0_SERIES_MAX.next_up()), Shifted);
+    assert_eq!(LnI0Form::for_magnitude(0.0), Series);
+    assert_eq!(LnI0Form::for_magnitude(1e30), Shifted);
+}

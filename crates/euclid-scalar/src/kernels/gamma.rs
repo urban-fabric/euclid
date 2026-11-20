@@ -37,62 +37,157 @@ const LANCZOS: [f64; 9] = [
 const GAMMA_OVERFLOW_MIN: f64 = 171.7;
 
 /// Natural log of the gamma function on intervals where `Γ(x)` is positive.
+/// Which form evaluates `lnΓ` at this argument.
+///
+/// Seven arms, and more than the single-precision peer's three: this kernel carries the two
+/// zero-neighbourhood series and the pole test that one does not. Matched rather than tested as a
+/// chain of early returns, so the ordering is readable in one place and a new regime cannot be
+/// added without the compiler asking what it returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LnGammaMethod {
+    /// `NaN`, and `−∞` where no limit exists.
+    Undefined,
+    /// `+∞`, and the non-positive integers.
+    ///
+    /// The poles have to be tested for rather than left to the reflection below, because
+    /// `sin(πx)` at an integer `x` does not evaluate to zero — it evaluates to the rounding
+    /// residue of `πx`, whose *sign* is then arbitrary. That made `ln_gamma` return `NaN` at `−1`
+    /// and `−5` (residue negative, so `ln` of a negative) but a plausible finite number at `−2`,
+    /// `−20` and `−1e5`: `36.4`, `−7.55`, `−1.05e6`. All three were noise. `ln|Γ|` does tend to
+    /// `+∞` at a pole, from both sides, so the limit is well defined and is returned.
+    Divergent,
+    /// `|x − 1| ≤ `[`SMALL_SHAPE`]: the shifted series about the first zero.
+    ///
+    /// `lnΓ` has zeros at `1` and `2` and nowhere else, and beside a zero the general route
+    /// delivers an *absolute* error where a caller needs a *relative* one. Lanczos returns
+    /// `−8.88e-16` at `x = 1`, where the answer is `0`, and `0` at `x = 1 + ulp`, where the answer
+    /// is `−γ·ulp = −1.28e-16`. Neither is far wrong absolutely; both are wrong by everything
+    /// relatively, and it is the relative form a log-density normalisation at shape one propagates
+    /// — `ln_beta(1, 1)` carried the same `−8.9e-16` for the same reason.
+    NearUnitZero,
+    /// `|x − 2| ≤ SMALL_SHAPE`: the same, through `Γ(2+b) = (1+b)·Γ(1+b)`.
+    ///
+    /// Both shifts are **exact** — `x − 1` and `x − 2` lose nothing this close to them, by
+    /// Sterbenz — and both forms are exactly zero at the zero, so the two exact zeros fall out of
+    /// the general branch rather than needing an equality test of their own.
+    NearTwoZero,
+    /// `0 < x ≤ SMALL_SHAPE`: the pole at the origin, through `lnΓ(1+x)/x`.
+    ///
+    /// Thresholded at [`SMALL_SHAPE`], which is the range that polynomial is fitted for; past it
+    /// its own truncation takes over, reaching `9.9e-11` by `a = 0.1`.
+    SmallShape,
+    /// Negative arguments: reflect to the positive side through `lnΓ(1−x)`.
+    Reflected,
+    /// Everything else: the Lanczos log form, whose cancellation `lnΓ` is by then big enough to
+    /// absorb.
+    Lanczos,
+}
+
+impl LnGammaMethod {
+    /// The non-finite cases and the poles first, then the three neighbourhoods, then the sign.
+    fn for_argument(x: f64) -> Self {
+        if x.is_nan() || x == f64::NEG_INFINITY {
+            Self::Undefined
+        } else if x == f64::INFINITY || (x <= 0.0 && x == x.trunc()) {
+            Self::Divergent
+        } else if (x - 1.0).abs() <= SMALL_SHAPE {
+            Self::NearUnitZero
+        } else if (x - 2.0).abs() <= SMALL_SHAPE {
+            Self::NearTwoZero
+        } else if x.is_sign_positive() && x <= SMALL_SHAPE {
+            Self::SmallShape
+        } else if use_gamma_reflection(x) {
+            Self::Reflected
+        } else {
+            Self::Lanczos
+        }
+    }
+}
+
 pub(crate) fn ln_gamma(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    // ln Gamma grows without bound, so the limit at +inf is +inf rather than NaN.
-    if x.is_infinite() {
-        return if x > 0.0 { f64::INFINITY } else { f64::NAN };
-    }
-    // The non-positive integers are the poles of Γ. `ln|Γ|` does tend to `+∞` there, and
-    // from both sides, so the limit is well defined and is returned.
-    //
-    // This has to be tested for rather than left to the reflection below, because
-    // `sin(πx)` at an integer `x` does not evaluate to zero — it evaluates to the rounding
-    // residue of `πx`, whose *sign* is then arbitrary. That made `ln_gamma` return `NaN` at
-    // `−1` and `−5` (residue negative, so `ln` of a negative) but a plausible finite number at
-    // `−2`, `−20` and `−1e5`: `36.4`, `−7.55`, `−1.05e6`. All three were noise.
-    if x <= 0.0 && x == x.trunc() {
-        return f64::INFINITY;
-    }
-    if x.is_sign_positive() && x <= SMALL_SHAPE {
-        return x * ln_gamma1p_over_a(x) - x.ln();
-    }
-    if use_gamma_reflection(x) {
-        log_gamma_reflection(reflection_sine(x), ln_gamma(1.0 - x))
-    } else {
-        lanczos_log_gamma(x, G, &LANCZOS)
+    match LnGammaMethod::for_argument(x) {
+        LnGammaMethod::Undefined => f64::NAN,
+        // `lnΓ` grows without bound, so the limit at `+∞` is `+∞` rather than `NaN`.
+        LnGammaMethod::Divergent => f64::INFINITY,
+        LnGammaMethod::NearUnitZero => {
+            let a = x - 1.0;
+            a * ln_gamma1p_over_a(a)
+        }
+        LnGammaMethod::NearTwoZero => {
+            let b = x - 2.0;
+            b.ln_1p() + b * ln_gamma1p_over_a(b)
+        }
+        LnGammaMethod::SmallShape => x * ln_gamma1p_over_a(x) - x.ln(),
+        LnGammaMethod::Reflected => log_gamma_reflection(reflection_sine(x), ln_gamma(1.0 - x)),
+        LnGammaMethod::Lanczos => lanczos_log_gamma(x, G, &LANCZOS),
     }
 }
 
 /// The gamma function `Γ(x)`.
-pub(crate) fn gamma(x: f64) -> f64 {
-    // The non-positive integers are the poles of Γ. Unlike `ln|Γ|`, `Γ` itself has *opposite*
-    // signs on the two sides of each pole, so no limit exists and `NaN` is the answer; at the
-    // origin the sign of the zero says which side is meant, so `±∞` is.
-    //
-    // Tested for rather than left to the reflection, for the reason given in `ln_gamma`:
-    // `sin(πx)` returns the rounding residue of `πx` at an integer argument, not zero. That
-    // made `Γ(−1) = −2.57e16`, `Γ(−5) = −4.28e13` and — worst, because it looks entirely
-    // plausible — `Γ(−20) = 5.27e-4`.
-    if x <= 0.0 && x == x.trunc() {
-        return if x == 0.0 {
-            f64::INFINITY.copysign(x)
+/// Which form evaluates `Γ` at this argument.
+///
+/// Four arms, and the two pole cases are separate because `Γ` answers them differently: at the
+/// origin the sign of the zero says which side is meant, so `±∞` is the limit, while at a
+/// negative integer `Γ` has *opposite* signs on the two sides and no limit exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GammaMethod {
+    /// `x = ±0`: the sign of the zero selects which infinity.
+    SignedPole,
+    /// A negative integer: no limit, so `NaN`.
+    ///
+    /// Tested for rather than left to the reflection, for the reason [`LnGammaMethod::Divergent`]
+    /// gives: `sin(πx)` returns the rounding residue of `πx` at an integer argument, not zero.
+    /// That made `Γ(−1) = −2.57e16`, `Γ(−5) = −4.28e13` and — worst, because it looks entirely
+    /// plausible — `Γ(−20) = 5.27e-4`.
+    UnsignedPole,
+    /// Below `½`: reflect through `Γ(1−x)`.
+    Reflected,
+    /// Above [`GAMMA_OVERFLOW_MIN`], where `Γ` has left the format.
+    Saturated,
+    /// Everything else: the Lanczos product form.
+    Lanczos,
+}
+
+impl GammaMethod {
+    /// The poles first — they are what the reflection cannot be trusted with — then the sign,
+    /// then the range.
+    fn for_argument(x: f64) -> Self {
+        if x <= 0.0 && x == x.trunc() {
+            if x == 0.0 {
+                Self::SignedPole
+            } else {
+                Self::UnsignedPole
+            }
+        } else if use_gamma_reflection(x) {
+            Self::Reflected
+        } else if x > GAMMA_OVERFLOW_MIN {
+            Self::Saturated
         } else {
-            f64::NAN
-        };
-    }
-    if use_gamma_reflection(x) {
-        gamma_reflection(x, |sin, reflected| {
-            lanczos_reflected_gamma(sin, reflected, G, &LANCZOS)
-        })
-    } else if x > GAMMA_OVERFLOW_MIN {
-        f64::INFINITY
-    } else {
-        lanczos_gamma(x, G, &LANCZOS)
+            Self::Lanczos
+        }
     }
 }
+
+pub(crate) fn gamma(x: f64) -> f64 {
+    match GammaMethod::for_argument(x) {
+        GammaMethod::SignedPole => f64::INFINITY.copysign(x),
+        GammaMethod::UnsignedPole => f64::NAN,
+        GammaMethod::Reflected => gamma_reflection(x, |sin, reflected| {
+            lanczos_reflected_gamma(sin, reflected, G, REFLECTED_ZERO_MIN, &LANCZOS)
+        }),
+        GammaMethod::Saturated => f64::INFINITY,
+        GammaMethod::Lanczos => lanczos_gamma(x, G, &LANCZOS),
+    }
+}
+
+/// Reflected argument past which `Γ` on the negative side has certainly rounded to signed zero.
+///
+/// At a reflected argument of 200, the integral over `[199, 200]` alone gives
+/// `Γ(a) ≥ exp(−200)·199^199`. The smallest nonzero distance of these `binary64` inputs to an
+/// integer is at least `2^-46`, so even with that sine factor the reflected result rounds to
+/// signed zero from here on — and clamping keeps the Lanczos intermediates in range rather than
+/// letting them overflow to `inf` and produce `NaN`.
+const REFLECTED_ZERO_MIN: f64 = 200.0;
 
 /// Iteration cap for the incomplete-gamma series and continued fraction.
 ///
@@ -172,61 +267,114 @@ fn small_shape_log_lower(a: f64, x: f64) -> f64 {
 pub(crate) const GAMMA_EDGEWORTH_MIN: f64 = 3e7;
 
 /// Regularized **lower** incomplete gamma `P(a, x) = γ(a, x) / Γ(a)`, `a > 0`, `x ≥ 0`.
-pub(crate) fn gamma_lr(a: f64, x: f64) -> f64 {
-    if !valid_incomplete_gamma_inputs(a, x) {
-        return f64::NAN;
-    }
-    if x == 0.0 {
-        return 0.0;
-    }
-    // P(a, x) -> 1 as x -> inf. Without this the series/continued fraction below produce NaN
-    // at an infinite argument, which then propagates into everything built on `gamma_lr`
-    // (`erf`, and through it the whole normal family).
-    if x.is_infinite() {
-        return 1.0;
-    }
-    if a >= GAMMA_EDGEWORTH_MIN {
-        return gamma_edgeworth(a, x).0;
-    }
-    if use_lower_gamma_series(a, x) {
-        if a <= SMALL_SHAPE {
-            return small_shape_log_lower(a, x).exp();
+/// Which series or approximation evaluates the regularized incomplete gamma.
+///
+/// Both tails route identically and differ only in what each arm returns, so the decision is
+/// named once here and [`gamma_lr`] and [`gamma_ur`] are each nothing but a `match` over it. The
+/// single-precision peer carries the same enum with the same arms; the ordering below is this
+/// kernel's own, and the two small-shape bounds are mutually exclusive with the Edgeworth one, so
+/// placing Edgeworth first changes nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IncompleteGammaMethod {
+    /// Not a positive finite shape with a non-negative argument.
+    Invalid,
+    /// `x = 0`, where the lower tail is `0` and the upper is `1`.
+    AtZero,
+    /// `x = +∞`, the complementary limit.
+    ///
+    /// Tested for rather than left to the series: without it the routes below produce `NaN` at
+    /// an infinite argument, which then propagates into everything built on `gamma_lr` — `erf`,
+    /// and through it the whole normal family.
+    AtInfinity,
+    /// `a ≥ `[`GAMMA_EDGEWORTH_MIN`]: the Edgeworth-corrected normal, where both series fail.
+    Edgeworth,
+    /// `a ≤ `[`SMALL_SHAPE`] and `x < a + 1`: the DLMF 8.7.1 series, which keeps the `O(a)` terms
+    /// the ordinary routes drop.
+    SmallShapeSeries,
+    /// `a ≤ SMALL_SHAPE` and `x ≥ a + 1`: the upper fraction with the tiny shape applied
+    /// **after** it, so the probability takes a single subnormal rounding.
+    ///
+    /// Separate from [`Self::SmallShapeSeries`] because that series is an expansion in `x` and is
+    /// only valid for `x < 1 + a`. Collapsing the two into one small-shape arm reads as harmless
+    /// and is not: in the `f32` peer it put the series to work at `x = 4`, where `P + Q` came
+    /// back as `1.0000009537`.
+    SmallShapeFraction,
+    /// `x < a + 1`: the lower-tail series converges fastest here.
+    LowerSeries,
+    /// `x ≥ a + 1`: the upper-tail continued fraction does.
+    UpperFraction,
+}
+
+impl IncompleteGammaMethod {
+    /// The invalid and limiting arguments first, then the shape, then which tail converges.
+    fn for_arguments(a: f64, x: f64) -> Self {
+        if !valid_incomplete_gamma_inputs(a, x) {
+            Self::Invalid
+        } else if x == 0.0 {
+            Self::AtZero
+        } else if x.is_infinite() {
+            Self::AtInfinity
+        } else if a >= GAMMA_EDGEWORTH_MIN {
+            Self::Edgeworth
+        } else if use_lower_gamma_series(a, x) {
+            // The small shape still has to pick a tail: the series is an expansion in `x`.
+            if a <= SMALL_SHAPE {
+                Self::SmallShapeSeries
+            } else {
+                Self::LowerSeries
+            }
+        } else if a <= SMALL_SHAPE {
+            Self::SmallShapeFraction
+        } else {
+            Self::UpperFraction
         }
-        let series = gamma_lower_series(a, x, EPS, MAX_ITER);
-        log_scaled_gamma(a, x, series.ln()).exp()
-    } else {
-        1.0 - gamma_ur(a, x)
     }
 }
 
-/// Regularized **upper** incomplete gamma `Q(a, x) = Γ(a, x) / Γ(a) = 1 - P(a, x)`.
-pub(crate) fn gamma_ur(a: f64, x: f64) -> f64 {
-    if !valid_incomplete_gamma_inputs(a, x) {
-        return f64::NAN;
-    }
-    if x == 0.0 {
-        return 1.0;
-    }
-    // Q(a, x) -> 0 as x -> inf, the complement of `gamma_lr`'s limit.
-    if x.is_infinite() {
-        return 0.0;
-    }
-    if a >= GAMMA_EDGEWORTH_MIN {
-        return gamma_edgeworth(a, x).1;
-    }
-    if use_lower_gamma_series(a, x) {
-        if a <= SMALL_SHAPE {
-            return -small_shape_log_lower(a, x).exp_m1();
+pub(crate) fn gamma_lr(a: f64, x: f64) -> f64 {
+    match IncompleteGammaMethod::for_arguments(a, x) {
+        IncompleteGammaMethod::Invalid => f64::NAN,
+        IncompleteGammaMethod::AtZero => 0.0,
+        IncompleteGammaMethod::AtInfinity => 1.0,
+        IncompleteGammaMethod::Edgeworth => {
+            let (lower, _) = gamma_edgeworth(a, x);
+            lower
         }
-        return 1.0 - gamma_lr(a, x);
+        IncompleteGammaMethod::SmallShapeSeries => small_shape_log_lower(a, x).exp(),
+        IncompleteGammaMethod::LowerSeries => {
+            let series = gamma_lower_series(a, x, EPS, MAX_ITER);
+            log_scaled_gamma(a, x, series.ln()).exp()
+        }
+        // Either upper arm is reached through the complement, which is what keeps the lower tail
+        // from being formed by a cancelling subtraction where it is the small one.
+        IncompleteGammaMethod::SmallShapeFraction | IncompleteGammaMethod::UpperFraction => {
+            1.0 - gamma_ur(a, x)
+        }
     }
-    let h = gamma_upper_fraction(a, x, LENTZ_TINY_F64, EPS, MAX_ITER);
-    if a <= SMALL_SHAPE {
-        // Γ(1+a) = a Γ(a). Multiply the tiny shape only after evaluating the
-        // fraction so the probability undergoes a single subnormal rounding.
-        return a * (-x + a * (x.ln() - ln_gamma1p_over_a(a)) + h.ln()).exp();
+}
+
+pub(crate) fn gamma_ur(a: f64, x: f64) -> f64 {
+    match IncompleteGammaMethod::for_arguments(a, x) {
+        IncompleteGammaMethod::Invalid => f64::NAN,
+        IncompleteGammaMethod::AtZero => 1.0,
+        IncompleteGammaMethod::AtInfinity => 0.0,
+        IncompleteGammaMethod::Edgeworth => {
+            let (_, upper) = gamma_edgeworth(a, x);
+            upper
+        }
+        IncompleteGammaMethod::SmallShapeSeries => -small_shape_log_lower(a, x).exp_m1(),
+        IncompleteGammaMethod::LowerSeries => 1.0 - gamma_lr(a, x),
+        IncompleteGammaMethod::SmallShapeFraction => {
+            let h = gamma_upper_fraction(a, x, LENTZ_TINY_F64, EPS, MAX_ITER);
+            // Γ(1+a) = a Γ(a). Multiply the tiny shape only after evaluating the fraction so the
+            // probability undergoes a single subnormal rounding.
+            a * (-x + a * (x.ln() - ln_gamma1p_over_a(a)) + h.ln()).exp()
+        }
+        IncompleteGammaMethod::UpperFraction => {
+            let h = gamma_upper_fraction(a, x, LENTZ_TINY_F64, EPS, MAX_ITER);
+            log_scaled_gamma(a, x, 0.0).exp() * h
+        }
     }
-    log_scaled_gamma(a, x, 0.0).exp() * h
 }
 
 /// Argument above which the Stirling-type asymptotic series for `digamma`/`trigamma` is
@@ -251,16 +399,162 @@ pub(crate) fn gamma_ur(a: f64, x: f64) -> f64 {
 const PSI_ASYMPTOTIC_MIN: u8 = 20;
 
 /// The digamma function `ψ(x) = d/dx ln Γ(x)`.
-pub(crate) fn digamma(mut x: f64) -> f64 {
-    if x < 0.0 {
-        // DLMF 5.5.4. Reduce the cotangent's argument before multiplying by π
-        // so rounding cannot erase the distance to the nearest pole.
-        let offset = x - x.round();
-        if offset == 0.0 || !offset.is_finite() {
-            return f64::NAN;
-        }
-        return digamma(1.0 - x) - PI / (PI * offset).tan();
+/// The `f64` nearest `ψ`'s only zero on the positive axis.
+///
+/// The zero is at `1.4616321449683623412626595423257213284681967140551221919873…`; this constant
+/// is `9.55e-17` below it, which is why [`psi_near_zero`]'s constant term is not itself zero.
+const PSI_ZERO: f64 = 1.461_632_144_968_362_2;
+
+/// Half-width of the window on which [`psi_near_zero`] is used.
+///
+/// Set by the series' truncation at the edge, measured with the twenty-one coefficients below:
+/// `2.4e-30` relative at `5e-2`, `2.6e-24` at `1e-1`, `2.8e-18` at `2e-1`, `9.6e-15` at `3e-1`.
+/// `2e-1` holds `0.013` ulp at the edge, and the general route there is `16` ulp.
+///
+/// # Why this is wide rather than tight
+///
+/// A first version used ten coefficients and `2e-2`, which fixed the zero itself and left the
+/// band `[0.02, 0.4]` carrying `10`–`160` ulp: the general route's error is **absolute** and flat
+/// at about `3ε`, so its *relative* error is `3ε/|ψ(x)|` and does not fall under a few ulp until
+/// `|d| ≈ 0.4`. Covering the band needs the window to reach it, and the window is limited by the
+/// coefficient count — the `aₖ` decay by only about `0.68` per order, so `2e-1` needs twenty of
+/// them where `2e-2` needed ten.
+const PSI_ZERO_WINDOW: f64 = 2e-1;
+
+/// `ψ(x₀ + d)` by its Taylor series about the zero, for `|d| ≤ PSI_ZERO_WINDOW`.
+///
+/// # Why a branch is needed at all
+///
+/// The general route recurses `x` up to `PSI_ASYMPTOTIC_MIN` accumulating `−1/x` and then adds
+/// `ln x`. At `x ≈ 1.46` that is a sum of about `2.3` against a logarithm of about `2.86`,
+/// differencing to a value near zero — so the result carries an **absolute** error of roughly
+/// `3ε ≈ 7e-16` however close to the zero the argument is. Measured, `ψ` came back `1.2e-15` at
+/// the zero and the relative error reached **479%** one ulp away from it.
+///
+/// That is the same shape as the `lnΓ(1)` defect: beside a zero an absolute error is what the
+/// route delivers and a relative one is what a caller needs. `super::cross_precision` carries an
+/// `ulp(1)` *envelope* for `ψ` to accommodate it, and notes `ψ` was "a latent flake, passing only
+/// because this seed's climb had not yet reached their zero" — an envelope is the symptom, and
+/// this is the cause.
+///
+/// # Provenance of the coefficients
+///
+/// Twenty-one of them, `aₖ = ψ⁽ᵏ⁾(x₀)/k!` at the `f64` [`PSI_ZERO`], computed at 80 decimal digits by a local
+/// generator using `ψ⁽ᵏ⁾(y) ~ (−1)^{k−1}[(k−1)!/yᵏ + k!/(2y^{k+1}) + Σ B₂ⱼ(2j+k−1)!/((2j)! y^{2j+k})]`
+/// with the argument first recursed up by `80`. The generator validates against seven closed forms
+/// it shares no code with before emitting — `ψ(1) = −γ`, `ψ′(1) = π²/6`, `ψ″(1) = −2ζ(3)`,
+/// `ψ‴(1) = π⁴/15`, `ψ⁗(1) = −24ζ(5)`, `ψ⁵(1) = 8π⁶/63`, `ψ⁶(1) = −720ζ(7)` — and agrees with all
+/// seven to between 43 and 49 digits. A first run reported "failure" at `1e-40`, which was the
+/// threshold being tighter than the method's own truncation rather than an error.
+///
+/// `a₀` is a consistency check in itself: it must equal `a₁ ×` the offset from the true zero, and
+/// `−9.2413e-17` against `0.96767 × −9.55e-17` agrees to every digit printed.
+fn psi_near_zero(d: f64) -> f64 {
+    // Horner, from `a₉` inward.
+    const A: [f64; 21] = [
+        -9.241_265_521_729_427e-17,
+        0.967_672_245_447_621_2,
+        -0.442_763_168_983_592_2,
+        0.258_499_760_955_651_1,
+        -0.163_942_705_442_406_58,
+        0.107_824_050_691_262_41,
+        -0.072_199_561_256_454_74,
+        0.048_804_288_164_143_13,
+        -0.033_161_126_474_847_376,
+        0.022_597_648_232_218_118,
+        -0.015_424_765_904_948_97,
+        0.010_538_791_616_612_184,
+        -0.007_204_534_386_356_875,
+        0.004_926_781_395_729_858,
+        -0.003_369_801_655_439_331_2,
+        0.002_305_126_326_734_93,
+        -0.001_576_936_771_430_199,
+        0.001_078_825_201_916_297_8,
+        -0.000_738_070_938_996_006,
+        0.000_504_953_265_834_602_7,
+        -0.000_345_468_025_106_308_2,
+    ];
+    let mut acc = A[20];
+    for &a in A[..20].iter().rev() {
+        acc = acc * d + a;
     }
+    acc
+}
+
+/// How `ψ` reaches an argument its asymptotic series can be evaluated at.
+///
+/// The series is only valid for a large positive argument, so every other arm is a reduction
+/// onto that case — and the reductions are different functions of the input rather than
+/// variations of one formula, which is why they are named. The `f32` peer in
+/// [`super::f32::gamma`] carries the same vocabulary as `PsiReduction`, with one arm fewer:
+/// it reduces onto `[1, 2)` with a factored polynomial where this one has a Taylor series about
+/// `ψ`'s real zero.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PsiReduction {
+    /// No answer: `NaN`, or `−∞` where the function oscillates without limit.
+    Undefined,
+    /// A negative integer — a pole. `ψ` has opposite signs on the two sides of one, so no limit
+    /// exists there and the answer is a `NaN` like an unusable argument's.
+    Pole,
+    /// `x < 0` and not an integer: reflect across the poles with the cotangent identity.
+    Reflected,
+    /// Within [`PSI_ZERO_WINDOW`] of `ψ`'s real zero, where the series and the recurrence both
+    /// lose the answer to cancellation; see [`psi_near_zero`].
+    NearZero,
+    /// Everywhere else on the positive axis. Walks up to [`PSI_ASYMPTOTIC_MIN`] by the
+    /// recurrence first where the argument is below it, accumulating the shed terms, then
+    /// evaluates the series — including at `+∞`, where it gives `ψ(+∞) = +∞`.
+    Asymptotic,
+}
+
+impl PsiReduction {
+    fn for_digamma(x: f64) -> Self {
+        if !x.is_finite() {
+            // `ψ(+∞) = +∞` falls out of the series; `NaN` and `−∞` have no answer.
+            return if x == f64::INFINITY {
+                Self::Asymptotic
+            } else {
+                Self::Undefined
+            };
+        }
+        if x < 0.0 {
+            // A negative integer is a pole, and `x - x.round()` is the distance to the nearest
+            // one — formed before multiplying by `π` so rounding cannot erase it.
+            return if x == x.round() {
+                Self::Pole
+            } else {
+                Self::Reflected
+            };
+        }
+        if (x - PSI_ZERO).abs() <= PSI_ZERO_WINDOW {
+            Self::NearZero
+        } else {
+            Self::Asymptotic
+        }
+    }
+}
+
+pub(crate) fn digamma(x: f64) -> f64 {
+    match PsiReduction::for_digamma(x) {
+        PsiReduction::Undefined | PsiReduction::Pole => f64::NAN,
+        PsiReduction::Reflected => {
+            // DLMF 5.5.4. Reduce the cotangent's argument before multiplying by π
+            // so rounding cannot erase the distance to the nearest pole.
+            let offset = x - x.round();
+            digamma(1.0 - x) - PI / (PI * offset).tan()
+        }
+        // `x - PSI_ZERO` is exact for every `x` in this window, by Sterbenz, so the shift
+        // costs nothing.
+        PsiReduction::NearZero => psi_near_zero(x - PSI_ZERO),
+        PsiReduction::Asymptotic => digamma_asymptotic(x),
+    }
+}
+
+/// `ψ(x)` for positive `x` away from the zero, by recurrence up to [`PSI_ASYMPTOTIC_MIN`]
+/// followed by the Stirling-type series.
+///
+/// The walk-up is a no-op for an argument already at or above the threshold.
+fn digamma_asymptotic(mut x: f64) -> f64 {
     let mut result = 0.0;
     for _ in 0..PSI_ASYMPTOTIC_MIN {
         if x < f64::from(PSI_ASYMPTOTIC_MIN) {

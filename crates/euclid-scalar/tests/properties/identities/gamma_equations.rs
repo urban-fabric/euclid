@@ -653,7 +653,18 @@ property! {
 }
 
 property! {
-    #![config(settings("gamma_equations_f32").cases(500))]
+    // Floors at roughly half the thinnest coverage over six seeds: `below one` runs 8.6–12.0%,
+    // the two sides of the Edgeworth handover 15.4%+ and 81.6%+.
+    //
+    // `the_reflection_formulae_hold_at_f32` moved to its own block below: it sweeps `(0.002,
+    // 0.998)`, so it can never reach `x > 1e3`, and a floor binds every property sharing the
+    // `#![config]`. Both blocks keep `settings("gamma_equations_f32")` and so share
+    // `tests/regressions/gamma_equations_f32.txt`, leaving the committed tape in place.
+    #![config(settings("gamma_equations_f32")
+        .cases(500)
+        .require("below one", 4.0)
+        .require("below the edgeworth handover", 7.0)
+        .require("large", 60.0))]
 
     /// The f32 peers, which is where most of this family's survivors live.
     ///
@@ -675,6 +686,10 @@ property! {
         }
         classify!("below one", x < 1.0);
         classify!("large", x > 1e3);
+        // `large` is exactly `GAMMA_EDGEWORTH_MIN`, so it is one side of a crossover rather than
+        // a size label. Naming the other side turns the pair into a bracket around the handover,
+        // which is what a floor can then hold the generator to.
+        classify!("below the edgeworth handover", x <= 1e3);
 
         // The rising factorial's recurrence is exact here too.
         #[allow(clippy::cast_precision_loss)]
@@ -752,6 +767,13 @@ property! {
             }
         }
     }
+
+}
+
+property! {
+    // Its own block, because its `(0.002, 0.998)` sweep cannot reach the crossover labels the
+    // block above requires. Same suite name, so the committed tape stays where it is.
+    #![config(settings("gamma_equations_f32").cases(500))]
 
     /// The reflection formulae at f32, on the unit interval where they are sharpest.
     fn the_reflection_formulae_hold_at_f32(x in generate::float32::in_range(0.002, 0.998)) {
@@ -1099,5 +1121,138 @@ property! {
             |()| reference,
             &Absolute(1e-5 * scale),
         )?;
+    }
+}
+
+property! {
+    // Floors on both sides of `PSI_ASYMPTOTIC_MIN`, at roughly half the thinnest coverage
+    // measured over six seeds (the recurrence side runs 15.4–18.4%, the asymptotic side 81.6%+).
+    // This is the threshold the f32 port moved rather than inherited, so a generator drifting to
+    // one side of it would be testing the inherited choice and reporting a clean pass.
+    #![config(settings("f32_native_psi")
+        .cases(500)
+        .require("below the asymptotic shift", 7.0)
+        .require("above the asymptotic shift", 60.0))]
+
+    /// The native `f32` `ψ` and `ψ₁` against their own recurrences and reflections.
+    ///
+    /// These had no property coverage at all while they narrowed the `f64` kernels, because
+    /// narrowing made them true by construction — any law they satisfied was `f64`'s law, one
+    /// rounding away. Now that both are native the laws say something, and they are the only
+    /// check that reaches the branch structure: `PsiReduction` routes on two thresholds and a
+    /// parity, and a case that lands on the wrong side of one is exactly what a recurrence law
+    /// catches.
+    ///
+    /// The bounds are the format's, measured rather than scaled from the `f64` figures. `ψ`'s
+    /// recurrence is the tight one — `ψ(x+1) − ψ(x) = 1/x` is an identity between two values
+    /// that are `O(1)` apart, so it holds to a few ulps of the larger. `ψ₁`'s reflection is the
+    /// loose one, because `π²/sin²` is unbounded near the integers.
+    fn the_native_f32_polygammas_satisfy_their_laws(
+        x in generate::float32::in_range(0.01, 60.0),
+    ) {
+        if !x.is_finite() || x <= 0.0 {
+            return Ok(());
+        }
+        classify!("below the asymptotic shift", x < 6.0);
+        classify!("above the asymptotic shift", x >= 6.0);
+
+        // Both recurrences **cancel at small x**, and the budgets have to carry it rather than
+        // the kernel being blamed for it. `ψ(x) ≈ −1/x` and `ψ₁(x) ≈ 1/x²` near zero, so each
+        // law subtracts two large nearly-equal quantities to leave an `O(1)` answer: at
+        // `x = 0.01` the `ψ₁` form takes `10000.58 − 10000` and `ulp(10000)` is already `9.8e-4`
+        // in `f32`. The achievable agreement therefore scales with the *shed term*, not with the
+        // result — which is why the bound below is written in terms of `1/x` and `1/x²`. Fitting
+        // a flat bound instead is how this property first reported a defect at `x = 0.01` that
+        // was entirely its own arithmetic.
+        let epsilon = f64::from(f32::EPSILON);
+
+        // psi(x+1) = psi(x) + 1/x. Crosses the recurrence/asymptotic threshold for x near 5.
+        let shifted = Real::digamma(x + 1.0);
+        let recurred = Real::digamma(x) + 1.0 / x;
+        if shifted.is_finite() && recurred.is_finite() {
+            let shed = f64::from(1.0f32 / x);
+            let scale = (shed + f64::from(shifted.abs())).max(1.0);
+            relation::agree(
+                "f32: psi(x+1) = psi(x) + 1/x",
+                (),
+                |()| f64::from(shifted),
+                |()| f64::from(recurred),
+                &Absolute(64.0 * epsilon * scale),
+            )?;
+        }
+
+        // psi_1(x+1) = psi_1(x) - 1/x^2, the same crossing for the second derivative.
+        let shifted = Real::trigamma(x + 1.0);
+        let recurred = Real::trigamma(x) - 1.0 / (x * x);
+        if shifted.is_finite() && recurred.is_finite() {
+            let shed = f64::from(1.0f32 / (x * x));
+            let scale = (shed + f64::from(shifted.abs())).max(1.0);
+            relation::agree(
+                "f32: psi_1(x+1) = psi_1(x) - 1/x^2",
+                (),
+                |()| f64::from(shifted),
+                |()| f64::from(recurred),
+                &Absolute(64.0 * epsilon * scale),
+            )?;
+        }
+
+        // psi_1 is positive and strictly decreasing on the positive axis: a shape check the
+        // recurrence cannot see, and the one a wrong branch would break first.
+        let here = Real::trigamma(x);
+        let further = Real::trigamma(x + 0.5);
+        check!(here > 0.0, "f32 trigamma must be positive at {x:e}, got {here:e}");
+        check!(
+            further <= here,
+            "f32 trigamma must decrease: psi_1({x:e}) = {here:e} but psi_1({:e}) = {further:e}",
+            x + 0.5
+        );
+    }
+}
+
+property! {
+    #![config(settings("f32_native_ln_beta").cases(500))]
+
+    /// The native `f32` `ln B` against the two closed forms that pin its branch.
+    ///
+    /// `LnBetaForm` picks between the rising-factorial identity and the combined Stirling
+    /// expansion on the smaller shape, and the exact `ln B(a, 1) = −ln a` is the law that
+    /// catches a mis-sited switch: it is the case the original `lnΓ(a) + lnΓ(b) − lnΓ(a+b)`
+    /// form got catastrophically wrong, so it is the one worth keeping a law on.
+    ///
+    /// Also checked is symmetry, which holds *exactly* — not to a tolerance. `ln_beta` sorts its
+    /// arguments before doing anything else, so `B(a,b)` and `B(b,a)` take the same path through
+    /// the same branch and must agree to the bit. A future branch that reads `a` and `b`
+    /// separately would break this and nothing else here.
+    fn the_native_f32_ln_beta_matches_its_closed_forms(
+        a in generate::float32::in_range(0.01, 1e5),
+        b in generate::float32::in_range(0.01, 1e5),
+    ) {
+        if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 {
+            return Ok(());
+        }
+        classify!("rising factorial", a.min(b) < 1024.0);
+        classify!("combined Stirling", a.min(b) >= 1024.0);
+
+        // Symmetry, exactly.
+        let forward = Real::ln_beta(a, b);
+        let reversed = Real::ln_beta(b, a);
+        check!(
+            forward.to_bits() == reversed.to_bits(),
+            "f32 ln_beta must be symmetric to the bit: ln B({a:e},{b:e}) = {forward:e} but \
+             ln B({b:e},{a:e}) = {reversed:e}"
+        );
+
+        // ln B(a, 1) = -ln a, exactly representable as a law at every magnitude.
+        let unit = Real::ln_beta(a, 1.0f32);
+        if unit.is_finite() {
+            let scale = f64::from(unit.abs().max(1.0));
+            relation::agree(
+                "f32: ln B(a, 1) = -ln a",
+                (),
+                |()| f64::from(unit),
+                |()| -f64::from(a.ln()),
+                &Absolute(2e-6 * scale),
+            )?;
+        }
     }
 }

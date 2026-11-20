@@ -69,6 +69,22 @@ fn settings(suite: &str) -> Config {
         .regressions(format!("tests/regressions/{suite}.txt"))
 }
 
+/// [`settings`] plus a budget, for the properties here that hill-climb on `digits_destroyed`.
+///
+/// Those five climbs were doing their job — finding the input that destroys the most digits — and
+/// then **threw the number away**: the score was compared against a threshold and dropped, so the
+/// suite could see a safe form stop being safe and could not see it losing eleven digits where it
+/// used to lose six. Same omission the `erf` round trip had, same fix.
+///
+/// Separate from [`settings`] rather than folded into it, because a budget may only go on a
+/// property that reports a score. The engine rejects the combination outright — "a budget over a
+/// property with no score is the one configuration that looks like protection and provides none"
+/// — which is how the first attempt at this, putting `.budget` in `settings`, failed loudly
+/// against the seven properties here that assert exactness and have nothing to climb.
+fn measured(suite: &str) -> Config {
+    settings(suite).budget("tests/budgets.txt")
+}
+
 #[path = "conditioning/cancellation.rs"]
 mod cancellation;
 #[path = "conditioning/measurement.rs"]

@@ -306,3 +306,41 @@ fn the_series_quadrature_threshold_leaves_no_step_at_ulp_resolution() {
     no_step_across("K0e", k0e, x, k0e(x) - k1e(x), 1e-13);
     no_step_across("K1e", k1e, x, k1e(x) - k0e(x) - k1e(x) / x, 1e-13);
 }
+
+/// `K`'s three routes, shared by all four entry points.
+///
+/// `K₀`, `K₁` and both scaled peers dispatch on this one enum and differ only in what each arm
+/// returns — so one misroute moves four public functions, each of which would still return a
+/// positive decaying number.
+#[test]
+fn the_modified_second_routes_serve_all_four_entry_points() {
+    use super::super::modified_second::{K_SERIES_MAX, KRoute};
+    for (x, want) in [
+        (1.0, KRoute::Series),
+        (K_SERIES_MAX, KRoute::Series),
+        (K_SERIES_MAX.next_up(), KRoute::Quadrature),
+        (10.0, KRoute::Quadrature),
+        (1e300, KRoute::Quadrature),
+    ] {
+        assert_eq!(KRoute::for_argument(x), want, "at {x:e}");
+    }
+    // Off the domain, at the singularity, and at the limit — one arm each, all exact.
+    assert!(matches!(KRoute::for_argument(f64::NAN), KRoute::Value(v) if v.is_nan()));
+    assert!(matches!(KRoute::for_argument(-1.0), KRoute::Value(v) if v.is_nan()));
+    assert_eq!(KRoute::for_argument(0.0), KRoute::Value(f64::INFINITY));
+    assert_eq!(KRoute::for_argument(-0.0), KRoute::Value(f64::INFINITY));
+    assert_eq!(KRoute::for_argument(f64::INFINITY), KRoute::Value(0.0));
+
+    // All four entry points agree on those exact values, which is what one shared arm buys.
+    for f in [k0, k1, k0e, k1e] {
+        assert!(f(f64::NAN).is_nan());
+        assert!(f(-1.0).is_nan());
+        assert_eq!(f(0.0), f64::INFINITY);
+        assert_eq!(f(f64::INFINITY), 0.0);
+    }
+    // And the scaled peers differ from the unscaled ones by exactly `e^x` across both arms.
+    for x in [0.5_f64, K_SERIES_MAX, 3.0, 20.0] {
+        assert!((k0(x) * x.exp() / k0e(x) - 1.0).abs() < 1e-12, "K0 at {x}");
+        assert!((k1(x) * x.exp() / k1e(x) - 1.0).abs() < 1e-12, "K1 at {x}");
+    }
+}

@@ -469,10 +469,21 @@ fn integral_routes_distinguish_switches_and_signed_limits() {
     assert_eq!(super::ei_route(f64::INFINITY), Value(f64::INFINITY));
     assert_eq!(super::ei_route(f64::NEG_INFINITY), Reflection);
     assert!(matches!(super::ei_route(f64::NAN), Value(x) if x.is_nan()));
+    // Qualified, because `Series` is also an `EiRoute` arm and the two are different decisions.
     let threshold = super::TRIG_SERIES_MAX;
-    assert!(super::use_trig_series(threshold.next_down()));
-    assert!(!super::use_trig_series(threshold));
-    assert!(!super::use_trig_series(threshold.next_up()));
+    use super::TrigIntegralRoute;
+    assert_eq!(
+        TrigIntegralRoute::for_argument(threshold.next_down()),
+        TrigIntegralRoute::Series
+    );
+    assert_eq!(
+        TrigIntegralRoute::for_argument(threshold),
+        TrigIntegralRoute::Fraction
+    );
+    assert_eq!(
+        TrigIntegralRoute::for_argument(threshold.next_up()),
+        TrigIntegralRoute::Fraction
+    );
     for x in [0.0_f64, -0.0] {
         assert_eq!(super::ei_route(x), Value(f64::NEG_INFINITY));
         assert_eq!(super::sin_int(x).to_bits(), x.to_bits());
@@ -480,6 +491,43 @@ fn integral_routes_distinguish_switches_and_signed_limits() {
     let half_pi = core::f64::consts::FRAC_PI_2;
     assert_eq!(super::sin_int(f64::INFINITY), half_pi);
     assert_eq!(super::sin_int(f64::NEG_INFINITY), -half_pi);
+}
+
+/// `E₁`'s three routes, including the series crossover and the whole negative half-line.
+///
+/// The negative arm is the one no value assertion reaches: a negative argument that fell through
+/// to the series would evaluate `ln x` and return `NaN` regardless, so the domain statement and
+/// the accident agree on the answer. Only the decision separates them.
+#[test]
+fn the_e1_routes_cover_the_line_and_its_series_crossover() {
+    use super::E1Route::{ContinuedFraction, Series, Value};
+
+    let threshold = super::E1_SERIES_MAX;
+    assert_eq!(super::e1_route(threshold.next_down()), Series);
+    assert_eq!(super::e1_route(threshold), Series);
+    assert_eq!(super::e1_route(threshold.next_up()), ContinuedFraction);
+    assert_eq!(super::e1_route(f64::MIN_POSITIVE), Series);
+    assert_eq!(super::e1_route(1e30), ContinuedFraction);
+    assert_eq!(super::e1_route(f64::MAX), ContinuedFraction);
+    // The pole at the origin, from both signed zeros.
+    assert_eq!(super::e1_route(0.0), Value(f64::INFINITY));
+    assert_eq!(super::e1_route(-0.0), Value(f64::INFINITY));
+    assert_eq!(super::e1_route(f64::INFINITY), Value(0.0));
+    // The negative half-line and `NaN` are off the domain.
+    for x in [
+        -f64::MIN_POSITIVE,
+        -0.5,
+        -1.0,
+        -1e30,
+        f64::NEG_INFINITY,
+        f64::NAN,
+    ] {
+        assert!(
+            matches!(super::e1_route(x), Value(v) if v.is_nan()),
+            "at {x:e}"
+        );
+        assert!(super::exp_int_e1(x).is_nan(), "at {x:e}");
+    }
 }
 
 /// The two regime crossovers.
@@ -540,4 +588,76 @@ fn ei_remains_finite_until_the_result_overflows() {
     }
     assert_eq!(super::exp_int_ei(last_finite.next_up()), f64::INFINITY);
     assert_eq!(super::exp_int_ei(f64::MAX), f64::INFINITY);
+}
+
+/// The trig integrals' route tables, which differ because the two functions differ.
+///
+/// `Si` is odd and entire — every arm is about the format — while `Ci` carries a `ln x` term and
+/// so has a real singularity at the origin and no value at all to its left. The negative arm is
+/// the one no value assertion separates: a negative argument reaching the quadrature would
+/// produce a `NaN` from `ln x` anyway.
+#[test]
+fn the_trig_integral_routes_distinguish_an_odd_function_from_a_cut_one() {
+    use super::CosIntRoute;
+    use super::SinIntRoute;
+
+    // `Si` is defined on the whole line, with `±π/2` at the two ends.
+    assert_eq!(SinIntRoute::for_argument(f64::NAN), SinIntRoute::Undefined);
+    assert_eq!(SinIntRoute::for_argument(0.0), SinIntRoute::AtOrigin);
+    assert_eq!(SinIntRoute::for_argument(-0.0), SinIntRoute::AtOrigin);
+    for x in [f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(SinIntRoute::for_argument(x), SinIntRoute::AtInfinity);
+    }
+    for x in [
+        -1e300,
+        -1.0,
+        -f64::MIN_POSITIVE,
+        f64::MIN_POSITIVE,
+        1.0,
+        1e300,
+    ] {
+        assert_eq!(
+            SinIntRoute::for_argument(x),
+            SinIntRoute::Quadrature,
+            "at {x:e}"
+        );
+    }
+    // The odd symmetry the sign-bit test delivers, including at the origin.
+    assert_eq!(super::sin_int(-0.0).to_bits(), (-0.0_f64).to_bits());
+    for x in [0.5_f64, 1.0, 5.0, 50.0] {
+        assert_eq!(super::sin_int(-x), -super::sin_int(x), "at {x}");
+    }
+
+    // `Ci` has no real value left of the origin, and the negative half-line is one arm with
+    // `NaN` rather than a reflection.
+    assert_eq!(CosIntRoute::for_argument(f64::NAN), CosIntRoute::Undefined);
+    for x in [
+        -f64::MIN_POSITIVE,
+        -1.0,
+        -1e300,
+        f64::NEG_INFINITY,
+        (-0.0_f64).next_down(),
+    ] {
+        assert_eq!(
+            CosIntRoute::for_argument(x),
+            CosIntRoute::Undefined,
+            "at {x:e}"
+        );
+        assert!(super::cos_int(x).is_nan(), "at {x:e}");
+    }
+    // Both signed zeros are the singularity: `-0.0 < 0.0` is false, so it falls to this arm.
+    assert_eq!(CosIntRoute::for_argument(0.0), CosIntRoute::AtOrigin);
+    assert_eq!(CosIntRoute::for_argument(-0.0), CosIntRoute::AtOrigin);
+    assert_eq!(super::cos_int(-0.0), f64::NEG_INFINITY);
+    assert_eq!(
+        CosIntRoute::for_argument(f64::INFINITY),
+        CosIntRoute::AtInfinity
+    );
+    for x in [f64::MIN_POSITIVE, 1.0, 1e300] {
+        assert_eq!(
+            CosIntRoute::for_argument(x),
+            CosIntRoute::Quadrature,
+            "at {x:e}"
+        );
+    }
 }

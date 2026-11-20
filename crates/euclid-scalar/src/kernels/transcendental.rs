@@ -9,122 +9,12 @@
 //! central object of analytic number theory and the value of several otherwise-unnameable
 //! constants.
 
-use crate::constants::f64::NEG_INV_E;
 use crate::kernels::gamma::ln_gamma;
 use crate::kernels::polygamma::hurwitz_zeta;
 
-/// Iteration cap for the `W` refinement. Halley's method triples the correct digits each
-/// step, so convergence is reached in a handful from any of the starting guesses below.
-const W_STEPS: u32 = 60;
+mod lambert;
 
-/// The starting guess for [`lambert_w`]'s Halley iteration, chosen per regime.
-///
-/// A named function so a test can reach it. The three regimes are described in `lambert_w`'s
-/// own documentation; what matters here is that the guess is only ever a *guess*, and the
-/// quality that matters is not its accuracy but **how many steps it saves**.
-///
-/// # Why its accuracy is the wrong thing to assert
-///
-/// Sixteen mutants lived in these three lines and survived the whole suite, and the reason is
-/// not that the seed is good. It is that the seed does not have to be: the Taylor branch returns
-/// `34.5` at `x = 3`, where `W(3)` is `1.05`, and Halley recovers from that without trouble
-/// because it is allowed sixty steps. So a test that demanded the seed be *close* would either
-/// fail against the real kernel or be too loose to notice a mutation.
-///
-/// # Nor is its cost, as the code stands
-///
-/// The next idea was to pin the *iterations*: a worse seed should cost steps even when it costs
-/// no accuracy. Measured, it does not discriminate. Counting steps until `w` lands within four
-/// ulps of the converged answer, this seed needs **22 at `x = 3`** — the top of the Taylor
-/// regime, where the guess is `34.5` — while four mutated variants need eleven, twenty-two,
-/// twenty-two and twenty-two over the same range. The real seed is not better than the mutants
-/// by the measure that would have to catch them.
-///
-/// So these sixteen survivors are genuinely unreachable from outside, and the measurement says
-/// why: the Taylor branch is carried to `x = 3`, far past where `x − x² + 3x³/2` is a useful
-/// approximation, and `W_STEPS = 60` is generous enough to absorb the difference. Narrowing that
-/// regime could reduce iterations. The large-`x` form gives a closer seed by `x ≈ 1`.
-fn lambert_seed(x: f64) -> f64 {
-    if x < NEG_INV_E + 1e-3 {
-        // Branch-point series: p = sqrt(2(1 + e x)).
-        let p = (2.0 * (1.0 + core::f64::consts::E * x)).max(0.0).sqrt();
-        -1.0 + p - p * p / 3.0 + 11.0 / 72.0 * p * p * p
-    } else if x > 3.0 {
-        let l = x.ln();
-        l - l.ln()
-    } else {
-        x * (1.0 - x + 1.5 * x * x)
-    }
-}
-
-/// The principal branch of the Lambert `W` function: the `w ≥ −1` with `w e^w = x`.
-///
-/// Defined for `x ≥ −1/e`; `NaN` below that, where the real branches end.
-///
-/// # Method
-///
-/// Halley's method on `f(w) = w e^w − x`, which converges cubically, from a starting guess
-/// chosen per regime:
-///
-/// - **Near the branch point** (`x` close to `−1/e`) the derivative of `w e^w` vanishes, so
-///   Newton-type iteration stalls there. The series in `p = √(2(1 + ex))` is used instead,
-///   which is well-behaved precisely where the iteration is not.
-/// - **Large `x`**: `W(x) ≈ ln x − ln ln x`, from `w + ln w = ln x`.
-/// - **Otherwise**: the Taylor series `x − x² + 3x³/2` about the origin.
-pub(crate) fn lambert_w(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    if x < NEG_INV_E {
-        return f64::NAN;
-    }
-    if x == 0.0 {
-        // Returning `x` rather than the literal `0.0`, so a negative zero survives: `W` is
-        // `x - x^2 + ...` near the origin, hence odd there.
-        return x;
-    }
-    if x.is_infinite() {
-        return f64::INFINITY;
-    }
-
-    let mut w = lambert_seed(x);
-
-    for _ in 0..W_STEPS {
-        let ew = w.exp();
-        // For positive x, divide the residual and both denominators by exp(w).
-        // W(MAX) is finite, but w*exp(w) can overflow after a rounding-sized
-        // overshoot, and f*(w+2) can overflow even before that. The scaled
-        // equation has the same Halley step without either large product.
-        // Keep the unscaled residual near the negative branch point, where
-        // subtracting x/exp(w) would introduce a different cancellation.
-        let (f, denom_newton) = if x > 0.0 {
-            (w - x / ew, 1.0 + w)
-        } else {
-            (w * ew - x, ew * (1.0 + w))
-        };
-        if f == 0.0 {
-            return w;
-        }
-        // Halley: w -= f / (e^w (1+w) - f (w+2)/(2w+2))
-        let correction = f * (w + 2.0) / (2.0 * w + 2.0);
-        let denom = denom_newton - correction;
-        let step = if denom == 0.0 || !denom.is_finite() {
-            // Fall back to Newton where Halley's denominator degenerates.
-            f / denom_newton
-        } else {
-            f / denom
-        };
-        if !step.is_finite() {
-            break;
-        }
-        let next = w - step;
-        if next == w {
-            break;
-        }
-        w = next;
-    }
-    w
-}
+pub(crate) use lambert::lambert_w;
 
 /// Terms used by [`zeta_eta`]. The Cohen–Rodriguez Villegas–Zagier acceleration
 /// converges like `(3 + √8)^{−n} ≈ 5.83^{−n}`, so 24 terms give `≈ 2e-18`.
@@ -143,15 +33,6 @@ const fn cvz_normalizer(terms: u32) -> u64 {
         index += 1;
     }
     current
-}
-
-fn next_cvz_coefficient(k: f64, n: f64, coefficient: f64) -> f64 {
-    (k + n) * (k - n) * coefficient / ((k + 0.5) * (k + 1.0))
-}
-
-/// `1 - 2^(1-s)`, retaining the difference close to the pole.
-fn eta_divisor(s: f64) -> f64 {
-    -((1.0 - s) * core::f64::consts::LN_2).exp_m1()
 }
 
 /// `ζ(s)` for `-1 < s < 1`, through the accelerated Dirichlet eta series.
@@ -195,10 +76,10 @@ fn zeta_eta(s: f64) -> f64 {
         c = b - c;
         // The kth term of eta is (k+1)^{-s}.
         total += c * (kf + 1.0).powf(-s);
-        b = next_cvz_coefficient(kf, n, b);
+        b = crate::math::zeta::next_cvz_coefficient(kf, n, b);
     }
     let eta = total / d;
-    eta / eta_divisor(s)
+    eta / crate::math::zeta::eta_divisor(s)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

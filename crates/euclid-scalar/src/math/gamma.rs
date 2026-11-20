@@ -1,6 +1,6 @@
 //! Numerical steps shared by the two host gamma kernels.
 
-use crate::HostReal;
+use crate::{HostReal, Real};
 
 use super::arithmetic::term_is_negligible;
 use super::continued_fraction::{converged, lentz_step};
@@ -15,9 +15,78 @@ fn lanczos_parts<T: HostReal>(x: T, g: T, &[leading, ref rest @ ..]: &[T; 9]) ->
     (shifted + T::HALF, shifted + g + T::HALF, sum)
 }
 
+/// `½·ln(2π)`, the prefactor both forms of the Lanczos log share.
+///
+/// Named rather than spelled twice because as a *term* it is untestable. On the folded path the
+/// sum it joins is `~1e38` in `f32` and `~1e308` in `f64`, which puts `0.9189` some thirty-one
+/// orders below the result's last bit: no assertion on `lnΓ` can see this expression change, in
+/// either format, at any argument that reaches that path. Called directly it is the whole answer.
+fn log_sqrt_tau<T: HostReal>() -> T {
+    T::HALF * (T::TWO * T::PI).ln()
+}
+
+/// Which form of `power·ln(base) − base` keeps every intermediate inside the format.
+///
+/// # `power·ln(base)` is formed only when it fits
+///
+/// The literal form overflows while `lnΓ` itself does not. `− base` is smaller than that product
+/// by a factor of `ln(base)`, so there is a band roughly `1/ln(base)` wide — `1.2%`, measured as
+/// `x ∈ (4.0371e36, 4.0850e36)` in `f32` — where the answer is an ordinary number reached through
+/// an infinite intermediate, and `lnΓ` returned `+∞` for all of it.
+///
+/// # Mutation testing is what asked for this
+///
+/// Every operator on the folded line survived the suite, so this follows the `IForm` treatment in
+/// the modified-`I` kernel. Two reasons, and the split addresses both. The sweep that
+/// reaches the band at all — `f32_exhaustive` — compares *classification*, so a sign flip on the
+/// dominant term reads as finite either way; and it uses the `f64` kernel as its reference, so the
+/// `f64` arm validates itself. Naming the two forms makes the arithmetic reachable at ordinary
+/// arguments, where every term of it is the same order as the answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LanczosLogForm {
+    /// The product fits: `power·ln(base) − base`, one rounding shorter, and what every ordinary
+    /// argument should get.
+    Direct,
+    /// The product alone has left the format: `power·(ln(base) − base/power)` folds the
+    /// subtraction inside it. `base/power` is an extra division and `ln(base) − base/power` a
+    /// well-conditioned difference of `O(ln x)` against `O(1)`, so this is the overflow path's
+    /// form alone.
+    Folded,
+}
+
+impl LanczosLogForm {
+    /// The product is formed once by the caller, and its range *is* the branch.
+    fn for_scaled_power<T: HostReal>(scaled: T) -> Self {
+        if HostReal::is_finite(scaled) {
+            Self::Direct
+        } else {
+            Self::Folded
+        }
+    }
+}
+
+/// `½ln(2π) + power·ln(base) − base + ln(sum)`, the product already formed by the caller.
+fn lanczos_log_direct<T: HostReal>(scaled: T, base: T, sum: T) -> T {
+    log_sqrt_tau::<T>() + scaled - base + sum.ln()
+}
+
+/// The same sum with the subtraction folded inside the product; see [`LanczosLogForm::Folded`].
+fn lanczos_log_folded<T: HostReal>(power: T, log_base: T, base: T, sum: T) -> T {
+    log_sqrt_tau::<T>() + power * (log_base - base / power) + sum.ln()
+}
+
+/// The Lanczos approximation to `lnΓ`, in whichever form the product's range allows.
+///
+/// Both arms are arithmetically the same quantity; see [`LanczosLogForm`] for which applies where
+/// and why the choice is named rather than inlined.
 pub(crate) fn lanczos_log_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) -> T {
     let (power, base, sum) = lanczos_parts(x, g, coefficients);
-    T::HALF * (T::TWO * T::PI).ln() + power * base.ln() - base + sum.ln()
+    let log_base = base.ln();
+    let scaled = power * log_base;
+    match LanczosLogForm::for_scaled_power(scaled) {
+        LanczosLogForm::Direct => lanczos_log_direct(scaled, base, sum),
+        LanczosLogForm::Folded => lanczos_log_folded(power, log_base, base, sum),
+    }
 }
 
 pub(crate) fn lanczos_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) -> T {
@@ -33,20 +102,23 @@ fn lanczos_half_power<T: HostReal>(power: T, base: T) -> T {
 
 /// Reflect through the Lanczos factors before squaring the half power, so a
 /// subnormal value is rounded only by the final division.
-pub(crate) fn lanczos_reflected_gamma(
-    sin: f64,
-    reflected: f64,
-    g: f64,
-    coefficients: &[f64; 9],
-) -> f64 {
-    // At a reflected argument of 200, the integral over [199, 200] alone
-    // gives Γ(a) >= exp(-200) * 199^199. The smallest nonzero distance of
-    // these binary64 inputs to an integer is at least 2^-46. Even with that
-    // sine factor, the reflected result rounds to signed zero from here on.
-    let (power, base, sum) = lanczos_parts(reflected.min(200.0), g, coefficients);
+///
+/// `clamp` is the reflected argument past which the result has certainly rounded to signed zero,
+/// and it is **per format** rather than shared: it depends both on how fast `Γ` outruns the
+/// format's range and on the spacing of that format's inputs near an integer, since the sine
+/// factor can only be as small as the nearest representable distance to a pole. Each caller
+/// derives its own; see the two call sites.
+pub(crate) fn lanczos_reflected_gamma<T: HostReal>(
+    sin: T,
+    reflected: T,
+    g: T,
+    clamp: T,
+    coefficients: &[T; 9],
+) -> T {
+    let (power, base, sum) = lanczos_parts(Real::min(reflected, clamp), g, coefficients);
     let half = lanczos_half_power(power, base);
-    let prefactor = crate::constants::f64::SQRT_TAU * sum * sin;
-    ((core::f64::consts::PI / prefactor) / half) / half
+    let prefactor = T::from_f64(crate::constants::f64::SQRT_TAU) * sum * sin;
+    ((T::PI / prefactor) / half) / half
 }
 
 /// Reflection applies below its fixed point at one half.
@@ -180,6 +252,53 @@ mod tests {
         assert_eq!(lanczos_parts(1.0, 7.0, &coefficients), (0.5, 7.5, 9.0));
         let coefficients = coefficients.map(|c| c as f32);
         assert_eq!(lanczos_parts(2.0, 7.0, &coefficients), (1.5, 8.5, 6.0));
+    }
+
+    #[test]
+    fn the_shared_log_prefactor_is_half_the_log_of_tau() {
+        // `½ln(2π)`. Asserted here because as a term of either form it is thirty-one orders below
+        // the result's last bit; see `log_sqrt_tau`. Every mutation of this expression lands at
+        // least `0.07` away — `0.2723` for a division, `0.8187` for a sum inside the parentheses
+        // — so an `EPSILON` bound is far more than the arithmetic needs to separate them.
+        const HALF_LOG_TAU: f64 = 0.918_938_533_204_672_7;
+        assert!((log_sqrt_tau::<f64>() - HALF_LOG_TAU).abs() <= f64::EPSILON);
+        assert!((log_sqrt_tau::<f32>() - HALF_LOG_TAU as f32).abs() <= f32::EPSILON);
+    }
+
+    #[test]
+    fn the_lanczos_log_form_follows_the_products_range() {
+        use LanczosLogForm::{Direct, Folded};
+        for scaled in [0.0_f64, -1.0, 1e308, f64::MIN, f64::MAX] {
+            assert_eq!(LanczosLogForm::for_scaled_power(scaled), Direct);
+        }
+        for scaled in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            assert_eq!(LanczosLogForm::for_scaled_power(scaled), Folded);
+        }
+        assert_eq!(LanczosLogForm::for_scaled_power(f32::MAX), Direct);
+        assert_eq!(LanczosLogForm::for_scaled_power(f32::INFINITY), Folded);
+    }
+
+    #[test]
+    fn the_folded_form_is_the_same_sum_rearranged() {
+        // Ordinary arguments, where every term is the order of the answer — which is the point of
+        // naming the form at all. `power·ln(base)` is nowhere near overflowing here, so these
+        // inputs never arise on the folded path and only a direct call can reach this arithmetic.
+        // `(2, 3, 4, 2)` gives `½ln(2π) + 2·(3 − 2) + ln 2`; the nearest mutant is a whole unit
+        // away, the furthest lands at `−8.39`.
+        let folded = lanczos_log_folded(2.0_f64, 3.0, 4.0, 2.0);
+        assert!((folded - 3.612_085_713_764_618).abs() <= 4.0 * f64::EPSILON);
+
+        // The two forms are the same quantity: folding distributes `power` over `− base/power`.
+        // Checked where both are evaluable, which is the only place the claim can be checked.
+        let (power, base, sum) = (10.0_f64, 12.0, 3.0);
+        let direct = lanczos_log_direct(power * base.ln(), base, sum);
+        let folded = lanczos_log_folded(power, base.ln(), base, sum);
+        assert!((direct - folded).abs() <= 2.0 * f64::EPSILON * direct.abs());
+
+        let (power, base, sum) = (10.0_f32, 12.0, 3.0);
+        let direct = lanczos_log_direct(power * base.ln(), base, sum);
+        let folded = lanczos_log_folded(power, base.ln(), base, sum);
+        assert!((direct - folded).abs() <= 2.0 * f32::EPSILON * direct.abs());
     }
 
     #[test]

@@ -104,12 +104,12 @@ fn transport(x_start: f64, x_end: f64, y: f64, y_prime: f64) -> (f64, f64) {
 /// `(Ai, Ai′, Bi, Bi′)` at `x < 0`, by marching out from `−`[`super::SERIES_MAX`].
 ///
 /// `f` and `g` are transported separately and combined only at the end, through the same
-/// [`series::combine`] the series branch uses. Starting the march exactly where that branch
+/// [`crate::math::airy::combine`] the series branch uses. Starting the march exactly where that branch
 /// stops makes the two agree at the join by construction.
 pub(super) fn airy(x: f64) -> (f64, f64, f64, f64) {
     let start = -super::SERIES_MAX;
     let (f0, g0, f0_prime, g0_prime) = series::fg(start);
     let (f, f_prime) = transport(start, x, f0, f0_prime);
     let (g, g_prime) = transport(start, x, g0, g0_prime);
-    series::combine(f, g, f_prime, g_prime)
+    crate::math::airy::combine(f, g, f_prime, g_prime)
 }

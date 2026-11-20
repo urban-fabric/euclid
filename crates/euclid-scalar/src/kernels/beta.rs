@@ -57,61 +57,94 @@ pub(crate) fn beta(a: f64, b: f64) -> f64 {
 }
 
 /// The regularized incomplete beta `Iₓ(a, b)`, `x ∈ [0, 1]`, `a, b > 0`.
+/// Which closed form or approximation evaluates `Iₓ(a, b)`.
+///
+/// Eight arms, which is what this function is: most of them are exact forms that exist to keep
+/// the fraction away from arguments where its intermediates misbehave, and naming them is the
+/// only way the ordering stays legible. The order is load-bearing — the endpoint checks precede
+/// the shape checks, and the two gamma limits precede Edgeworth, so a pair qualifying for both
+/// takes the gamma route.
+///
+/// Matched rather than compared, so adding an arm is a compile error at the one site that has to
+/// say what to do with it. The single-precision peer carries the same enum.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum BetaRegMethod {
+    /// Not two positive finite shapes.
+    Invalid,
+    /// `x` outside `(0, 1)`, or both shapes so small the distribution is two endpoint masses.
+    Value(f64),
+    /// `a = 1`: `I = 1 − (1−x)^b`, exact.
+    UnitLower,
+    /// `b = 1`: `I = x^a`, exact.
+    UnitUpper,
+    /// One shape vastly larger than the other, where the beta tends to a gamma in `−ln(1−x)`.
+    GammaLimit,
+    /// The same limit reflected, which preserves the small tail.
+    GammaLimitReflected,
+    /// `min(a, b) ≥ `[`BETA_EDGEWORTH_MIN`]: the Edgeworth-corrected normal.
+    Edgeworth,
+    /// Otherwise the continued fraction, with Edgeworth as its fallback if it fails to converge.
+    Fraction,
+}
+
+impl BetaRegMethod {
+    fn for_arguments(a: f64, b: f64, x: f64) -> Self {
+        if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 {
+            Self::Invalid
+        } else if x <= 0.0 {
+            Self::Value(0.0)
+        } else if x >= 1.0 {
+            Self::Value(1.0)
+        } else if a.max(b) <= 1e-22 && !x.is_nan() {
+            // The endpoint masses are b/(a+b) at zero and a/(a+b) at one. Throughout the
+            // representable interior the relative correction is O(max(a,b)·max(|ln x|,
+            // |ln(1−x)|)), below 1e-19 here. The `f32` peer places this bound at `1e-18`.
+            Self::Value(b / (a + b))
+        } else if a == 1.0 {
+            Self::UnitLower
+        } else if b == 1.0 {
+            Self::UnitUpper
+        } else if beta_gamma_rate(a, b).is_some() {
+            Self::GammaLimit
+        } else if beta_gamma_rate(b, a).is_some() {
+            Self::GammaLimitReflected
+        } else if a.min(b) >= BETA_EDGEWORTH_MIN {
+            Self::Edgeworth
+        } else {
+            Self::Fraction
+        }
+    }
+}
+
 pub(crate) fn beta_reg(a: f64, b: f64, x: f64) -> f64 {
-    if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 {
-        return f64::NAN;
+    match BetaRegMethod::for_arguments(a, b, x) {
+        BetaRegMethod::Invalid => f64::NAN,
+        BetaRegMethod::Value(value) => value,
+        // Integrating the density gives exact forms that also avoid the continued fraction's
+        // large intermediates when one shape is much larger than the other.
+        BetaRegMethod::UnitLower => -(b * (-x).ln_1p()).exp_m1(),
+        BetaRegMethod::UnitUpper => x.powf(a),
+        BetaRegMethod::GammaLimit => {
+            let rate = beta_gamma_rate(a, b).unwrap_or(b);
+            super::gamma::gamma_lr(a, -rate * (-x).ln_1p())
+        }
+        BetaRegMethod::GammaLimitReflected => {
+            // Reflection in log coordinates preserves the small tail.
+            let rate = beta_gamma_rate(b, a).unwrap_or(a);
+            super::gamma::gamma_ur(b, -rate * x.ln())
+        }
+        BetaRegMethod::Edgeworth => beta_edgeworth(a, b, x),
+        BetaRegMethod::Fraction => beta_fraction_cdf(a, b, x)
+            .unwrap_or_else(|| beta_edgeworth(a, b, x))
+            .clamp(0.0, 1.0),
     }
-    if x <= 0.0 {
-        return 0.0;
-    }
-    if x >= 1.0 {
-        return 1.0;
-    }
-    if a.max(b) <= 1e-22 && !x.is_nan() {
-        // The endpoint masses are b/(a+b) at zero and a/(a+b) at one.
-        // Throughout the representable interior, the relative correction is
-        // O(max(a,b) * max(|ln x|, |ln(1-x)|)), below 1e-19 here.
-        return b / (a + b);
-    }
-    // Integrating the density gives exact forms that also avoid the continued
-    // fraction's large intermediates when one shape is much larger than the other.
-    if a == 1.0 {
-        return -(b * (-x).ln_1p()).exp_m1();
-    }
-    if b == 1.0 {
-        return x.powf(a);
-    }
-    if let Some(rate) = beta_gamma_rate(a, b) {
-        return super::gamma::gamma_lr(a, -rate * (-x).ln_1p());
-    }
-    if let Some(rate) = beta_gamma_rate(b, a) {
-        // Reflection in log coordinates preserves the small tail.
-        return super::gamma::gamma_ur(b, -rate * x.ln());
-    }
-    if a.min(b) >= BETA_EDGEWORTH_MIN {
-        return beta_edgeworth(a, b, x);
-    }
-    beta_fraction_cdf(a, b, x)
-        .unwrap_or_else(|| beta_edgeworth(a, b, x))
-        .clamp(0.0, 1.0)
-}
-
-/// Common factor `x^a(1-x)^b/B(a,b)` for the direct and reflected fractions.
-/// `ln1p(-x)` preserves the logarithm's relative accuracy at small `x`.
-fn beta_fraction_prefactor(a: f64, b: f64, x: f64) -> f64 {
-    (a * x.ln() + b * (-x).ln_1p() - ln_beta(a, b)).exp()
-}
-
-/// Select the faster-converging orientation around the beta mean.
-fn use_lower_beta_fraction(a: f64, b: f64, x: f64) -> bool {
-    x < (a + 1.0) / (a + b + 2.0)
 }
 
 /// Evaluate the fraction in the chosen orientation. An unconverged fraction
 /// leaves the decision to use an approximation with the caller.
 fn beta_fraction_cdf(a: f64, b: f64, x: f64) -> Option<f64> {
-    let front = beta_fraction_prefactor(a, b, x);
-    if use_lower_beta_fraction(a, b, x) {
+    let front = crate::math::beta::beta_fraction_prefactor(a, b, x, ln_beta(a, b));
+    if crate::math::beta::use_lower_beta_fraction(a, b, x) {
         beta_cf(a, b, x).map(|h| front * h / a)
     } else {
         beta_cf(b, a, 1.0 - x).map(|h| 1.0 - front * h / b)
@@ -303,27 +336,6 @@ mod tests {
                 panic!("fraction failed to converge at {x}");
             };
             close(actual, expected, 2e-15);
-        }
-    }
-
-    #[test]
-    fn fraction_orientation_switches_at_the_exact_dyadic_boundary() {
-        let x = 0.375_f64;
-        assert!(use_lower_beta_fraction(2.0, 4.0, x.next_down()));
-        assert!(!use_lower_beta_fraction(2.0, 4.0, x));
-        assert!(!use_lower_beta_fraction(2.0, 4.0, x.next_up()));
-        assert!(use_lower_beta_fraction(4.0, 2.0, x));
-    }
-
-    #[test]
-    fn fraction_prefactor_matches_integer_shape_polynomial() {
-        for x in [2.0_f64.powi(-50), 0.125, 0.25, 0.75, 1.0_f64.next_down()] {
-            let expected = 12.0 * x.powi(2) * (1.0 - x).powi(3);
-            let actual = beta_fraction_prefactor(2.0, 3.0, x);
-            assert!(
-                (actual / expected - 1.0).abs() <= 3e-14,
-                "x={x}, actual={actual}"
-            );
         }
     }
 

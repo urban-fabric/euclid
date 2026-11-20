@@ -460,11 +460,13 @@ The engine finds inputs that violate a property. Accuracy checks need expected
 values from an independent source.
 
 Closing `BETA_EDGEWORTH_MIN` and checking the quantile solvers required independent Python
-`Decimal` references. The earlier tables name their local generator. The newer
-[extreme-shape generator](../euclid-scalar/tests/references/extreme_shapes.py) ships with the
-scalar tests and uses MPFR and Decimal.
+`Decimal` references. The tables name their local generator: the extreme-shape fixtures in
+`euclid-scalar` came from `extreme_shapes`, which bound MPFR through `ctypes` and cross-checked
+against `Decimal`.
 
-- **Commit new generators beside the owning crate's tests.** Name the generator from the table.
+- **Generators are local tools and stay out of the tree.** The repository holds Rust only, so
+  name the generator and its working precision *from the table* — a committed path would rot the
+  moment the tool moved, while a recorded precision claim does not.
 - **A generator self-validates before it emits**, against closed forms it shares no code with,
   and exits nonzero otherwise. This is not ceremony: `qref.py` caught a factor-of-two error in
   its own *expected* value that way — `I_x(2,3)` written with `B(2,3)⁻¹ = 6` instead of `12` —

@@ -1,77 +1,17 @@
-//! Unit tests for the Lambert `W` and the Riemann zeta.
+//! Unit tests for the Riemann zeta.
 //!
 //! A child module in its own file, so `use super::*` still reaches the private critical-strip
-//! routine and the iteration constants while keeping each file inside the 400-line budget.
+//! routine and the term counts while keeping each file inside the 400-line budget. The Lambert
+//! `W`'s own tests sit beside it in [`super::lambert`], which is where its routing enums are.
 
 use super::*;
-use crate::constants::f64::{APERY, OMEGA, ZETA_2, ZETA_4};
+use crate::constants::f64::{APERY, ZETA_2, ZETA_4};
 
 fn close(a: f64, b: f64, tol: f64) {
     assert!(
         (a - b).abs() <= tol * b.abs().max(1.0),
         "{a:e} vs {b:e} (tol {tol:e})"
     );
-}
-
-#[test]
-fn lambert_w_satisfies_its_defining_equation() {
-    // w e^w = x, checked across the whole real domain.
-    for i in 0..200 {
-        let x = NEG_INV_E + f64::from(i) * 0.5;
-        let w = lambert_w(x);
-        assert!(w.is_finite(), "W({x}) = {w}");
-        close(w * w.exp(), x, 1e-11);
-    }
-}
-
-#[test]
-fn lambert_w_hits_its_known_values() {
-    assert_eq!(lambert_w(0.0), 0.0);
-    close(lambert_w(1.0), OMEGA, 1e-14);
-    close(lambert_w(core::f64::consts::E), 1.0, 1e-14);
-    close(lambert_w(NEG_INV_E), -1.0, 1e-7);
-    // W(x ln x) = ln x for x >= 1/e.
-    for i in 1..40 {
-        let x = f64::from(i) * 0.5 + 0.5;
-        let l = x.ln();
-        close(lambert_w(l * x), l, 1e-10);
-    }
-}
-
-#[test]
-fn lambert_w_is_accurate_near_the_branch_point_and_far_out() {
-    // The branch point is where Newton-type iteration stalls, so it gets its own series.
-    for &d in &[0.0f64, 1e-12, 1e-9, 1e-6, 1e-3] {
-        let x = NEG_INV_E + d;
-        let w = lambert_w(x);
-        assert!(w >= -1.0 - 1e-6, "W({x}) = {w} must be >= -1");
-        close(w * w.exp(), x, 1e-6);
-    }
-    // And for very large arguments, where the start is ln x - ln ln x.
-    for &x in &[1e3f64, 1e10, 1e100, 1e300] {
-        let w = lambert_w(x);
-        assert!(w.is_finite() && w > 0.0, "W({x}) = {w}");
-        // w + ln w = ln x
-        close(w + w.ln(), x.ln(), 1e-12);
-    }
-}
-
-#[test]
-fn lambert_w_is_monotone_and_rejects_its_domain_edge() {
-    let mut prev = f64::NEG_INFINITY;
-    for i in 0..500 {
-        let x = NEG_INV_E + f64::from(i) * 0.1;
-        let w = lambert_w(x);
-        assert!(w >= prev - 1e-9, "W must increase: {prev} then {w}");
-        prev = w;
-    }
-    assert!(
-        lambert_w(NEG_INV_E - 1e-6).is_nan(),
-        "below the branch point"
-    );
-    assert!(lambert_w(-1.0).is_nan());
-    assert!(lambert_w(f64::NAN).is_nan());
-    assert!(lambert_w(f64::INFINITY).is_infinite());
 }
 
 #[test]
@@ -204,14 +144,23 @@ fn cvz_steps_match_their_exact_coefficients() {
     assert_eq!(super::cvz_normalizer(3), 99);
     assert_eq!(super::cvz_normalizer(24), 1_180_872_205_318_713_601);
     assert_eq!(super::cvz_normalizer(25), 6_882_627_592_338_442_563);
-    assert_eq!(super::next_cvz_coefficient(0.0, 3.0, -1.0), 18.0);
-    assert_eq!(super::next_cvz_coefficient(1.0, 3.0, 18.0), -48.0);
-    assert_eq!(super::next_cvz_coefficient(2.0, 3.0, -48.0), 32.0);
+    assert_eq!(
+        crate::math::zeta::next_cvz_coefficient(0.0, 3.0, -1.0),
+        18.0
+    );
+    assert_eq!(
+        crate::math::zeta::next_cvz_coefficient(1.0, 3.0, 18.0),
+        -48.0
+    );
+    assert_eq!(
+        crate::math::zeta::next_cvz_coefficient(2.0, 3.0, -48.0),
+        32.0
+    );
 
     let below = 1.0_f64.next_down();
     let linear = -(1.0 - below) * core::f64::consts::LN_2;
-    assert_eq!(super::eta_divisor(below), linear);
-    assert_eq!(super::eta_divisor(0.0), -1.0);
+    assert_eq!(crate::math::zeta::eta_divisor(below), linear);
+    assert_eq!(crate::math::zeta::eta_divisor(0.0), -1.0);
 }
 
 #[test]

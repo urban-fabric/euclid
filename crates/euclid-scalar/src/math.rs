@@ -5,13 +5,21 @@
 //! build expressions. [`crate::HostReal`] supplies the comparisons for choosing
 //! a floating-point evaluation regime.
 
+pub(crate) mod airy;
 pub(crate) mod arithmetic;
+pub(crate) mod bessel;
+pub(crate) mod beta;
+pub(crate) mod complex;
 pub(crate) mod continued_fraction;
+pub(crate) mod density;
 pub(crate) mod discrete;
 pub(crate) mod gamma;
 pub(crate) mod log_domain;
 pub(crate) mod normal;
+pub(crate) mod pair;
 pub(crate) mod polynomial;
 pub(crate) mod representation;
 pub(crate) mod roots;
+pub(crate) mod scaling;
 pub(crate) mod trigonometry;
+pub(crate) mod zeta;

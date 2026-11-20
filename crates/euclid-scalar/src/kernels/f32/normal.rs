@@ -22,11 +22,92 @@ pub(crate) fn ndtri(p: f32) -> f32 {
     normal::ndtri(p, 1e-6)
 }
 
-/// The inverse complementary error function.
+/// Which coordinate the half-probability `y/2` is formed in.
+///
+/// `erfc(x) = 2Φ(−x√2)`, so the inverse wants `Φ⁻¹(y/2)`. Halving is exact for every normal
+/// `y` — the exponent simply drops by one — but **not** once `y` is subnormal, where the
+/// mantissa has no bit left to shift into and `y/2` rounds, possibly to zero. That is a
+/// threshold on the *representation* rather than on the magnitude of the answer, so it is tested
+/// for directly as `p + p != y` rather than compared against a constant.
+///
+/// The band matters more in `f32` than in `f64`: subnormals start at `1.18e-38` here, well
+/// inside the range of tail probabilities a caller will ask about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HalvingCoordinate {
+    /// `y/2` is exact. Invert it directly through the quantile.
+    Exact,
+    /// `y/2` would round. Form `ln(y/2) = ln y − ln 2` instead and refine in the log domain,
+    /// where the probability stays representable far past where it underflows.
+    Logarithmic,
+}
+
+impl HalvingCoordinate {
+    fn for_probability(y: f32, half: f32) -> Self {
+        if half + half == y {
+            Self::Exact
+        } else {
+            Self::Logarithmic
+        }
+    }
+}
+
+/// The inverse complementary error function: the `x` with `erfc(x) = y`.
+///
+/// Native, where this used to widen to `f64` and narrow the result back. Both branches already
+/// had `f32` machinery available — [`ndtri`] is native here and
+/// [`refine_lower`](normal::refine_lower) is generic over the format — so the only thing the
+/// widening bought was the subnormal halving, which [`HalvingCoordinate`] now handles in `f32`
+/// by moving to logarithms instead of to a wider type.
 pub(crate) fn erfc_inv(y: f32) -> f32 {
-    // Halving a subnormal y in f32 can change the tail probability or round it to zero.
-    // Widening also keeps the Newton residual accurate in the central range.
-    super::super::normal::erfc_inv(f64::from(y)) as f32
+    match ErfcInvRoute::for_probability(y) {
+        ErfcInvRoute::Undefined => f32::NAN,
+        ErfcInvRoute::AtZero => f32::INFINITY,
+        ErfcInvRoute::AtTwo => f32::NEG_INFINITY,
+        ErfcInvRoute::Interior => {
+            let half = 0.5 * y;
+            match HalvingCoordinate::for_probability(y, half) {
+                HalvingCoordinate::Exact => -ndtri(half) * core::f32::consts::FRAC_1_SQRT_2,
+                HalvingCoordinate::Logarithmic => {
+                    let ln_half = y.ln() - core::f32::consts::LN_2;
+                    -normal::refine_lower(ln_half, normal::tail_start_from_log(ln_half))
+                        * core::f32::consts::FRAC_1_SQRT_2
+                }
+            }
+        }
+    }
+}
+
+/// Which route inverts `erfc` at this probability.
+///
+/// The same four arms the `f64` peer in [`crate::kernels::normal`] carries. `erfc` maps the whole
+/// line onto `(0, 2)`, so the two ends of that interval are limits rather than values and
+/// everything outside it is off the domain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErfcInvRoute {
+    /// Outside `[0, 2]`. `NaN` included without a separate test: `contains` is already false for
+    /// it, so an `is_nan` arm here would be dead.
+    Undefined,
+    /// `y = 0`, the infimum of `erfc`'s range, approached as `x → +∞`.
+    AtZero,
+    /// `y = 2`, the supremum, approached as `x → −∞`.
+    AtTwo,
+    /// An interior probability: invert through the normal quantile, in whichever coordinate the
+    /// halving survives. See [`HalvingCoordinate`].
+    Interior,
+}
+
+impl ErfcInvRoute {
+    fn for_probability(y: f32) -> Self {
+        if !(0.0..=2.0).contains(&y) {
+            Self::Undefined
+        } else if y == 0.0 {
+            Self::AtZero
+        } else if y == 2.0 {
+            Self::AtTwo
+        } else {
+            Self::Interior
+        }
+    }
 }
 
 #[cfg(test)]
@@ -234,5 +315,57 @@ mod tests {
             let y = (i as f32) * 0.1;
             close(erfc(erfc_inv(y)), y, 1e-4);
         }
+    }
+
+    /// The four routes that invert `erfc`, and the coordinate the halving is formed in.
+    ///
+    /// `erfc` maps the line onto `(0, 2)`, so `0` and `2` are limits rather than attained values
+    /// and everything outside `[0, 2]` is off the domain — `NaN` included, which `contains`
+    /// rejects without a separate test.
+    #[test]
+    fn the_erfc_inverse_routes_cover_its_range() {
+        use ErfcInvRoute::{AtTwo, AtZero, Interior, Undefined};
+        use HalvingCoordinate::{Exact, Logarithmic};
+
+        for y in [
+            f32::NAN,
+            -f32::MIN_POSITIVE,
+            -0.1,
+            2.0_f32.next_up(),
+            2.5,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ] {
+            assert_eq!(ErfcInvRoute::for_probability(y), Undefined, "at {y:e}");
+            assert!(erfc_inv(y).is_nan(), "at {y:e}");
+        }
+        assert_eq!(ErfcInvRoute::for_probability(0.0), AtZero);
+        assert_eq!(ErfcInvRoute::for_probability(-0.0), AtZero);
+        assert_eq!(erfc_inv(0.0), f32::INFINITY);
+        assert_eq!(ErfcInvRoute::for_probability(2.0), AtTwo);
+        assert_eq!(erfc_inv(2.0), f32::NEG_INFINITY);
+        for y in [f32::MIN_POSITIVE, 0.5, 1.0, 1.5, 2.0_f32.next_down()] {
+            assert_eq!(ErfcInvRoute::for_probability(y), Interior, "at {y:e}");
+        }
+
+        // Halving is exact for every normal `y` — the exponent just drops — and rounds once `y`
+        // is subnormal, where the mantissa has no bit left to shift into.
+        for y in [1.0_f32, 0.5, 1.5, f32::MIN_POSITIVE] {
+            assert_eq!(
+                HalvingCoordinate::for_probability(y, 0.5 * y),
+                Exact,
+                "at {y:e}"
+            );
+        }
+        let subnormal = f32::from_bits(1);
+        assert_eq!(0.5 * subnormal, 0.0, "the least subnormal halves to zero");
+        assert_eq!(
+            HalvingCoordinate::for_probability(subnormal, 0.5 * subnormal),
+            Logarithmic
+        );
+        // And the log route still returns a finite, ordered answer out there, which is the whole
+        // reason it exists.
+        assert!(erfc_inv(subnormal).is_finite());
+        assert!(erfc_inv(subnormal) > erfc_inv(f32::from_bits(2)) - 1.0);
     }
 }

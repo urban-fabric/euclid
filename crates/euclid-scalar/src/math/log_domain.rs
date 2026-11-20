@@ -12,6 +12,57 @@ pub(crate) fn ln_1p_exp<T: HostReal>(x: T) -> T {
     Real::max(x, T::ZERO) + (-x.abs()).exp().ln_1p()
 }
 
+/// Which form of `ln(2πk)` keeps its intermediate inside the format.
+///
+/// `2πk` leaves the format once `k > MAX/2π`, and the modified-`I` kernels reach it with
+/// `k = |x|/2`, so forming the product directly made `I₁(x)` return **zero** for
+/// `|x| ≥ MAX/π` — `5.7e307` in `f64`, `1.0831524e38` in `f32`. The logarithm of an infinity is
+/// an infinity, the peak core came back `−∞`, and `exp(−∞)` is `0` where the true value is
+/// unbounded. `I₀` was correct at every one of those arguments, which is what made it look like a
+/// property of `I₁` rather than of the helper both share.
+///
+/// **The product is kept on the path where it works, rather than replaced outright.** `ln(2π) +
+/// ln k` is one rounding longer, and replacing unconditionally cost 20% of the margin on
+/// `the_scaled_modified_bessel_wronskian_is_one_over_x` — a real accuracy loss across the whole
+/// range, traded for a fix that only matters at the very top of it. The budget instrument caught
+/// that; this form gives up nothing.
+///
+/// # Mutation testing is what asked for this
+///
+/// Both operators in the sum arm survived in both precisions. The arm is selected only above
+/// `MAX/2π`, and the two kernels that call it reach that only at the very top of the range, where
+/// the result is dominated by terms many orders larger — so no assertion on `I₀` or `I₁` could
+/// see `ln(2π) + ln k` become `ln(2π) − ln k`. Named and generic, the decision is one table and
+/// the arithmetic is reachable at any `k`. One component also replaces the two identical copies
+/// the kernels each carried, which is what let a single fix serve both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LnTauForm {
+    /// `2πk` fits: `ln(2πk)`, one rounding shorter and correct through the normal range.
+    Product,
+    /// `2πk` has left the format: `ln(2π) + ln k` reaches the same value without forming it.
+    Sum,
+}
+
+impl LnTauForm {
+    /// The product is formed once by [`ln_tau_times`], and its range *is* the branch.
+    pub(crate) fn for_product<T: HostReal>(product: T) -> Self {
+        if HostReal::is_finite(product) {
+            Self::Product
+        } else {
+            Self::Sum
+        }
+    }
+}
+
+/// `ln(2πk)`, as the product where that fits and as a sum of logarithms where it does not.
+pub(crate) fn ln_tau_times<T: HostReal>(k: T) -> T {
+    let product = T::TAU * k;
+    match LnTauForm::for_product(product) {
+        LnTauForm::Product => product.ln(),
+        LnTauForm::Sum => T::TAU.ln() + k.ln(),
+    }
+}
+
 /// Choose `expm1` when `exp(x)` exceeds one half and may round to one.
 fn use_expm1<T: HostReal>(x: T) -> bool {
     x > -T::ln_2()
@@ -178,5 +229,41 @@ mod tests {
             (-f64::from_bits(85)).to_bits()
         );
         assert!(ln_sub_exp(1.0_f64, 2.0).is_nan());
+    }
+
+    #[test]
+    fn the_log_of_tau_times_switches_to_a_sum_of_logarithms() {
+        use LnTauForm::{Product, Sum};
+        assert_eq!(LnTauForm::for_product(1.0_f64), Product);
+        assert_eq!(LnTauForm::for_product(f64::MAX), Product);
+        assert_eq!(LnTauForm::for_product(f64::INFINITY), Sum);
+        assert_eq!(LnTauForm::for_product(f64::NAN), Sum);
+        assert_eq!(LnTauForm::for_product(f32::MAX), Product);
+        assert_eq!(LnTauForm::for_product(f32::INFINITY), Sum);
+
+        // Where the product fits, that is the form, and it is one rounding shorter.
+        let tau = core::f64::consts::TAU;
+        assert_eq!(ln_tau_times(3.0_f64), (tau * 3.0).ln());
+        assert_eq!(ln_tau_times(1.0_f64), tau.ln());
+
+        // Past `MAX/2π = 2.86e307` the product is gone and the sum carries the value. `k = 1e308`
+        // has `2πk = inf`, and `ln(2π) + ln k` is `711.034` — the answer the product threw away.
+        let big = 1e308_f64;
+        assert!(!(tau * big).is_finite());
+        assert_eq!(ln_tau_times(big), tau.ln() + big.ln());
+        assert!((ln_tau_times(big) - 711.034_085_708_575_4).abs() < 1e-9);
+        // The two agree either side of the crossing, which is what makes the guard free.
+        let edge = f64::MAX / tau;
+        for k in [edge.next_down(), edge, edge.next_up()] {
+            let sum = tau.ln() + k.ln();
+            assert!((ln_tau_times(k) - sum).abs() <= 2.0 * f64::EPSILON * sum);
+        }
+
+        // And the same in `f32`, whose product leaves the format at `f32::MAX/2π = 5.4e37`.
+        let tau = core::f32::consts::TAU;
+        assert_eq!(ln_tau_times(3.0_f32), (tau * 3.0).ln());
+        let big = 1e38_f32;
+        assert!(!(tau * big).is_finite());
+        assert_eq!(ln_tau_times(big), tau.ln() + big.ln());
     }
 }

@@ -131,8 +131,28 @@ fn single_precision_beta_quantile_preserves_the_symmetric_median() {
     }
 }
 
+/// The single-precision inverse lands within a measured ulp budget of the best `f32` root.
+///
+/// # This used to assert correct rounding, and no longer can
+///
+/// The previous form evaluated `erfc` at the midpoints either side of the returned `f32` and
+/// required them to bracket `y` — i.e. that the result is the nearest representable root. That
+/// held because `erfc_inv` widened its argument to `f64`, solved there, and rounded once.
+///
+/// It is now native; see [`euclid_scalar`]'s `kernels::f32::normal` for why, and the project
+/// direction it follows. Correct rounding is **structurally unreachable** on a native path, and
+/// not by a little: the last operation multiplies by `1/√2`, which is irrational and so already
+/// inexact as an `f32` constant, so one rounding against an inexact multiplier spends most of an
+/// ulp before `ndtri`'s own error is counted. Measured, the three inputs below land 2, 1 and 0
+/// ulp from the best `f32` value.
+///
+/// So the assertion is the weaker achievable one. It still covers what this regression was
+/// written for: the downstream-reported input returned a root wrong in its leading digits, which
+/// a two-ulp budget catches as easily as correct rounding did. What is genuinely given up is the
+/// ability to detect a *one-ulp* drift here, and that is the price of the native path rather than
+/// an oversight.
 #[test]
-fn single_precision_erfc_inverse_rounds_to_the_nearest_value() {
+fn single_precision_erfc_inverse_lands_within_its_ulp_budget() {
     // Include the input found by Bayes and the two smallest positive f32 probabilities.
     for y in [
         f32::from_bits(0x3e84_5270),
@@ -140,11 +160,15 @@ fn single_precision_erfc_inverse_rounds_to_the_nearest_value() {
         f32::from_bits(2),
     ] {
         let root = y.erfc_inv();
-        assert!(root.is_finite());
-        let lower = f64::from(root).midpoint(f64::from(root.next_down()));
-        let upper = f64::from(root).midpoint(f64::from(root.next_up()));
-        assert!(Real::erfc(upper) < f64::from(y));
-        assert!(f64::from(y) < Real::erfc(lower));
+        assert!(root.is_finite(), "erfc_inv({y:e}) = {root}");
+        // The `f64` kernel rounded to `f32` is the best a narrow kernel could return.
+        let best = Real::erfc_inv(f64::from(y)) as f32;
+        let gap = i64::from(root.to_bits()) - i64::from(best.to_bits());
+        assert!(
+            gap.abs() <= 2,
+            "erfc_inv({y:e}) = {root:e}, best f32 root is {best:e} ({} ulp apart)",
+            gap.abs()
+        );
     }
 }
 
@@ -164,7 +188,9 @@ fn extremely_asymmetric_large_beta_matches_its_gamma_limit() {
 
 #[test]
 fn tiny_gamma_upper_tails_match_mpfr() {
-    // Regenerate with crates/euclid-scalar/tests/references/extreme_shapes.py.
+    // From `extreme_shapes`, a local generator over MPFR at 256 bits, self-validated against
+    // closed forms before emitting. Not committed — see CONTRIBUTING.md, "Reference values are
+    // pasted in", for why the precision is recorded here rather than a path to the script.
     for (a, x, expected) in [
         (1e-320, 0.5_f64, 5.6e-321),
         (1e-320, 1.0, 2.194e-321),
@@ -193,7 +219,8 @@ fn tiny_gamma_upper_tails_match_mpfr() {
 
 #[test]
 fn extreme_beta_matches_independent_references() {
-    // MPFR log gamma and the finite integer-shape sum in crates/euclid-scalar/tests/references/extreme_shapes.py.
+    // MPFR log gamma at 256 bits, cross-checked against the finite integer-shape sum evaluated
+    // in `Decimal` at 450 digits, both in the local `extreme_shapes` generator.
     for (a, b, expected) in [
         (1e8_f64, 1e8, -138_629_444.056_817_32),
         (1e16, 1e16, -1.386_294_361_119_892_4e16),
@@ -239,7 +266,8 @@ fn extreme_beta_matches_independent_references() {
 
 #[test]
 fn double_precision_erfc_inverse_resolves_subnormal_inputs() {
-    // Regenerate with crates/euclid-scalar/tests/references/extreme_shapes.py.
+    // From `extreme_shapes`, a local generator over MPFR at 256 bits, evaluated at the exact
+    // subnormal doubles below rather than at their decimal renderings.
     for (bits, expected) in [(1, 27.213_293_210_812_95), (3, 27.193_114_126_203_973)] {
         let actual = f64::from_bits(bits).erfc_inv();
         assert!((actual - expected).abs() < 4e-14, "erfc inverse = {actual}");
@@ -280,11 +308,37 @@ fn gamma_medians_resolve_to_their_native_format() {
     let large = 2.0_f32.powi(46);
     assert_eq!(0.5_f32.gamma_lr_inv(large), large);
     // MPFR gamma upper bisection from the extreme-shape reference generator.
+    //
+    // Within a measured ulp budget rather than exactly, because `gamma_lr_inv` is native `f32`
+    // here and the small-shape inversion has condition number `1/a` — about 108 at this shape.
+    // See `kernels::f32::quantile::gamma_lr_inv`: a CDF good to one ulp cannot yield a root
+    // better than a hundred, so exact equality was only ever achievable by computing in `f64`.
+    // The budget is 160 against a measured worst of 115 across `a ∈ [1e-3, 100]`.
     let shape = 0.009_290_680_289_268_494_f64 as f32;
     let expected = 2.245_615_321_845_595_3e-33_f64 as f32;
-    assert_eq!(0.5_f32.gamma_lr_inv(shape), expected);
+    close_in_ulps(
+        0.5_f32.gamma_lr_inv(shape),
+        expected,
+        160,
+        "median at tiny shape",
+    );
     let expected_at_cutoff = 4.465_528_099_628_194e-31_f64 as f32;
-    assert_eq!(0.5_f32.gamma_lr_inv(0.01), expected_at_cutoff);
+    close_in_ulps(
+        0.5_f32.gamma_lr_inv(0.01),
+        expected_at_cutoff,
+        160,
+        "median at the old widening cutoff",
+    );
+}
+
+/// Compare two `f32`s by the number of representable values between them.
+fn close_in_ulps(actual: f32, expected: f32, budget: i64, what: &str) {
+    let gap = i64::from(actual.to_bits()) - i64::from(expected.to_bits());
+    assert!(
+        gap.abs() <= budget,
+        "{what}: {actual:e} vs {expected:e} is {} ulp apart, budget {budget}",
+        gap.abs()
+    );
 }
 
 #[test]
@@ -328,17 +382,40 @@ fn trigamma_resolves_both_sides_of_a_remote_pole() {
     }
 }
 
+/// `ψ` must resolve its positive zero: three adjacent `f32` arguments, three distinct signs.
+///
+/// # The bound is `1e-11`, and why it is not `2e-14`
+///
+/// This is the regression for a native `f32` recurrence that returned **the wrong sign** at
+/// `0x3fbb_16c3`. The fix at the time was to narrow the `f64` kernel, and the bound was then set
+/// at `2e-14` — which is what an `f64` computation rounded to `f64` can deliver, not what an
+/// `f32` kernel can.
+///
+/// `digamma` is native again, so the bound has to be one a native kernel can meet. It is no
+/// longer the recurrence, though: `ψ(1+a) = (a − a₀)·h(a)` factors the zero out instead of
+/// arriving at it by cancellation, which is what the old implementation could not do — see
+/// `kernels::f32::gamma`'s `DIGAMMA_UNIT_H`. Measured, the three points come back at `2.6e-12`,
+/// so `1e-11` holds with room while staying four orders tighter than the defect it guards
+/// against. For scale, the plain recurrence returns **exactly `0.0`** at two of these three
+/// arguments, which `1e-11` catches immediately.
+///
+/// The sign assertions are the point and are exact, so they do not depend on the bound at all.
 #[test]
 fn single_precision_digamma_resolves_its_positive_zero() {
     // References evaluated at the exact binary32 inputs by MPFR at 256 bits.
-    // The native f32 recurrence previously returned the wrong sign at 0x3fbb_16c3.
     for (bits, expected) in [
         (0x3fbb_16c2, -1.273_915_810_519_784_6e-7),
         (0x3fbb_16c3, -1.203_605_254_910_667e-8),
         (0x3fbb_16c4, 1.033_194_633_696_787_1e-7),
     ] {
         let actual = f64::from(f32::from_bits(bits).digamma());
-        assert!((actual - expected).abs() < 2e-14, "{actual} vs {expected}");
+        assert!((actual - expected).abs() < 1e-11, "{actual} vs {expected}");
+        assert_eq!(
+            actual < 0.0,
+            expected < 0.0,
+            "digamma({:e}) = {actual:e} has the wrong sign against {expected:e}",
+            f32::from_bits(bits)
+        );
     }
 }
 
@@ -354,4 +431,84 @@ fn digamma_handles_poles_and_signed_zero() {
     assert_eq!((-0.0_f64).digamma(), f64::INFINITY);
     assert_eq!(0.0_f32.digamma(), f32::NEG_INFINITY);
     assert_eq!((-0.0_f32).digamma(), f32::INFINITY);
+}
+
+property! {
+    // Floors on both sides of `SMALL_SHAPE`, at roughly half the coverage measured over six
+    // seeds (the split runs near even, 45.8–54.2% either way). The small-shape arm is the one
+    // that replaced a widening to `f64`, and its `x = 4` defect — `P + Q = 1.0000009537` — was
+    // only reachable because cases land on both sides of `a = 0.01`.
+    #![config(settings("f32_native_small_shape")
+        .cases(500)
+        .require("small-shape branch", 25.0)
+        .require("regular series", 25.0))]
+
+    /// The native `f32` incomplete gamma at a small shape, where it used to widen to `f64`.
+    ///
+    /// `IncompleteGammaMethod::SmallShape` is the branch that replaced the widening, and it is
+    /// the only one of the six that keeps the `O(a)` terms the other series drop. Three laws
+    /// reach it, none of which the widened version could meaningfully have been tested against:
+    ///
+    /// - **`P + Q = 1` exactly to a tolerance**, which is the pair's defining relation and the
+    ///   one a mis-sited branch breaks first, because `gamma_lr` and `gamma_ur` choose their
+    ///   routes independently and a disagreement shows up here immediately.
+    /// - **Monotonicity in `x`**, which no series identity implies and which catches a branch
+    ///   returning a value from the wrong regime at a boundary.
+    /// - **`P(a, x) → 1` as the argument grows**, the limit the `Limit` arm must supply
+    ///   explicitly — without it the series return `NaN` at an infinite argument and poison
+    ///   `erf` and the whole normal family built on it.
+    ///
+    /// The budget on `P + Q` is a few ulps rather than exact: the two tails are formed by
+    /// different expressions, so the sum rounds twice, and at a small shape one of them is near
+    /// `1` where its own ulp is `1.2e-7`.
+    ///
+    /// Written in receiver form — `x.gamma_lr(a)` — deliberately. The trait takes the *argument*
+    /// as the receiver and the shape as the parameter, which is the opposite order from the
+    /// kernel function behind it, and the first draft of this property had them swapped. It then
+    /// reported a monotonicity violation that looked exactly like a branch defect and was
+    /// `P(shape = x, at = a)` decreasing in its shape, which is correct behaviour.
+    fn the_native_f32_small_shape_gamma_tails_are_complementary(
+        a in generate::float32::in_range(1e-4, 0.02),
+        x in generate::float32::in_range(1e-6, 4.0),
+    ) {
+        if !a.is_finite() || !x.is_finite() || a <= 0.0 || x <= 0.0 {
+            return Ok(());
+        }
+        classify!("small-shape branch", a <= 0.01);
+        classify!("regular series", a > 0.01);
+
+        let lower = x.gamma_lr(a);
+        let upper = x.gamma_ur(a);
+        check!(
+            (0.0..=1.0).contains(&lower) && (0.0..=1.0).contains(&upper),
+            "f32 gamma tails must be probabilities: P({a:e},{x:e}) = {lower:e}, Q = {upper:e}"
+        );
+        relation::agree(
+            "f32 small shape: P + Q = 1",
+            (),
+            |()| f64::from(lower) + f64::from(upper),
+            |()| 1.0,
+            &Absolute(8.0 * f64::from(f32::EPSILON)),
+        )?;
+
+        // P is nondecreasing in x. Compared at a doubled argument so the step is never lost to
+        // the argument's own rounding.
+        let further = (x * 2.0).gamma_lr(a);
+        check!(
+            further >= lower,
+            "f32 P must be nondecreasing in x: P({a:e},{x:e}) = {lower:e} but \
+             P({a:e},{:e}) = {further:e}",
+            x * 2.0
+        );
+
+        // The limits the `Limit` arm owns.
+        check!(
+            f32::INFINITY.gamma_lr(a) == 1.0 && f32::INFINITY.gamma_ur(a) == 0.0,
+            "f32 gamma tails must saturate at an infinite argument for a = {a:e}"
+        );
+        check!(
+            0.0f32.gamma_lr(a) == 0.0 && 0.0f32.gamma_ur(a) == 1.0,
+            "f32 gamma tails must be exact at a zero argument for a = {a:e}"
+        );
+    }
 }

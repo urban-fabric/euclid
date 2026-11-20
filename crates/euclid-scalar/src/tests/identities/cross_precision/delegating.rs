@@ -47,7 +47,7 @@ fn f32_and_f64_agree_to_single_precision() {
 // looser than the format — wide enough that a mutated polynomial coefficient can sit inside it
 // unnoticed. Mutation testing measured the consequence: around 480 surviving mutants in the f32
 // tree, with `kernels/f32/quantile.rs` (118), `impls/real_f32.rs` (117),
-// `kernels/f32/gamma.rs` (91), `kernels/f32/polygamma.rs` (77) and `kernels/erf/f32.rs` (74) the
+// `kernels/f32/gamma.rs` (91), `kernels/f32/polygamma.rs` (77) and `kernels/f32/erf.rs` (74) the
 // worst. `<impl Real for f32>::asin` could return `0.0` for every input.
 //
 // `euclid_stability::relation::precision_agrees` is the instrument built for exactly this, and
@@ -68,19 +68,60 @@ fn f32_and_f64_agree_to_single_precision() {
 //
 // Three things the measurement shows that are worth reading off it:
 //
-//   - **Several kernels agree bit-exactly** (`bessel_j0`, `k0`, `k1`, `y0`, `airy_ai`,
-//     `airy_bi`, `exp_int_ei`, `exp_int_e1`). A budget of zero across four hundred
+//   - **Nothing is bit-exact any more, and that is the end state rather than a regression.**
+//     This bullet used to list eight kernels agreeing to zero ulp, each because it computed in
+//     `f64` and rounded once. The whole `f32` surface is native now, so the test that pinned
+//     those zeros has no members left and the list below is the entire picture. A budget of zero
+//     across four hundred
 //     arguments is not luck — these compute in f64 and round once. Pinning zero keeps that
 //     true, and would catch someone "optimising" one into a genuine f32 path.
+//
+//     **Read that last sentence as a notification, not a prohibition.** Moving these to native
+//     `f32` is the intended direction — an `f32` surface exists to be usable where `f64` is not,
+//     so a kernel that reaches `f64` for its accuracy defeats its own purpose. When one is
+//     ported, its entry moves out of this test and into the measured list below, with the new
+//     budget derived rather than guessed. `erfc_inv` went that way first, from `0` here to `8`
+//     there, and the single property that had been relying on the narrowing to assert *correct
+//     rounding* was re-sited at the same time — see
+//     `tests/properties/identities/distribution_extremes.rs`. A port that cannot state what it
+//     gave up has not finished. `exp_int_e1` and `exp_int_ei` followed, to `13` and `49`, and
+//     the `K` family to `14`. `J` followed, and is the one port so far whose budget here is set
+//     by a function property rather than a method: `J` has infinitely many zeros, so an ulp
+//     count against it collapses at every one and the number below says more about the metric
+//     than the kernel. Against its envelope `√(2/πx)` — the scale a consumer's absolute error
+//     actually has — the native `J` holds to `5.4e-7`, about four times the format's resolution.
+//     The two numbers below land at `x = 8.65` and `x = 16.45`, which are `J₀`'s zero at `8.6537`
+//     and `J₁`'s at `16.4706`. That is the metric reporting the zero, not the kernel. `Y₀`'s
+//     `587` lands at `x = 7.08`, next to its zero at `7.0866`, for the same reason. Against
+//     their envelopes the native `J` and `Y` hold to `5.4e-7` and `2.9e-7`. `airy_ai`'s `140`
+//     and `airy_bi`'s `315` are the same story on the negative axis, where both oscillate
+//     through zeros — against their envelope the native Airy holds to `7.0e-7`, and its
+//     Wronskian `Ai·Bi′ − Ai′·Bi = 1/π` to `7.8e-7`.
 //   - **The separately-implemented kernels are the loose ones**, and they are exactly the files
-//     the survivors concentrated in: `gamma` 35, `bessel_i0` 54, `bessel_i1` 48, `erfc` 69,
-//     `erfcx` 62.
-//   - **`ln_gamma` at 1514 ulp and `digamma` at 205 are not kernel defects.** Both have a zero
-//     inside the swept range — `ln_gamma(1) = 0` and `digamma` vanishes near `1.4616` — and ulp
-//     spacing collapses towards zero while the function's derivative does not. This is the same
-//     effect `euclid_stability::numeric::seam_ratio` documents for a raw ulp count, and the
-//     reason that function divides by an expected step. A tighter budget here would be a claim
-//     about the metric rather than about the code.
+//     the survivors concentrated in: `gamma` 35, `bessel_i0` 48, `bessel_i1` 50.
+//   - **A loose budget here has twice turned out to be a real defect**, so these numbers are
+//     worth re-deriving rather than accepting. `erfc` and `erfcx` sat at **69** and **62** until
+//     the `f32` `erf` module's continued-fraction threshold was found to have been *inherited*
+//     from the `f64` peer instead of derived at `f32`'s epsilon; they are now **7** and **7**.
+//     `ln_gamma` sat at **1514** and `digamma` at **205**, explained away here as the metric's
+//     fault for collapsing near a zero — the zero is real, but it was hiding a native Lanczos
+//     log form losing 20 ulps to cancellation wherever `lnΓ` is small. With the zeros factored
+//     out instead of subtracted, they are **72** and **31**, and `trigamma` went 3 to 1.
+//     The lesson is the one the file already states — measure and pin — plus: when a pinned
+//     number is orders above its neighbours, suspect the kernel before the metric.
+//   - **A port to native `f32` need not widen these numbers, and twice has narrowed them.**
+//     `digamma` went 31 → **3** and `ln_gamma` 1514 → **72** on being ported, both *better* than
+//     the `f64` kernel they used to narrow. That is not a paradox: this metric hands the wide
+//     kernel `x` and the narrow one `x as f32`, so a narrowing kernel still pays for the
+//     argument's rounding, and near a zero or a pole that term is the whole budget. A native
+//     kernel that reproduces the zero by construction — `ψ(1+a) = (a − a₀)h(a)`,
+//     `lnΓ(1+a) = a(a−1)g(a)` — beats it, because the factored form is *more* accurate at
+//     exactly the arguments the metric is most sensitive at.
+//
+//     Where the port does cost something, say so: `erfc_inv` went 0 → **8** and `trigamma`
+//     1 → **3**, and `erfc_inv` additionally gave up the correctly-rounded guarantee the
+//     narrowing provided. At a common argument the native `ψ` and `ψ₁` hold to 4.5 and 2.5 times
+//     the format's resolution over `[−9.9, −0.1]`.
 
 /// Arguments swept per kernel. Fixed, because the budgets below are the maximum gap observed
 /// over *this* sweep — changing it changes which arguments are visited and therefore the
@@ -104,50 +145,20 @@ macro_rules! agrees_to {
     }};
 }
 
-/// The f32 kernels that compute in f64 and round once: bit-exact, and pinned there.
-#[test]
-fn the_delegating_f32_kernels_are_bit_exact() {
-    agrees_to!("bessel_j0", 0.0, 20.0, 0, Real::bessel_j0, Real::bessel_j0);
-    agrees_to!("bessel_j1", 0.0, 20.0, 0, Real::bessel_j1, Real::bessel_j1);
-    agrees_to!("bessel_k0", 0.1, 15.0, 0, Real::bessel_k0, Real::bessel_k0);
-    agrees_to!("bessel_k1", 0.1, 15.0, 0, Real::bessel_k1, Real::bessel_k1);
-    agrees_to!("bessel_y0", 0.5, 20.0, 0, Real::bessel_y0, Real::bessel_y0);
-    agrees_to!("airy_ai", -5.0, 5.0, 0, Real::airy_ai, Real::airy_ai);
-    agrees_to!("airy_bi", -5.0, 2.0, 0, Real::airy_bi, Real::airy_bi);
-    agrees_to!("erfc_inv", 0.0, 2.0, 0, Real::erfc_inv, Real::erfc_inv);
-    agrees_to!(
-        "exp_int_ei",
-        0.1,
-        10.0,
-        0,
-        Real::exp_int_ei,
-        Real::exp_int_ei
-    );
-    agrees_to!(
-        "exp_int_e1",
-        0.1,
-        10.0,
-        0,
-        Real::exp_int_e1,
-        Real::exp_int_e1
-    );
-    agrees_to!(
-        "bessel_k0e",
-        0.1,
-        15.0,
-        0,
-        Real::bessel_k0e,
-        Real::bessel_k0e
-    );
-    agrees_to!(
-        "bessel_k1e",
-        0.1,
-        15.0,
-        0,
-        Real::bessel_k1e,
-        Real::bessel_k1e
-    );
-}
+// There is no longer a bit-exact test here, and the absence is deliberate.
+//
+// It pinned eight kernels at zero ulp — `bessel_j0`, `j1`, `k0`, `k1`, `y0`, `airy_ai`,
+// `airy_bi`, `exp_int_ei`, `exp_int_e1`, `bessel_k0e`, `k1e`, `erfc_inv` — on the grounds that
+// each computed in `f64` and rounded once, and said that pinning zero "would catch someone
+// 'optimising' one into a genuine `f32` path". It caught every one of them, which is what it was
+// for. The `f32` surface is now native throughout, so the test had no members left; an empty
+// test body is a worse record of that than a comment, because it still reports as passing.
+//
+// What replaced it is the measured list below. The one property worth carrying forward from the
+// old test is its reason for existing: a budget is only meaningful if someone re-derives it when
+// the kernel changes, and a budget of zero was the cheapest possible tripwire for that. The
+// measured budgets are not tripwires, so the discipline has to come from the practice described
+// above instead.
 
 /// The primitive-backed methods delegate to Rust's f32 implementations.
 #[test]
@@ -321,12 +332,33 @@ fn the_derived_angle_constants_match_their_definitions() {
 #[test]
 fn the_independent_f32_kernels_stay_inside_their_budgets() {
     agrees_to!("erf", -4.0, 4.0, 8, Real::erf, Real::erf);
-    agrees_to!("erfc", -4.0, 4.0, 69, Real::erfc, Real::erfc);
-    agrees_to!("erfcx", 0.01, 10.0, 62, Real::erfcx, Real::erfcx);
+    agrees_to!("erfc", -4.0, 4.0, 7, Real::erfc, Real::erfc);
+    agrees_to!("erfcx", 0.01, 10.0, 7, Real::erfcx, Real::erfcx);
+    agrees_to!("erfc_inv", 0.0, 2.0, 8, Real::erfc_inv, Real::erfc_inv);
+    agrees_to!(
+        "exp_int_e1",
+        0.1,
+        10.0,
+        13,
+        Real::exp_int_e1,
+        Real::exp_int_e1
+    );
+    // `Ei` has a zero at `x ≈ 0.3725`, inside this sweep, so the budget is dominated by the
+    // metric collapsing there rather than by the kernel — the same effect noted for
+    // `ln_gamma`, `digamma` and `atanh` below. Measured 49; the native `Ei` holds to 4 ulp
+    // against the `f64` kernel away from the zero.
+    agrees_to!(
+        "exp_int_ei",
+        0.1,
+        10.0,
+        49,
+        Real::exp_int_ei,
+        Real::exp_int_ei
+    );
     agrees_to!("erf_inv", -0.99, 0.99, 15, Real::erf_inv, Real::erf_inv);
     agrees_to!("gamma", 0.1, 8.0, 35, Real::gamma, Real::gamma);
     agrees_to!("trigamma", 0.1, 20.0, 3, Real::trigamma, Real::trigamma);
-    agrees_to!("bessel_i0", 0.0, 15.0, 54, Real::bessel_i0, Real::bessel_i0);
+    agrees_to!("bessel_i0", 0.0, 15.0, 48, Real::bessel_i0, Real::bessel_i0);
     agrees_to!(
         "bessel_i0e",
         0.0,
@@ -335,7 +367,7 @@ fn the_independent_f32_kernels_stay_inside_their_budgets() {
         Real::bessel_i0e,
         Real::bessel_i0e
     );
-    agrees_to!("bessel_i1", 0.0, 15.0, 48, Real::bessel_i1, Real::bessel_i1);
+    agrees_to!("bessel_i1", 0.0, 15.0, 50, Real::bessel_i1, Real::bessel_i1);
     agrees_to!("exprel", -2.0, 2.0, 1, Real::exprel, Real::exprel);
     agrees_to!("cos_m1", -3.0, 3.0, 2, Real::cos_m1, Real::cos_m1);
     agrees_to!(
@@ -377,21 +409,26 @@ fn the_independent_f32_kernels_stay_inside_their_budgets() {
         "bessel_i1e",
         0.0,
         30.0,
-        42,
+        43,
         Real::bessel_i1e,
         Real::bessel_i1e
     );
 }
 
-/// The two kernels whose budget is dominated by a zero inside the range, not by the kernel.
+/// The kernels whose budget is dominated by a zero inside the range, not by the kernel.
 ///
 /// See the note at the top of this section: an ulp count against a function that passes through
 /// zero measures the metric's collapse rather than the implementation's error. Pinned anyway,
 /// because a *rise* here is still a regression worth failing on.
+///
+/// **But the collapse is not a licence to stop looking.** `ln_gamma` was pinned at 1514 and
+/// `digamma` at 205 on exactly this reasoning, and both were also carrying a genuine
+/// cancellation defect — the two causes are not exclusive, and the metric's noise was large
+/// enough to hide the kernel's. At 72 and 31 the remaining width really is the zero.
 #[test]
 fn the_f32_kernels_with_a_root_in_range_are_pinned_loosely() {
-    agrees_to!("ln_gamma", 0.1, 20.0, 1_514, Real::ln_gamma, Real::ln_gamma);
-    agrees_to!("digamma", 0.1, 20.0, 205, Real::digamma, Real::digamma);
+    agrees_to!("ln_gamma", 0.1, 20.0, 72, Real::ln_gamma, Real::ln_gamma);
+    agrees_to!("digamma", 0.1, 20.0, 3, Real::digamma, Real::digamma);
     // `atanh(0) = 0`, so the same collapse applies — 17 ulp here is the metric, not the kernel.
     agrees_to!("atanh", -0.99, 0.99, 17, Real::atanh, Real::atanh);
 }

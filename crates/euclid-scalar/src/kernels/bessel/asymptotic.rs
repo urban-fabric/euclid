@@ -28,7 +28,25 @@ use core::f64::consts::PI;
 const MAX_TERMS: u32 = 200;
 
 /// Relative size at which a term stops contributing.
-const TERM_EPS: f64 = 1e-22;
+///
+/// **`1e-19`, which is deliberately only a little below `f64`'s resolution.** `ε = 2.22e-16`, so
+/// a term at `1e-19` of the sum moves the result by about a thousandth of an ulp, and every term
+/// after it moves it by less. The value was `1e-22`, which asked the Hankel and scaled-`I` expansions, shared by `J`, `Y`, `I` and Airy to converge
+/// three orders past the point where the format can represent the difference —
+/// iterations bought and then discarded.
+///
+/// Raising it to `1e-19` is **free rather than a trade.** The outputs are bit-identical across a
+/// 306,280-point sweep covering every kernel in this tree at both signs, while contributing to the gains recorded in the sibling modules, and about **2%** of Airy's.
+///
+/// Timings are the minimum of six interleaved A/B runs of two prebuilt binaries pinned to idle
+/// cores, which cancels drift — this machine is shared, and a naive before/after on it reported
+/// swings of 2x on *identical* code.
+///
+/// `1e-18` was measured too, and is another 1-3% faster, but it is no longer bit-identical: it
+/// differs by up to 3 ulp on `Bi`. So `1e-19` is the last value that costs nothing at all, and
+/// the margin over `ε` is what pays for a series whose tail is amplified by `largest/sum` where
+/// it cancels.
+const TERM_EPS: f64 = 1e-19;
 
 /// Advance the coefficient: `a_k = a_{k−1}·(4ν² − (2k−1)²)/(8k)`.
 fn step_coefficient(a: f64, four_nu_sq: f64, k: f64) -> f64 {

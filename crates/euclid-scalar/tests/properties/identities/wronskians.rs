@@ -54,11 +54,29 @@
 //!   so rather than loosening the bound to cover a regime the kernel does not claim.
 
 use super::*;
+use euclid_stability::target;
 
 /// `ζ = ⅔|x|^{3/2}`, the Airy phase, and the error term both Airy branches are documented
 /// against.
 fn airy_zeta(x: f64) -> f64 {
     2.0 / 3.0 * x.abs().powf(1.5)
+}
+
+/// Safety factor for the `I`/`K` Wronskian's forward-stability bound; see the property.
+const MODIFIED_SAFETY: f64 = 512.0;
+
+/// Safety factor for the `J`/`Y` Wronskian's forward-stability bound; see the property.
+const OSCILLATING_SAFETY: f64 = 16.0;
+
+/// Relative residual against `want`, as a fraction of `bound`. `1.0` is exactly at the bound.
+///
+/// The score to hand a budget where a condition number cannot serve — see the scaled Airy
+/// Wronskian, whose exact value is a constant.
+fn bound_fraction(got: f64, want: f64, bound: f64) -> f64 {
+    if !got.is_finite() || want == 0.0 || bound <= 0.0 {
+        return 0.0;
+    }
+    ((got - want) / want).abs() / bound
 }
 
 /// The relative bound for an Airy Wronskian residual at `x`.
@@ -77,7 +95,15 @@ fn airy_bound(x: f64) -> f64 {
 }
 
 property! {
-    #![config(settings("wronskians").cases(600))]
+    // All four properties here score, so the block can carry a budget: each compares against an
+    // *exact* closed form, which is the one situation where an accuracy claim can be stated
+    // without a reference implementation at all. Two of them use `safety·κ·u` and two use a
+    // documented bound, for the reason given at `bound_fraction`.
+    #![config(
+        settings("wronskians")
+            .cases(600)
+            .budget("tests/budgets.txt")
+    )]
 
     /// `Aiᵉ(x)·Biᵉ′(x) − Aiᵉ′(x)·Biᵉ(x) = 1/π`, for **every** real `x`.
     ///
@@ -95,8 +121,11 @@ property! {
         classify!("positive", x > 0.0);
         classify!("large", x.abs() > 1e6);
 
-        let wronskian = Real::airy_ai_e(x) * Real::airy_bi_e_prime(x)
-            - Real::airy_ai_e_prime(x) * Real::airy_bi_e(x);
+        let scaled_airy = |t: f64| {
+            Real::airy_ai_e(t) * Real::airy_bi_e_prime(t)
+                - Real::airy_ai_e_prime(t) * Real::airy_bi_e(t)
+        };
+        let wronskian = scaled_airy(x);
 
         // Beyond `|x| ≈ 1e11` the phase `ζ` can no longer be resolved in f64 — `ulp(ζ)` passes
         // `2π` — so on the negative axis the values stop being accurate pointwise. The trait
@@ -109,6 +138,12 @@ property! {
             wronskian.is_finite(),
             "the scaled Airy Wronskian must stay finite at x = {x:e}, got {wronskian:e}"
         );
+        // Scored as a *fraction of the documented bound*, which is the ratio form a budget
+        // wants. Deliberately not `forward_stable_margin`: this Wronskian is identically `1/π`,
+        // so `f′ = 0` and a condition-scaled bound `safety·κ·u` collapses to zero — measured,
+        // the margin came back as `7.4e14`, which says nothing about the kernel. A condition
+        // number is undefined as a yardstick for a quantity that does not vary.
+        target(bound_fraction(wronskian, core::f64::consts::FRAC_1_PI, airy_bound(x)));
         check_relative!(
             wronskian,
             core::f64::consts::FRAC_1_PI,
@@ -127,8 +162,11 @@ property! {
         classify!("negative", x < 0.0);
         classify!("positive", x > 0.0);
 
-        let wronskian = Real::airy_ai(x) * Real::airy_bi_prime(x)
-            - Real::airy_ai_prime(x) * Real::airy_bi(x);
+        let unscaled_airy = |t: f64| {
+            Real::airy_ai(t) * Real::airy_bi_prime(t) - Real::airy_ai_prime(t) * Real::airy_bi(t)
+        };
+        let wronskian = unscaled_airy(x);
+        target(bound_fraction(wronskian, core::f64::consts::FRAC_1_PI, airy_bound(x)));
 
         // Past `x ≈ 104` one factor has overflowed and the other underflowed, so the product is
         // `0·inf`. That is the scaled form's job, and it is checked above.
@@ -163,8 +201,25 @@ property! {
         classify!("above one", x >= 1.0);
         classify!("large", x > 1e6);
 
-        let wronskian = Real::bessel_i0e(x) * Real::bessel_k1e(x)
-            + Real::bessel_i1e(x) * Real::bessel_k0e(x);
+        let modified = |t: f64| {
+            Real::bessel_i0e(t) * Real::bessel_k1e(t) + Real::bessel_i1e(t) * Real::bessel_k0e(t)
+        };
+        let wronskian = modified(x);
+        // `κ = 1` here — the Wronskian is exactly `1/x` — so `safety·κ·u` is a real yardstick
+        // and the claim becomes "no worse than the problem itself". Measured worst is 121 ulp
+        // over this sweep, for a quantity built from four kernels, so the safety factor is 512.
+        if let Some(margin) =
+            relation::forward_stable_margin(x, modified, |t| 1.0 / t, MODIFIED_SAFETY)
+        {
+            target(margin);
+        }
+        relation::forward_stable(
+            "I0e K1e + I1e K0e = 1/x",
+            x,
+            modified,
+            |t| 1.0 / t,
+            MODIFIED_SAFETY,
+        )?;
         check!(
             wronskian.is_finite() && wronskian > 0.0,
             "the scaled I/K Wronskian must be positive and finite at x = {x:e}, got {wronskian:e}"
@@ -196,8 +251,26 @@ property! {
         classify!("below one", x < 1.0);
         classify!("above one", x >= 1.0);
 
-        let wronskian = Real::bessel_j0(x) * Real::bessel_y1(x)
-            - Real::bessel_j1(x) * Real::bessel_y0(x);
+        let oscillating = |t: f64| {
+            Real::bessel_j0(t) * Real::bessel_y1(t) - Real::bessel_j1(t) * Real::bessel_y0(t)
+        };
+        let wronskian = oscillating(x);
+        // `κ = 1` again. Measured worst is 4 ulp, so 16 leaves the usual fourfold headroom.
+        if let Some(margin) = relation::forward_stable_margin(
+            x,
+            oscillating,
+            |t| -2.0 / (core::f64::consts::PI * t),
+            OSCILLATING_SAFETY,
+        ) {
+            target(margin);
+        }
+        relation::forward_stable(
+            "J0 Y1 - J1 Y0 = -2/(pi x)",
+            x,
+            oscillating,
+            |t| -2.0 / (core::f64::consts::PI * t),
+            OSCILLATING_SAFETY,
+        )?;
         check_relative!(
             wronskian,
             -2.0 / (core::f64::consts::PI * x),
@@ -374,6 +447,98 @@ property! {
             check!(
                 slope < 0.0,
                 "Ai' must be negative at {moderate}, got {slope:e}"
+            );
+        }
+    }
+}
+
+property! {
+    // Floors on all four labelled regions, at roughly half the thinnest coverage measured over
+    // six seeds — `J/Y quadrature or march` is the scarce one at 4.8–7.0%, the others at 10% or
+    // better. Without these the labels only *report* the crossovers; a generator that drifted
+    // away from a join would test one branch twice and still pass, which is exactly how the
+    // `beta_reg` hole survived a suite that was reaching the branch.
+    #![config(settings("f32_native_bessel")
+        .cases(600)
+        .require("J/Y series", 5.0)
+        .require("J/Y quadrature or march", 2.5)
+        .require("J/Y Hankel", 60.0)
+        .require("K series", 5.0))]
+
+    /// The `f32` Bessel family's Wronskians, now that all four kinds are native.
+    ///
+    /// These had no generated coverage while `J`, `Y` and `K` narrowed the `f64` kernels — and
+    /// could not have had any worth running, because a Wronskian between four narrowed values is
+    /// a statement about `f64`'s kernels with two roundings on top. Now each of the four is a
+    /// separate single-precision implementation with its own crossovers, and the identity is
+    /// false unless all of them agree with each other *and* with the equation they solve.
+    ///
+    /// Four code paths per kind makes sixteen regime combinations across this range, and the
+    /// generated argument is what reaches them: `J`/`Y` switch at `2`, `7` and (for `Y`) `2`,
+    /// `K` at `1.5`, so a fixed sweep can straddle a join without ever landing beside it.
+    ///
+    /// Both identities are checked, because they fail differently. `J₀Y₁ − J₁Y₀ = −2/(πx)`
+    /// constrains the oscillating pair, where the shared Hankel phase is the common mode — it
+    /// would catch the `J` and `Y` halves of that expansion being swapped, which no value check
+    /// on either alone would. `I₀ᵉK₁ᵉ + I₁ᵉK₀ᵉ = 1/x` constrains the monotone pair, and the
+    /// scaled forms make it checkable across the whole axis rather than only where `K` is
+    /// representable.
+    fn the_native_f32_bessel_wronskians_hold(x in generate::float32::in_range(0.05, 60.0)) {
+        if !x.is_finite() || x <= 0.0 {
+            return Ok(());
+        }
+        classify!("J/Y series", x < 2.0);
+        classify!("J/Y quadrature or march", (2.0..7.0).contains(&x));
+        classify!("J/Y Hankel", x >= 7.0);
+        classify!("K series", x <= 1.5);
+
+        // The oscillating pair. Compared against `2/(πx)`, the natural scale of the identity,
+        // rather than relatively against zero.
+        let scale = 2.0 / (core::f32::consts::PI * x);
+        let oscillating =
+            Real::bessel_j0(x) * Real::bessel_y1(x) - Real::bessel_j1(x) * Real::bessel_y0(x);
+        relation::agree(
+            "f32: J0 Y1 - J1 Y0 = -2/(pi x)",
+            (),
+            |()| f64::from(oscillating),
+            |()| -f64::from(scale),
+            &Absolute(32.0 * f64::from(f32::EPSILON) * f64::from(scale).max(1e-2)),
+        )?;
+
+        // The monotone pair, scaled so it holds everywhere rather than only where K survives.
+        let monotone = Real::bessel_i0e(x) * Real::bessel_k1e(x)
+            + Real::bessel_i1e(x) * Real::bessel_k0e(x);
+        relation::agree(
+            "f32: I0e K1e + I1e K0e = 1/x",
+            (),
+            |()| f64::from(monotone * x),
+            |()| 1.0,
+            &Absolute(64.0 * f64::from(f32::EPSILON)),
+        )?;
+
+        // `Y₀′ = −Y₁` and `J₀′ = −J₁`: the march carries the derivative, so a sign or an
+        // off-by-one in it shows up here and in nothing else.
+        let step = (x * 1e-3).max(1e-4);
+        for (name, f, minus_derivative) in [
+            (
+                "J0' = -J1",
+                Real::bessel_j0 as fn(f32) -> f32,
+                Real::bessel_j1 as fn(f32) -> f32,
+            ),
+            (
+                "Y0' = -Y1",
+                Real::bessel_y0 as fn(f32) -> f32,
+                Real::bessel_y1 as fn(f32) -> f32,
+            ),
+        ] {
+            let central = (f(x + step) - f(x - step)) / (2.0 * step);
+            let expected = -minus_derivative(x);
+            // A central difference carries `O(step²)` truncation plus `ε/step` of rounding, so
+            // the bound is the sum of the two rather than the format's resolution.
+            let bound = f64::from(step * step) + f64::from(f32::EPSILON / step);
+            check!(
+                (f64::from(central) - f64::from(expected)).abs() <= 8.0 * bound,
+                "f32 {name} broken at x = {x:e}: {central:e} vs {expected:e}"
             );
         }
     }

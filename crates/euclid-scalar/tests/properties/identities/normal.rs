@@ -57,10 +57,14 @@ property! {
         classify!("left tail", x < -5.0);
         classify!("right tail", x > 5.0);
 
+        // Zero ulps, not one. `erfc` reflects on the negatives — `2 − erfc(|x|)` — so this
+        // identity is exact by construction rather than by the two sides sharing an error, which
+        // is what it used to be and what made it drift when one side improved. See
+        // `stability::symmetry_exact::the_complementary_error_function_reflects_exactly`.
         check_ulps!(
             Real::ndtr(x) + Real::ndtr(-x),
             1.0,
-            1,
+            0,
             "Phi(x) + Phi(-x) must be 1"
         );
         let p = Real::ndtr(x);
@@ -338,7 +342,20 @@ property! {
 }
 
 property! {
-    #![config(settings("erfc_inv").cases(500))]
+    // Floors at roughly half the thinnest coverage over six seeds: the complement side of the
+    // crossover runs 8.8–13.2%, the fraction side 86.8%+, the tail 75.2%+.
+    //
+    // This is a separate block from `erfc_recovers_what_its_inverse_was_given` below, which
+    // applies none of these labels — a floor binds every property sharing the `#![config]`, so a
+    // property that does not classify belongs in its own block. Both blocks keep
+    // `settings("erfc_inv")`, so they share `tests/regressions/erfc_inv.txt` and the committed
+    // tape that pins the `y = 4.957e-3` case is untouched: a regression file is per-suite rather
+    // than per-property by design, and saving appends.
+    #![config(settings("erfc_inv")
+        .cases(500)
+        .require("erfc complement form", 4.0)
+        .require("erfc fraction form", 60.0)
+        .require("tail", 50.0))]
 
     /// `erfc⁻¹(erfc(x)) = x` for `x ≥ 0`, and `erfc(erfc⁻¹(y)) = y` into the far tail.
     ///
@@ -354,6 +371,13 @@ property! {
         x in generate::float::in_range(0.0, 25.0),
     ) {
         classify!("tail", x > 5.0);
+        // Both sides of `ERFCX_CF_MIN`, the `erfc` form crossover — `1 − erf` below it and the
+        // continued fraction above. Spelled as a literal because the constant is private to the
+        // kernel, as the other crossover labels in these suites are. This is the threshold the
+        // erf work moved from `2.0` to `27/16`, and the stranded band it closed was `[1.6875, 2)`
+        // — which only a run landing on both sides of the join can speak to.
+        classify!("erfc complement form", x < 1.6875);
+        classify!("erfc fraction form", x >= 1.6875);
 
         let y = Real::erfc(x);
         if y > 0.0 && y < 2.0 {
@@ -379,6 +403,13 @@ property! {
             "outside [0, 2] erfc_inv must be NaN"
         );
     }
+}
+
+property! {
+    // Its own block, and its own floor: this property classifies `deep tail` and none of the
+    // crossover labels above, so sharing a `#![config]` with them would require a label it never
+    // applies. The suite name is deliberately the same, so the committed tape stays in place.
+    #![config(settings("erfc_inv").cases(500).require("deep tail", 40.0))]
 
     /// The same inverse from the other side, swept in log space so it reaches the tail.
     fn erfc_recovers_what_its_inverse_was_given(y in generate::float::magnitude(-1000, -1)) {
@@ -398,6 +429,64 @@ property! {
             |()| Real::erfc(x),
             |()| y,
             &Relative(16.0 * f64::EPSILON * (1.0 + x * x)),
+        )?;
+    }
+}
+
+property! {
+    #![config(settings("f32_native_erfc_inv").cases(500))]
+
+    /// The native `f32` `erfc_inv`, through the round trip and the branch it now owns.
+    ///
+    /// This had no generated property while it widened to `f64`: the round trip was then a
+    /// statement about the `f64` kernel, and the only `f32` content was one rounding. It is
+    /// native now, and the thing worth a law is the branch — `HalvingCoordinate` splits on
+    /// whether `y/2` is exact, which is a property of the *representation* rather than of the
+    /// magnitude, so no threshold constant marks it and no fixed test case lands on it reliably.
+    /// A generated `y` ranging over the subnormals does.
+    ///
+    /// The bound is the conditioning of the round trip, not a flat tolerance. Going out and back
+    /// amplifies by `|x·erfc'(x)/erfc(x)|`, which grows with `x` — about `8.9` at `x = 2` and
+    /// past `20` by `x = 10` — so a budget that does not scale with it either passes everything
+    /// in the centre or fails everything in the tail. `erfc` carries its own `7` ulp on top; see
+    /// `kernels::erf::f32`'s `ERFCX_CF_MIN`.
+    fn the_native_f32_erfc_inverse_round_trips(y in generate::float::magnitude(-44, -1)) {
+        // Drawn by decade in `f64` and narrowed, because `generate::float32` has no `magnitude`
+        // and the point is to reach the `f32` subnormals, which start at `1.18e-38` — the whole
+        // band where `HalvingCoordinate::Logarithmic` is the branch taken.
+        let y = (y as f32).abs();
+        if !(y > 0.0 && y < 2.0) {
+            return Ok(());
+        }
+        let half = 0.5f32 * y;
+        classify!("halving is exact", half + half == y);
+        classify!("halving rounds", half + half != y);
+        classify!("deep tail", y < 1e-30);
+
+        let x = Real::erfc_inv(y);
+        if !x.is_finite() {
+            return Ok(());
+        }
+        // erfc is decreasing, so the inverse must be too: a monotonicity check that costs
+        // nothing and catches a branch returning a value from the wrong coordinate.
+        let lower = Real::erfc_inv(y * 0.5f32);
+        if lower.is_finite() {
+            check!(
+                lower >= x,
+                "f32 erfc_inv must decrease in y: erfc_inv({y:e}) = {x:e} but \
+                 erfc_inv({:e}) = {lower:e}",
+                y * 0.5f32
+            );
+        }
+
+        let back = Real::erfc(x);
+        let condition = 1.0 + f64::from(x * x);
+        relation::agree(
+            "f32: erfc(erfc_inv(y)) = y",
+            (),
+            |()| f64::from(back),
+            |()| f64::from(y),
+            &Relative(64.0 * f64::from(f32::EPSILON) * condition),
         )?;
     }
 }

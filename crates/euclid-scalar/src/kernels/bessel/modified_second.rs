@@ -39,8 +39,26 @@ use crate::constants::f64::EULER_GAMMA;
 /// Iteration cap for the power series here.
 const MAX_TERMS: u32 = 1_000;
 
-/// Relative size at which a series term stops contributing.
-const TERM_EPS: f64 = 1e-20;
+/// Relative size at which a term stops contributing.
+///
+/// **`1e-19`, which is deliberately only a little below `f64`'s resolution.** `ε = 2.22e-16`, so
+/// a term at `1e-19` of the sum moves the result by about a thousandth of an ulp, and every term
+/// after it moves it by less. The value was `1e-20`, which asked the `K` power series to converge
+/// one order past the point where the format can represent the difference —
+/// iterations bought and then discarded.
+///
+/// Raising it to `1e-19` is **free rather than a trade.** The outputs are bit-identical across a
+/// 306,280-point sweep covering every kernel in this tree at both signs, while leaving `K₀` and `K₁` unchanged to within noise — their cost is the quadrature, not the series.5%**, because the quadrature dominates their cost, not the series.
+///
+/// Timings are the minimum of six interleaved A/B runs of two prebuilt binaries pinned to idle
+/// cores, which cancels drift — this machine is shared, and a naive before/after on it reported
+/// swings of 2x on *identical* code.
+///
+/// `1e-18` was measured too, and is another 1-3% faster, but it is no longer bit-identical: it
+/// differs by up to 3 ulp on `Bi`. So `1e-19` is the last value that costs nothing at all, and
+/// the margin over `ε` is what pays for a series whose tail is amplified by `largest/sum` where
+/// it cancels.
+const TERM_EPS: f64 = 1e-19;
 
 /// `pub(super)` rather than private: the unit tests live in a sibling `tests` module because
 /// implementation plus tests exceeded this crate's 400-line file budget, and they compare the
@@ -60,6 +78,22 @@ const K_STEP_MAX: f64 = 0.2;
 /// Step coefficient for the large-`x` regime, where the integrand is a Gaussian of width
 /// `σ = 1/√x` and the trapezoid error is `≈ e^{−2π²σ²/h²}`. That needs `h < 0.66σ`; `0.5`
 /// leaves margin.
+///
+/// # The margin is not slack, and has been measured
+///
+/// `e^{−2π²/c²}` is `5e-35` at `c = 0.5` and `2e-20` at the nominal limit `c = 0.66`, so the
+/// bound looks like eighteen orders of headroom that a wider step could spend — and `K₀`/`K₁`
+/// are among the slowest kernels here, so it is the obvious place to look. **It does not work.**
+/// Taking `c = 0.66` with [`K_STEP_MAX`] at `0.22` to match moved 12,814 values of a
+/// 306,280-point sweep, by up to **15 ulp on `K₁`** and 7 on `K₀`, while `K₁` got only 5% faster
+/// and `K₀` got *slower*.
+///
+/// The bound is asymptotic in the node count: it describes how the discretization error decays
+/// once the strip is well resolved, not its size at the few dozen nodes a moderate argument
+/// actually uses. So the quantity `c` is really trading against is not the formula above, and
+/// the formula's headroom is not available. Node count is also not where these two kernels spend
+/// their time — see the [`TERM_EPS`] measurement, which cut the series' iterations and moved
+/// `K₀`/`K₁` by under half a percent.
 const K_STEP_COEFF: f64 = 0.5;
 
 /// Truncation level: integrate while `x(cosh t − 1) < 45`, so the discarded tail is below
@@ -93,9 +127,51 @@ pub(crate) fn k_nu_scaled(nu: f64, x: f64) -> f64 {
     // The t = 0 node has weight one-half and integrand one.
     let mut total = 0.5;
     for node in 1..=nodes {
-        total += k_scaled_integrand(nu, root_x, step * node as f64);
+        total += crate::math::bessel::k_scaled_integrand(nu, root_x, step * node as f64);
     }
     step * total
+}
+
+/// `(Kνᵉ(x), Kμᵉ(x))` for two orders at one argument, over a single sweep of nodes.
+///
+/// # Why this exists
+///
+/// Everything expensive about the quadrature depends on `x` alone. [`k_quadrature_step`] and
+/// [`k_truncation_time`] fix the same nodes whichever order is asked for, and at each node the
+/// integrand is `e^{−2(√x sinh(t/2))²}·cosh(νt)` — in which only the final `cosh` carries the
+/// order. Two separate calls therefore evaluate `sinh` and `exp` twice over the identical node
+/// list and throw one copy of each away.
+///
+/// Airy on the positive axis needs exactly such a pair, `K_{1/3}` and `K_{2/3}` at the same
+/// argument, and was paying for two full sweeps — see [`super::super::airy`]. Per node this
+/// goes from two `sinh`, two `exp` and two `cosh` to one, one and two, so the shared factor is
+/// the `exp`, which is the dearest of the three.
+///
+/// # It is bit-identical, not merely close
+///
+/// Each term is `envelope * (nu * t).cosh()` with `envelope` formed by the same operations in
+/// the same order as [`crate::math::bessel::k_scaled_integrand`], and the two accumulators are summed over the nodes
+/// in the same order as before. So this returns exactly what two calls to [`k_nu_scaled`]
+/// return, bit for bit, and is a cost change only — which is what makes it safe to apply to a
+/// kernel whose error budget is already measured.
+pub(crate) fn k_nu_pair_scaled(nu: f64, mu: f64, x: f64) -> (f64, f64) {
+    debug_assert!(x > 0.0 && x.is_finite());
+    let root_x = x.sqrt();
+    let step = k_quadrature_step(root_x);
+    let nodes = (k_truncation_time(root_x) / step).ceil() as usize;
+
+    let mut total_nu = 0.5;
+    let mut total_mu = 0.5;
+    for node in 1..=nodes {
+        let t = step * node as f64;
+        // Apply √x before squaring so cosh(t) can leave the format while the decay stays finite.
+        let scaled_sinh = root_x * (t * 0.5).sinh();
+        let decay = 2.0 * scaled_sinh * scaled_sinh;
+        let envelope = (-decay).exp();
+        total_nu += envelope * (nu * t).cosh();
+        total_mu += envelope * (mu * t).cosh();
+    }
+    (step * total_nu, step * total_mu)
 }
 
 fn k_quadrature_step(root_x: f64) -> f64 {
@@ -111,13 +187,6 @@ fn k_truncation_time(root_x: f64) -> f64 {
     // across the whole range.
     // Divide after taking the roots so the radicand does not overflow at subnormal x.
     2.0 * ((0.5 * K_DECAY).sqrt() / root_x).asinh()
-}
-
-fn k_scaled_integrand(nu: f64, root_x: f64, t: f64) -> f64 {
-    // Apply √x before squaring so cosh(t) can leave the format while the decay stays finite.
-    let scaled_sinh = root_x * (t * 0.5).sinh();
-    let decay = 2.0 * scaled_sinh * scaled_sinh;
-    (-decay).exp() * (nu * t).cosh()
 }
 
 /// `K₀(x)` by its power series, for small `x`.
@@ -175,83 +244,71 @@ pub(super) fn k1_series(x: f64) -> f64 {
 /// The modified Bessel function of the second kind `K₀(x)`, for `x > 0`.
 ///
 /// Underflows to `0` for `x ≳ 746`, as the true value does; use [`k0e`] there.
+/// Which route evaluates `K_ν` at this argument.
+///
+/// One predicate serves all four entry points — `K₀`, `K₁` and their scaled peers — because they
+/// differ only in what each arm returns, never in which arm applies. They differ in *kind* at the
+/// origin, `K₀` having a logarithmic singularity and `K₁` a simple pole, but both diverge to `+∞`,
+/// so even that is one arm. The single-precision peer carries the same enum.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum KRoute {
+    /// A value the function takes exactly: `NaN` off the domain, the singularity at zero, and the
+    /// limit at infinity — where the scaled forms decay like `√(π/2x)` and the unscaled ones
+    /// faster still.
+    Value(f64),
+    /// `x ≤ `[`K_SERIES_MAX`]: the power series, exact for small `x` and the cheaper route.
+    Series,
+    /// Above it, the trapezoidal quadrature — whose node count would *grow* like `ln(1/x)`
+    /// towards zero, and is smallest exactly where the series stops being usable.
+    Quadrature,
+}
+
+impl KRoute {
+    pub(super) fn for_argument(x: f64) -> Self {
+        if x.is_nan() || x < 0.0 {
+            Self::Value(f64::NAN) // the real K is defined for positive argument
+        } else if x == 0.0 {
+            Self::Value(f64::INFINITY)
+        } else if x.is_infinite() {
+            Self::Value(0.0)
+        } else if x <= K_SERIES_MAX {
+            Self::Series
+        } else {
+            Self::Quadrature
+        }
+    }
+}
+
 pub(crate) fn k0(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match KRoute::for_argument(x) {
+        KRoute::Value(value) => value,
+        KRoute::Series => k0_series(x),
+        KRoute::Quadrature => k_nu_scaled(0.0, x) * (-x).exp(),
     }
-    if x < 0.0 {
-        return f64::NAN; // the real K is defined for positive argument
-    }
-    if x == 0.0 {
-        return f64::INFINITY; // logarithmic singularity
-    }
-    if x.is_infinite() {
-        return 0.0;
-    }
-    if x <= K_SERIES_MAX {
-        return k0_series(x);
-    }
-    k_nu_scaled(0.0, x) * (-x).exp()
 }
 
-/// The modified Bessel function of the second kind `K₁(x)`, for `x > 0`.
 pub(crate) fn k1(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match KRoute::for_argument(x) {
+        KRoute::Value(value) => value,
+        KRoute::Series => k1_series(x),
+        KRoute::Quadrature => k_nu_scaled(1.0, x) * (-x).exp(),
     }
-    if x < 0.0 {
-        return f64::NAN;
-    }
-    if x == 0.0 {
-        return f64::INFINITY; // simple pole, K₁ ~ 1/x
-    }
-    if x.is_infinite() {
-        return 0.0;
-    }
-    if x <= K_SERIES_MAX {
-        return k1_series(x);
-    }
-    k_nu_scaled(1.0, x) * (-x).exp()
 }
 
-/// The exponentially-scaled `K₀ᵉ(x) = e^{x}K₀(x)`, finite for every positive argument.
 pub(crate) fn k0e(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match KRoute::for_argument(x) {
+        KRoute::Value(value) => value,
+        KRoute::Series => k0_series(x) * x.exp(),
+        KRoute::Quadrature => k_nu_scaled(0.0, x),
     }
-    if x < 0.0 {
-        return f64::NAN;
-    }
-    if x == 0.0 {
-        return f64::INFINITY;
-    }
-    if x.is_infinite() {
-        return 0.0; // K₀ᵉ ~ sqrt(pi/2x) -> 0
-    }
-    if x <= K_SERIES_MAX {
-        return k0_series(x) * x.exp();
-    }
-    k_nu_scaled(0.0, x)
 }
 
-/// The exponentially-scaled `K₁ᵉ(x) = e^{x}K₁(x)`.
 pub(crate) fn k1e(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match KRoute::for_argument(x) {
+        KRoute::Value(value) => value,
+        KRoute::Series => k1_series(x) * x.exp(),
+        KRoute::Quadrature => k_nu_scaled(1.0, x),
     }
-    if x < 0.0 {
-        return f64::NAN;
-    }
-    if x == 0.0 {
-        return f64::INFINITY;
-    }
-    if x.is_infinite() {
-        return 0.0;
-    }
-    if x <= K_SERIES_MAX {
-        return k1_series(x) * x.exp();
-    }
-    k_nu_scaled(1.0, x)
 }
 
 #[cfg(test)]
@@ -277,7 +334,7 @@ mod quadrature_tests {
     #[test]
     fn integrand_matches_a_node_with_exact_hyperbolic_values() {
         // cosh(ln 2) = (2 + 1/2)/2. At x = 4 the decay is therefore 1.
-        let actual = k_scaled_integrand(1.0, 2.0, core::f64::consts::LN_2);
+        let actual = crate::math::bessel::k_scaled_integrand(1.0, 2.0, core::f64::consts::LN_2);
         assert!((actual - 1.25 * (-1.0_f64).exp()).abs() < 1e-15);
     }
 

@@ -47,6 +47,7 @@
 
 use crate::constants::f64::EULER_GAMMA;
 use crate::math::arithmetic::{term_is_negligible, two_sum};
+use crate::math::complex::{c_mul, c_recip};
 use crate::math::continued_fraction::{LENTZ_TINY_F64, converged};
 
 /// Below this argument `Si`/`Ci` use the power series; at or above it, the continued fraction.
@@ -59,8 +60,40 @@ use crate::math::continued_fraction::{LENTZ_TINY_F64, converged};
 /// nothing from either side.
 const TRIG_SERIES_MAX: f64 = 4.0;
 
-/// Below this argument `E₁` uses the power series; at or above it, the continued fraction.
-const E1_SERIES_MAX: f64 = 1.0;
+/// Above this argument `E₁` leaves the power series for Lentz's continued fraction.
+///
+/// # `2.0`, raised from `1.0`, because the fraction is worst where it takes over
+///
+/// Both routes were measured against a 90-digit reference — the alternating series and the
+/// continued fraction evaluated independently in `Decimal`, agreeing with each other to between
+/// 24 and 75 digits, which is what makes either usable as a referee:
+///
+/// ```text
+/// x       series   fraction
+/// 1.00     0.00      0.00
+/// 1.05     0.00     16.10   ulp
+/// 1.10     0.67     21.51
+/// 1.50     0.62     11.87
+/// 2.00     0.00      2.56
+/// 2.50    28.22      2.51
+/// 3.00    76.64      1.20
+/// 4.00   349.87      1.55
+/// ```
+///
+/// The two cross at about `x = 2`, and the old threshold of `1.0` sat a decade below that — so
+/// every argument in `[1, 2]` took the *worse* of the two routes. The fraction converges slowest
+/// exactly where it is handed control, which is the same pattern `erfcx` shows above
+/// `ERFCX_CF_MIN` and the modified Bessels showed below `I_ASYMPTOTIC_MIN`.
+///
+/// Raising it halves the pointwise error on `[1, 2]` — `0`–`11.7` ulp against `12`–`22` — and
+/// also repairs the monotonicity that `stability::wiggle` records: the worst inversion was `114`
+/// ulp just above `1.0`, and `E₁` is now **exactly monotone** there, with the residual peak `64`
+/// ulp near `1.9` where the series' own cancellation is largest.
+///
+/// It cannot go higher. The series' terms are `xᵏ/(k·k!)`, alternating, and their peak grows with
+/// `x` while `E₁` itself decays — so cancellation beats even the compensated summation past about
+/// `2.5`, reaching `350` ulp by `x = 4` and `3.7e8` by `x = 12`.
+const E1_SERIES_MAX: f64 = 2.0;
 
 /// Above this argument `Ei` switches from its series to its asymptotic expansion. Every term
 /// of the series is positive for `x > 0`, so it suffers no cancellation at all and is
@@ -108,41 +141,9 @@ fn compensated_series(mut next: impl FnMut(u32) -> Option<f64>) -> f64 {
 // `euclid-scalar` carries a `Complex` *trait* but no concrete complex scalar, and the
 // continued fraction needs only these few operations, so they are local to this module.
 
-/// `(a + bi)(c + di)`.
-fn c_mul((a, b): (f64, f64), (c, d): (f64, f64)) -> (f64, f64) {
-    (a * c - b * d, a * d + b * c)
-}
-
-/// `1/(a + bi)`, by Smith's method.
-///
-/// The textbook `(a − bi)/(a² + b²)` squares both parts, which overflows or underflows for
-/// perfectly representable inputs; dividing through by the larger component first keeps every
-/// intermediate within range.
-fn c_recip((a, b): (f64, f64)) -> (f64, f64) {
-    if a.abs() >= b.abs() {
-        let r = b / a;
-        let d = a + b * r;
-        (1.0 / d, -r / d)
-    } else {
-        let r = a / b;
-        let d = a * r + b;
-        (r / d, -1.0 / d)
-    }
-}
-
-/// The 1-norm `|re| + |im|` for Lentz's zero test.
-fn c_norm1((a, b): (f64, f64)) -> f64 {
-    a.abs() + b.abs()
-}
-
-/// Replace an exactly-zero intermediate with [`LENTZ_TINY_F64`], which is what makes Lentz's
-/// method robust against a vanishing partial denominator.
-fn nudge(z: (f64, f64)) -> (f64, f64) {
-    if c_norm1(z) == 0.0 {
-        (LENTZ_TINY_F64, 0.0)
-    } else {
-        z
-    }
+/// The complex Lentz nudge at this format's floor; see [`crate::math::continued_fraction::nudge`].
+fn nudge_at(z: (f64, f64)) -> (f64, f64) {
+    crate::math::continued_fraction::nudge(z, LENTZ_TINY_F64)
 }
 
 /// `E₁(z)` for `Re z ≥ 0`, `z ≠ 0`, by Lentz's modified continued fraction.
@@ -153,7 +154,7 @@ fn nudge(z: (f64, f64)) -> (f64, f64) {
 fn e1_continued_fraction(z: (f64, f64), exp_neg_z: (f64, f64)) -> (f64, f64) {
     // Evaluate f = b₀ + a₁/(b₁ + a₂/(b₂ + ⋯)) with b_k = z + 2k + 1 and a_k = −k², so that
     // E₁(z) = e^{−z}/f.
-    let mut f = nudge((z.0 + 1.0, z.1));
+    let mut f = nudge_at((z.0 + 1.0, z.1));
     let mut c = f;
     let mut d = (0.0, 0.0);
 
@@ -163,9 +164,9 @@ fn e1_continued_fraction(z: (f64, f64), exp_neg_z: (f64, f64)) -> (f64, f64) {
         let b = (z.0 + 2.0 * kf + 1.0, z.1);
 
         // D ← 1/(b + a·D)
-        d = c_recip(nudge((b.0 + a * d.0, b.1 + a * d.1)));
+        d = c_recip(nudge_at((b.0 + a * d.0, b.1 + a * d.1)));
         // C ← b + a/C
-        let inv_c = c_recip(nudge(c));
+        let inv_c = c_recip(nudge_at(c));
         c = (b.0 + a * inv_c.0, b.1 + a * inv_c.1);
 
         let delta = c_mul(c, d);
@@ -177,38 +178,62 @@ fn e1_continued_fraction(z: (f64, f64), exp_neg_z: (f64, f64)) -> (f64, f64) {
     c_mul(exp_neg_z, c_recip(f))
 }
 
+/// Which route evaluates `E₁`.
+///
+/// Shaped like its sibling [`EiRoute`], and routed through `partial_cmp` for the same reason:
+/// ordering against zero names the `NaN`, the negative half-line and the two positive regimes in
+/// one exhaustive match, where the equivalent `x.is_nan() || x < 0.0` guard has an operator a
+/// mutant can weaken. That particular mutant is *equivalent* rather than live — a negative `x`
+/// reaches `ln x` in the series and comes back `NaN` anyway — but an exhaustive match has nothing
+/// to weaken in the first place.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum E1Route {
+    /// A value the function takes exactly: the pole at the origin, the limit at `+∞`, and the
+    /// `NaN` that states the domain.
+    Value(f64),
+    /// The power series below [`E1_SERIES_MAX`], which cancels `ln x` against a growing sum.
+    Series,
+    /// The continued fraction above it: the stable route in the tail, where `E₁` decays like
+    /// `e^{−x}/x` and the series' cancellation would dominate.
+    ContinuedFraction,
+}
+
+fn e1_route(x: f64) -> E1Route {
+    use core::cmp::Ordering;
+
+    match x.partial_cmp(&0.0) {
+        // The real `E₁` is defined for a positive argument.
+        None | Some(Ordering::Less) => E1Route::Value(f64::NAN),
+        Some(Ordering::Equal) => E1Route::Value(f64::INFINITY),
+        Some(Ordering::Greater) if x.is_infinite() => E1Route::Value(0.0),
+        Some(Ordering::Greater) if x <= E1_SERIES_MAX => E1Route::Series,
+        Some(Ordering::Greater) => E1Route::ContinuedFraction,
+    }
+}
+
+/// `E₁(x) = −γ − ln x + Σ_{k≥1} (−1)^{k+1} x^k/(k·k!)`, for small positive `x`.
+fn e1_series(x: f64) -> f64 {
+    let mut power_over_factorial = 1.0f64; // x^k/k!, carried across terms
+    let series = compensated_series(|k| {
+        let k1 = f64::from(k) + 1.0;
+        power_over_factorial *= x / k1;
+        let term = power_over_factorial / k1; // x^k/(k k!)
+        Some(if k.is_multiple_of(2) { term } else { -term })
+    });
+    -EULER_GAMMA - x.ln() + series
+}
+
 /// `E₁(x) = ∫ₓ^∞ e^{−t}/t dt`, for `x > 0`.
 ///
-/// Series below `x = 1`, continued fraction above it. The fraction is the stable route in the
-/// tail, where `E₁` decays like `e^{−x}/x` and the series would have to cancel `ln x` against
-/// a growing sum.
+/// Series below `x = 1`, continued fraction above it; see [`E1Route`].
 pub(crate) fn exp_int_e1(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match e1_route(x) {
+        E1Route::Value(value) => value,
+        E1Route::Series => e1_series(x),
+        // On the real axis the imaginary part is exactly zero throughout, so nothing is lost by
+        // sharing the complex routine.
+        E1Route::ContinuedFraction => e1_continued_fraction((x, 0.0), ((-x).exp(), 0.0)).0,
     }
-    if x < 0.0 {
-        return f64::NAN; // the real E1 is defined for positive argument
-    }
-    if x == 0.0 {
-        return f64::INFINITY;
-    }
-    if x.is_infinite() {
-        return 0.0;
-    }
-    if x <= E1_SERIES_MAX {
-        // E1(x) = -gamma - ln x + sum_{k>=1} (-1)^{k+1} x^k / (k k!)
-        let mut power_over_factorial = 1.0f64; // x^k/k!, carried across terms
-        let series = compensated_series(|k| {
-            let k1 = f64::from(k) + 1.0;
-            power_over_factorial *= x / k1;
-            let term = power_over_factorial / k1; // x^k/(k k!)
-            Some(if k.is_multiple_of(2) { term } else { -term })
-        });
-        return -EULER_GAMMA - x.ln() + series;
-    }
-    // On the real axis the imaginary part is exactly zero throughout, so nothing is lost by
-    // sharing the complex routine.
-    e1_continued_fraction((x, 0.0), ((-x).exp(), 0.0)).0
 }
 
 /// `Ei(x) = −PV ∫_{−x}^∞ e^{−t}/t dt`, the exponential integral.
@@ -264,8 +289,23 @@ fn ei_asymptotic(x: f64) -> f64 {
     exp_half * ((exp_half / x) * ei_asymptotic_sum(x))
 }
 
-fn use_trig_series(x: f64) -> bool {
-    x < TRIG_SERIES_MAX
+/// Which route evaluates the pair `(Ci, Si)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrigIntegralRoute {
+    /// The alternating power series, below [`TRIG_SERIES_MAX`].
+    Series,
+    /// One pass of the continued fraction along the imaginary axis, which returns both.
+    Fraction,
+}
+
+impl TrigIntegralRoute {
+    fn for_argument(x: f64) -> Self {
+        if x < TRIG_SERIES_MAX {
+            Self::Series
+        } else {
+            Self::Fraction
+        }
+    }
 }
 
 /// Sum `k!/x^k` through the least term for the asymptotic expansion of `Ei(x)`.
@@ -286,71 +326,149 @@ fn ei_asymptotic_sum(x: f64) -> f64 {
     total
 }
 
-/// `(Ci(x), Si(x))` for `x > 0`, from a single evaluation.
+/// The two trigonometric integrals at one argument, which [`trig_integrals`] produces together.
+///
+/// Named fields rather than a `(f64, f64)`: the pair is genuinely two different functions, not a
+/// coordinate, and every call site previously picked one out by index. `Ci` and `Si` differ in
+/// parity, in domain and in what they do at the origin — a reader asking which of `.0` and `.1`
+/// was which had to go and look, and a caller that swapped them would still typecheck.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TrigIntegrals {
+    /// `Ci(x) = γ + ln x + ∫₀ˣ (cos t − 1)/t dt`, the cosine integral.
+    cosine: f64,
+    /// `Si(x) = ∫₀ˣ sin(t)/t dt`, the sine integral.
+    sine: f64,
+}
+
+/// Both trigonometric integrals at `x > 0`, from a single evaluation.
 ///
 /// The two are the real and imaginary parts of one exponential integral, so taking them
 /// together is both cheaper than two passes and guarantees they remain mutually consistent.
-fn trig_integrals(x: f64) -> (f64, f64) {
+fn trig_integrals(x: f64) -> TrigIntegrals {
     debug_assert!(x > 0.0 && x.is_finite());
-    if use_trig_series(x) {
-        // Ci(x) = gamma + ln x + sum_{k>=1} (-1)^k x^{2k} / ((2k)(2k)!)
-        let mut power_over_factorial = 1.0f64; // x^{2k}/(2k)!
-        let ci = EULER_GAMMA
-            + x.ln()
-            + compensated_series(|k| {
-                let m = 2.0 * (f64::from(k) + 1.0);
-                power_over_factorial *= x * x / ((m - 1.0) * m);
-                let term = power_over_factorial / m;
-                Some(if k.is_multiple_of(2) { -term } else { term })
+    match TrigIntegralRoute::for_argument(x) {
+        TrigIntegralRoute::Series => {
+            // Ci(x) = gamma + ln x + sum_{k>=1} (-1)^k x^{2k} / ((2k)(2k)!)
+            let mut power_over_factorial = 1.0f64; // x^{2k}/(2k)!
+            let cosine = EULER_GAMMA
+                + x.ln()
+                + compensated_series(|k| {
+                    let m = 2.0 * (f64::from(k) + 1.0);
+                    power_over_factorial *= x * x / ((m - 1.0) * m);
+                    let term = power_over_factorial / m;
+                    Some(if k.is_multiple_of(2) { -term } else { term })
+                });
+            // Si(x) = sum_{k>=0} (-1)^k x^{2k+1} / ((2k+1)(2k+1)!)
+            let mut power_over_factorial = x; // x^{2k+1}/(2k+1)!
+            let sine = compensated_series(|k| {
+                if k > 0 {
+                    let m = 2.0 * f64::from(k);
+                    power_over_factorial *= x * x / (m * (m + 1.0));
+                }
+                let term = power_over_factorial / (2.0 * f64::from(k) + 1.0);
+                Some(if k.is_multiple_of(2) { term } else { -term })
             });
-        // Si(x) = sum_{k>=0} (-1)^k x^{2k+1} / ((2k+1)(2k+1)!)
-        let mut power_over_factorial = x; // x^{2k+1}/(2k+1)!
-        let si = compensated_series(|k| {
-            if k > 0 {
-                let m = 2.0 * f64::from(k);
-                power_over_factorial *= x * x / (m * (m + 1.0));
+            TrigIntegrals { cosine, sine }
+        }
+        TrigIntegralRoute::Fraction => {
+            // E1(ix) = -Ci(x) + i (Si(x) - pi/2), with e^{-ix} = cos x - i sin x.
+            let (re, im) = e1_continued_fraction((0.0, x), (x.cos(), -x.sin()));
+            TrigIntegrals {
+                cosine: -re,
+                sine: core::f64::consts::FRAC_PI_2 + im,
             }
-            let term = power_over_factorial / (2.0 * f64::from(k) + 1.0);
-            Some(if k.is_multiple_of(2) { term } else { -term })
-        });
-        return (ci, si);
+        }
     }
-    // E1(ix) = -Ci(x) + i (Si(x) - pi/2), with e^{-ix} = cos x - i sin x.
-    let (re, im) = e1_continued_fraction((0.0, x), (x.cos(), -x.sin()));
-    (-re, core::f64::consts::FRAC_PI_2 + im)
 }
 
 /// `Si(x) = ∫₀ˣ sin(t)/t dt`, the sine integral. Odd in `x`.
 pub(crate) fn sin_int(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match SinIntRoute::for_argument(x) {
+        SinIntRoute::Undefined => f64::NAN,
+        // Returning the argument rather than a literal zero, so a negative zero survives: `Si`
+        // is odd, hence `Si(−0) = −0`.
+        SinIntRoute::AtOrigin => x,
+        SinIntRoute::AtInfinity => core::f64::consts::FRAC_PI_2.copysign(x),
+        SinIntRoute::Quadrature => {
+            let si = trig_integrals(x.abs()).sine;
+            // A sign-bit test rather than `* x.signum()`: multiplying and dividing by `±1` give
+            // the same answer, so that spelling buys mutants with no observable difference. The
+            // argument is never zero here — [`SinIntRoute::AtOrigin`] takes that case.
+            if x.is_sign_negative() { -si } else { si }
+        }
     }
-    let ax = x.abs();
-    if ax == 0.0 {
-        return x; // preserves the sign of zero
+}
+
+/// Which route evaluates `Si` at this argument.
+///
+/// `Si` is odd and entire, so no arm here is a singularity: the quadrature takes `|x|` and the
+/// sign is applied afterwards. What the arms divide is the format — the two ends of it, and the
+/// signed zero in the middle that the general route would round away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SinIntRoute {
+    /// Not a number.
+    Undefined,
+    /// `x = ±0`, where `Si` is zero with the argument's own sign.
+    AtOrigin,
+    /// `±∞`, where `Si` converges to `±π/2` — the Dirichlet integral.
+    AtInfinity,
+    /// Everywhere else, by quadrature on `|x|` with the sign applied afterwards.
+    Quadrature,
+}
+
+impl SinIntRoute {
+    fn for_argument(x: f64) -> Self {
+        if x.is_nan() {
+            Self::Undefined
+        } else if x == 0.0 {
+            Self::AtOrigin
+        } else if x.is_infinite() {
+            Self::AtInfinity
+        } else {
+            Self::Quadrature
+        }
     }
-    if ax.is_infinite() {
-        return core::f64::consts::FRAC_PI_2.copysign(x);
+}
+
+/// Which route evaluates `Ci` at this argument.
+///
+/// Unlike [`SinIntRoute`] this one *is* about the function: `Ci` carries a `ln x` term, so it has
+/// a genuine singularity at the origin and no real value at all to the left of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CosIntRoute {
+    /// `NaN`, and the whole negative half-line including `−∞`, where the `ln x` term puts `Ci` on
+    /// the far side of a branch cut.
+    Undefined,
+    /// `x = 0`, where `ln x` diverges and `Ci` goes to `−∞`.
+    AtOrigin,
+    /// `+∞`, where `Ci` decays to zero.
+    AtInfinity,
+    /// Everywhere else, by quadrature.
+    Quadrature,
+}
+
+impl CosIntRoute {
+    fn for_argument(x: f64) -> Self {
+        if x.is_nan() || x < 0.0 {
+            Self::Undefined
+        } else if x == 0.0 {
+            Self::AtOrigin
+        } else if x.is_infinite() {
+            Self::AtInfinity
+        } else {
+            Self::Quadrature
+        }
     }
-    let si = trig_integrals(ax).1;
-    if x.is_sign_negative() { -si } else { si }
 }
 
 /// `Ci(x) = γ + ln x + ∫₀ˣ (cos t − 1)/t dt`, the cosine integral, for `x > 0`.
 pub(crate) fn cos_int(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
+    match CosIntRoute::for_argument(x) {
+        CosIntRoute::Undefined => f64::NAN,
+        CosIntRoute::AtOrigin => f64::NEG_INFINITY,
+        CosIntRoute::AtInfinity => 0.0,
+        CosIntRoute::Quadrature => trig_integrals(x).cosine,
     }
-    if x < 0.0 {
-        return f64::NAN; // the real Ci is defined for positive argument
-    }
-    if x == 0.0 {
-        return f64::NEG_INFINITY;
-    }
-    if x.is_infinite() {
-        return 0.0;
-    }
-    trig_integrals(x).0
 }
 
 #[cfg(test)]

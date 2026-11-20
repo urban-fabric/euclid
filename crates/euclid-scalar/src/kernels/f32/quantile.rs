@@ -3,20 +3,12 @@
 
 use super::gamma::ln_gamma;
 use super::normal::ndtri;
-use crate::kernels::quantile::gamma_quantiles_round_to_shape;
+use crate::math::density::{beta_pdf, gamma_pdf, log_beta_normaliser};
 use crate::math::roots::{bracket_is_narrow, bracketed_newton_step, wilson_hilferty_guess};
 
 /// Iteration cap. Bisection alone halves the bracket each step, so this many steps is far more
 /// than enough to reach the representable limit from any starting bracket.
 const MAX_STEPS: u32 = 200;
-
-/// `Gamma(a, 1)` density, from `ln_gamma`.
-fn gamma_pdf(x: f32, a: f32) -> f32 {
-    if x <= 0.0 {
-        return 0.0;
-    }
-    ((a - 1.0) * x.ln() - x - ln_gamma(a)).exp()
-}
 
 /// Wilson–Hilferty starting guess: the cube-root transform of a gamma is nearly normal, so a
 /// normal quantile maps across. Good to a few digits over most of the parameter range.
@@ -40,37 +32,145 @@ fn gamma_start(p: f32, a: f32) -> f32 {
     }
 }
 
+/// Whether every interior quantile of `Gamma(a, 1)` rounds to the shape at `f32`'s spacing.
+///
+/// Native, where this used to widen both arguments and call the `f64` predicate. The inequality
+/// is pure arithmetic — there was never anything for the wider format to add — but the *spacing*
+/// it tests is `f32`'s, so widening it was doubly beside the point: the quantity being compared
+/// only exists in this format.
+///
+/// When half the spacing below `a` is at least 64 standard deviations, the Chernoff bounds for
+/// `Gamma(a, 1)` put both outer tails below `exp(−1024)`, under the least positive `f32`
+/// probability, so no interior `p` can resolve away from the mean. `√a` is the standard
+/// deviation; the factor of 128 is 64 doubled to compare against the full spacing rather than
+/// its half.
+fn quantiles_round_to_shape(a: f32) -> bool {
+    (a - a.next_down()) >= 128.0 * a.sqrt()
+}
+
 /// The gamma quantile: the `x` with `P(a, x) = p`.
+///
+/// # Native, and what that costs at a small shape
+///
+/// This used to widen to `f64` for `a ≤ 0.01`, with the note that "rounding the CDF before
+/// inversion amplifies its error at small shapes". That note was exactly right, and the
+/// amplification is worth stating as a number because it is a property of the *problem* rather
+/// than of any implementation.
+///
+/// Near zero `P(a, x) ≈ x^a / Γ(1+a)`, so `∂P/∂x = aP/x` and therefore
+///
+/// ```text
+/// δx/x = (δP/P) / a
+/// ```
+///
+/// The inversion's condition number is `1/a`. At `a = 0.01` that is a hundredfold, so a CDF good
+/// to one `f32` ulp yields a root good to about a hundred — and no choice of solver, bracket or
+/// stopping rule changes it, because the forward function is genuinely that flat: `P` moves
+/// through its whole range only as `x` crosses `e^{1/a}`. Solving for `ln x` instead does not
+/// help either; `∂P/∂(ln x) = aP` carries the same factor.
+///
+/// Measured against the `f64` kernel rounded to `f32`, worst over `p ∈ (0, 1)`:
+///
+/// | `a` | `1e-3` | `0.01` | `0.05` | `0.5` | `1` | `10` | `100` |
+/// |---|---|---|---|---|---|---|---|
+/// | ulp | `111` | `115` | `59` | `9` | `8` | `12` | `50` |
+///
+/// which tracks `1/a` where that is large, and the CDF's own widening error at the other end.
+/// So the `f64` route was not better by virtue of being better code — it had 29 more bits to
+/// spend on a hundredfold amplification, and `f32` does not. A consumer needing a small-shape
+/// gamma quantile to `f32`'s full resolution needs `f64`; this function cannot supply it, and
+/// says so rather than quietly borrowing the wider format to look as though it can.
 pub(crate) fn gamma_lr_inv(p: f32, a: f32) -> f32 {
-    if a <= super::gamma::WIDE_SHAPE_MAX {
-        // Rounding the CDF before inversion amplifies its error at small shapes.
-        return super::super::quantile::gamma_lr_inv(f64::from(p), f64::from(a)) as f32;
+    match GammaQuantileRoute::for_arguments(p, a) {
+        GammaQuantileRoute::Undefined => f32::NAN,
+        GammaQuantileRoute::AtZero => 0.0,
+        GammaQuantileRoute::AtInfinity => f32::INFINITY,
+        GammaQuantileRoute::RoundsToShape => a,
+        GammaQuantileRoute::Solve => gamma_quantile_solve(p, a),
     }
-    if !a.is_finite() || !(0.0..=1.0).contains(&p) {
-        return f32::NAN;
-    }
-    if p == 0.0 {
-        return 0.0;
-    }
-    if p == 1.0 {
-        return f32::INFINITY;
-    }
-    if gamma_quantiles_round_to_shape(f64::from(a), f64::from(a - a.next_down())) {
-        return a;
+}
+
+/// Which tail of the gamma the quantile solves against.
+///
+/// The same two arms the `f64` peer in [`crate::kernels::quantile`] carries, and for the same
+/// reason: they solve *different equations* for the same root, and both the CDF and the target
+/// shift with the choice. The pair travels as one named thing because the two uses have to agree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GammaTail {
+    /// `p ≤ ½`: solve `P(a, x) = p` directly.
+    Lower,
+    /// `p > ½`: solve `−Q(a, x) = p − 1` instead. `P` has a rounding plateau near one — wider
+    /// here than in `f64`, with 24 bits of mantissa rather than 53 — where the residual carries
+    /// no information about which `x` is the root. Negated so the function stays increasing.
+    Upper,
+}
+
+impl GammaTail {
+    fn for_probability(p: f32) -> Self {
+        if p > 0.5 { Self::Upper } else { Self::Lower }
     }
 
-    let upper_tail = p > 0.5;
-    let cdf = |x: f32| {
-        if upper_tail {
-            -super::gamma::gamma_ur(a, x)
-        } else {
-            super::gamma::gamma_lr(a, x)
+    /// The increasing function whose root is the quantile.
+    fn cdf(self, a: f32, x: f32) -> f32 {
+        match self {
+            Self::Lower => super::gamma::gamma_lr(a, x),
+            Self::Upper => -super::gamma::gamma_ur(a, x),
         }
-    };
+    }
+
+    /// The target `p`, moved into the same frame as [`Self::cdf`].
+    fn target(self, p: f32) -> f32 {
+        match self {
+            Self::Lower => p,
+            Self::Upper => p - 1.0,
+        }
+    }
+}
+
+/// Which route produces the gamma quantile at this `(p, a)`.
+///
+/// The same five arms as the `f64` peer; [`quantiles_round_to_shape`] differs in taking the shape
+/// alone, because this format's spacing is derived rather than passed in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GammaQuantileRoute {
+    /// A shape that is not a positive finite number, or a `p` outside `[0, 1]` — `NaN` included,
+    /// which the range check rejects by failing rather than by comparing.
+    Undefined,
+    /// `p = 0`: the infimum of the support, attained exactly.
+    AtZero,
+    /// `p = 1`: the supremum, which the gamma does not attain.
+    AtInfinity,
+    /// Every interior quantile at this shape rounds to the shape itself, so there is nothing to
+    /// solve; see [`quantiles_round_to_shape`].
+    RoundsToShape,
+    /// An interior probability at a resolvable shape: bracket and solve.
+    Solve,
+}
+
+impl GammaQuantileRoute {
+    fn for_arguments(p: f32, a: f32) -> Self {
+        if !a.is_finite() || a <= 0.0 || !(0.0..=1.0).contains(&p) {
+            Self::Undefined
+        } else if p == 0.0 {
+            Self::AtZero
+        } else if p == 1.0 {
+            Self::AtInfinity
+        } else if quantiles_round_to_shape(a) {
+            Self::RoundsToShape
+        } else {
+            Self::Solve
+        }
+    }
+}
+
+/// Bracket and solve for an interior gamma quantile at a resolvable shape.
+fn gamma_quantile_solve(p: f32, a: f32) -> f32 {
+    let tail = GammaTail::for_probability(p);
+    let cdf = |x: f32| tail.cdf(a, x);
 
     // Bracket: walk out from the guess until the CDF straddles p.
     let seed = gamma_start(p, a);
-    let p = if upper_tail { p - 1.0 } else { p };
+    let p = tail.target(p);
     let mut lo = 0.0f32;
     let mut hi = seed.max(f32::MIN_POSITIVE);
     let mut steps = 0;
@@ -83,7 +183,15 @@ pub(crate) fn gamma_lr_inv(p: f32, a: f32) -> f32 {
         return f32::INFINITY;
     }
     // Every nonzero lower endpoint was accepted by `cdf(hi) < p` above.
-    solve_increasing(cdf, |x| gamma_pdf(x, a), p, lo, hi, seed.clamp(lo, hi))
+    let log_normaliser = ln_gamma(a);
+    solve_increasing(
+        cdf,
+        |x| gamma_pdf(x, a, log_normaliser),
+        p,
+        lo,
+        hi,
+        seed.clamp(lo, hi),
+    )
 }
 
 /// Safeguarded Newton steps share the bracket-relative stopping rule for both distributions.
@@ -116,33 +224,64 @@ fn solve_increasing(
     x
 }
 
-/// `Beta(a, b)` density, from `ln_gamma` via the log beta function.
-fn beta_pdf(x: f32, a: f32, b: f32) -> f32 {
-    if x <= 0.0 || x >= 1.0 {
-        return 0.0;
-    }
-    let ln_beta = ln_gamma(a) + ln_gamma(b) - ln_gamma(a + b);
-    ((a - 1.0) * x.ln() + (b - 1.0) * (-x).ln_1p() - ln_beta).exp()
-}
-
 /// The beta quantile: the `x` in `[0, 1]` with `I_x(a, b) = p`.
 pub(crate) fn beta_reg_inv(p: f32, a: f32, b: f32) -> f32 {
-    if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 || !(0.0..=1.0).contains(&p) {
-        return f32::NAN;
+    match BetaQuantileRoute::for_arguments(p, a, b) {
+        BetaQuantileRoute::Undefined => f32::NAN,
+        BetaQuantileRoute::AtZero => 0.0,
+        BetaQuantileRoute::AtOne => 1.0,
+        BetaQuantileRoute::Solve => beta_quantile_solve(p, a, b),
     }
-    if p == 0.0 {
-        return 0.0;
-    }
-    if p == 1.0 {
-        return 1.0;
-    }
+}
 
+/// Which route produces the beta quantile at this `(p, a, b)`.
+///
+/// One arm fewer than [`GammaQuantileRoute`], and the missing one is the point: the beta's
+/// support is bounded, so both endpoints are attained and there is no unresolvable-shape case to
+/// detect — the bracket `[0, 1]` is correct for every `a` and `b`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BetaQuantileRoute {
+    /// Either shape not a positive finite number, or a `p` outside `[0, 1]` — `NaN` included,
+    /// which the range check rejects by failing rather than by comparing.
+    Undefined,
+    /// `p = 0`: the left endpoint of the support, attained exactly.
+    AtZero,
+    /// `p = 1`: the right endpoint, which unlike the gamma's the beta does attain.
+    AtOne,
+    /// An interior probability: solve on `[0, 1]`.
+    Solve,
+}
+
+impl BetaQuantileRoute {
+    fn for_arguments(p: f32, a: f32, b: f32) -> Self {
+        if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 || !(0.0..=1.0).contains(&p) {
+            Self::Undefined
+        } else if p == 0.0 {
+            Self::AtZero
+        } else if p == 1.0 {
+            Self::AtOne
+        } else {
+            Self::Solve
+        }
+    }
+}
+
+/// Solve for an interior beta quantile. The bracket is the whole support, known up front.
+fn beta_quantile_solve(p: f32, a: f32, b: f32) -> f32 {
     // Note the internal argument order: (a, b, x), not (x, a, b).
     let cdf = |x: f32| super::beta::beta_reg(a, b, x);
 
     // The support is bounded, so the bracket is known up front — no expansion needed. That
     // makes this case unconditionally safe: bisection alone would converge.
-    solve_increasing(cdf, |x| beta_pdf(x, a, b), p, 0.0, 1.0, a / (a + b))
+    let log_beta = log_beta_normaliser(a, b);
+    solve_increasing(
+        cdf,
+        |x| beta_pdf(x, a, b, log_beta),
+        p,
+        0.0,
+        1.0,
+        a / (a + b),
+    )
 }
 
 #[cfg(test)]
@@ -221,6 +360,111 @@ mod tests {
                      (relative {relative:.3e}) — the bisection stopped on an absolute bound"
                 );
             }
+        }
+    }
+
+    /// The gamma quantile's five routes, asserted as decisions.
+    #[test]
+    fn the_gamma_quantile_routes_cover_the_probability_range() {
+        use GammaQuantileRoute::{AtInfinity, AtZero, RoundsToShape, Solve, Undefined};
+
+        for (p, a) in [
+            (0.5, 0.0),
+            (0.5, -1.0),
+            (0.5, f32::NAN),
+            (0.5, f32::INFINITY),
+            (f32::NAN, 2.0),
+            ((-0.0_f32).next_down(), 2.0),
+            (1.0_f32.next_up(), 2.0),
+            (-1.0, 2.0),
+            (2.0, 2.0),
+        ] {
+            assert_eq!(
+                GammaQuantileRoute::for_arguments(p, a),
+                Undefined,
+                "at p = {p:e}, a = {a:e}"
+            );
+        }
+        assert_eq!(GammaQuantileRoute::for_arguments(0.0, 2.0), AtZero);
+        assert_eq!(GammaQuantileRoute::for_arguments(1.0, 2.0), AtInfinity);
+        // The snap needs `ulp(a) ≥ 128√a`, which for `a = 2^k` in this format is
+        // `k − 23 ≥ 7 + k/2`, so `k ≥ 60` — against `k ≥ 118` in `f64`, the 29-bit mantissa
+        // difference showing up directly in where the distribution stops being resolvable.
+        for p in [f32::MIN_POSITIVE, 1e-12, 0.25, 0.5, 0.75, 1.0 - 1e-6] {
+            assert_eq!(GammaQuantileRoute::for_arguments(p, 2.0), Solve);
+            assert_eq!(GammaQuantileRoute::for_arguments(p, 2f32.powi(50)), Solve);
+            assert_eq!(
+                GammaQuantileRoute::for_arguments(p, 2f32.powi(64)),
+                RoundsToShape
+            );
+        }
+    }
+
+    /// The two tails, and the fact that they solve the same root through different equations.
+    #[test]
+    fn the_gamma_tail_switches_at_the_median_and_agrees_with_itself() {
+        use GammaTail::{Lower, Upper};
+
+        // Half itself is the lower tail: the comparison is strict.
+        assert_eq!(GammaTail::for_probability(0.5), Lower);
+        assert_eq!(GammaTail::for_probability(0.5_f32.next_up()), Upper);
+        assert_eq!(GammaTail::for_probability(0.5_f32.next_down()), Lower);
+        assert_eq!(GammaTail::for_probability(0.0), Lower);
+        assert_eq!(GammaTail::for_probability(1.0), Upper);
+
+        // The target moves with the arm, and only for the upper one.
+        assert_eq!(Lower.target(0.3), 0.3);
+        assert_eq!(Upper.target(0.75), -0.25);
+
+        // `P = 1 − Q`, so the two residuals agree at every `x`. That identity is what makes the
+        // switch free, and it is the only thing tying the two arms together.
+        let a = 3.0;
+        for x in [0.5_f32, 1.0, 3.0, 7.0, 20.0] {
+            let p = 0.75;
+            let lower = Lower.cdf(a, x) - Lower.target(p);
+            let upper = Upper.cdf(a, x) - Upper.target(p);
+            assert!(
+                (lower - upper).abs() <= 1e-6,
+                "at x = {x}: {lower} vs {upper}"
+            );
+        }
+        // And the arms are genuinely different functions of `x`.
+        assert!(Lower.cdf(a, 3.0) > 0.0);
+        assert!(Upper.cdf(a, 3.0) < 0.0);
+    }
+
+    /// The beta quantile's four routes. Its upper endpoint is attained, unlike the gamma's.
+    #[test]
+    fn the_beta_quantile_routes_attain_both_endpoints() {
+        use BetaQuantileRoute::{AtOne, AtZero, Solve, Undefined};
+
+        for (p, a, b) in [
+            (0.5, 0.0, 1.0),
+            (0.5, 1.0, 0.0),
+            (0.5, -1.0, 1.0),
+            (0.5, 1.0, -1.0),
+            (0.5, f32::NAN, 1.0),
+            (0.5, 1.0, f32::NAN),
+            (0.5, f32::INFINITY, 1.0),
+            (0.5, 1.0, f32::INFINITY),
+            (f32::NAN, 1.0, 1.0),
+            (-1.0, 1.0, 1.0),
+            (2.0, 1.0, 1.0),
+        ] {
+            assert_eq!(
+                BetaQuantileRoute::for_arguments(p, a, b),
+                Undefined,
+                "at p = {p:e}, a = {a:e}, b = {b:e}"
+            );
+        }
+        assert_eq!(BetaQuantileRoute::for_arguments(0.0, 2.0, 3.0), AtZero);
+        assert_eq!(BetaQuantileRoute::for_arguments(1.0, 2.0, 3.0), AtOne);
+        // `I_x(a, b) = 1` at `x = 1` for every shape pair, which is the arm the gamma lacks.
+        assert_eq!(beta_reg_inv(1.0, 0.1, 0.01), 1.0);
+        for p in [f32::MIN_POSITIVE, 1e-12, 0.5, 1.0 - 1e-6] {
+            assert_eq!(BetaQuantileRoute::for_arguments(p, 2.0, 3.0), Solve);
+            // Including the U-shaped densities, where the mass piles into both corners.
+            assert_eq!(BetaQuantileRoute::for_arguments(p, 0.1, 0.01), Solve);
         }
     }
 }

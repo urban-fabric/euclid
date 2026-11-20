@@ -81,3 +81,33 @@ property! {
         check_relative!(safe, reference, 1e-14, "hypot3 disagreed with the rescaled norm");
     }
 }
+
+property! {
+    #![config(settings("hypot3_underflow").require("naive underflows to zero", 50.0))]
+
+    /// And the third dimension's underflow direction, which was the one corner of this quartet
+    /// left open: `hypot` had both directions, `hypot3` only overflow.
+    ///
+    /// Worth closing rather than assuming symmetric, because the two-dimensional underflow test
+    /// does not exercise the same code — a three-argument norm has to pick its pivot among three
+    /// candidates, and the natural mistake is to rescale by the *first* argument or by a partial
+    /// `hypot(x, y)` that has already flushed to zero. Either passes the overflow test and fails
+    /// here. Measured clean: `hypot3` of three copies of the smallest subnormal is `9.88e-324`,
+    /// correctly rounded from `√3 · 4.94e-324`, where the naive form is `0`.
+    fn hypot3_avoids_intermediate_underflow(
+        x in generate::float::magnitude(-1_020, -540),
+        y in generate::float::magnitude(-1_020, -540),
+        z in generate::float::magnitude(-1_020, -540),
+    ) {
+        let safe = Real::hypot3(x, y, z);
+        let naive = (x * x + y * y + z * z).sqrt();
+
+        classify!("naive underflows to zero", naive == 0.0);
+
+        let m = x.abs().max(y.abs()).max(z.abs());
+        let reference = m * ((x / m) * (x / m) + (y / m) * (y / m) + (z / m) * (z / m)).sqrt();
+
+        check!(safe > 0.0, "hypot3 underflowed on a nonzero norm");
+        check_relative!(safe, reference, 1e-14, "hypot3 disagreed with the rescaled norm");
+    }
+}

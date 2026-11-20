@@ -2,12 +2,89 @@
 //! (`Φ(x) = ½ erfc(-x/√2)`) and quantile. `erf`/`erfc` reduce to the regularized incomplete
 //! gamma `P(½, x²)`; `erf_inv` uses Giles's rational approximation plus one Newton step.
 //!
-//! The single-precision peer is the child [`f32`](mod@crate::kernels::erf::f32) module rather
-//! than a file in a parallel `kernels/f32/` tree. Its thresholds are this file's derivations
-//! re-evaluated at `f32`'s epsilon, so the two belong within one directory of each other; see
-//! [`crate::kernels`] for why the rest of the tree has not been folded this way yet.
+//! The single-precision peer is [`crate::kernels::f32::erf`], in the mirrored tree with every
+//! other family. Its thresholds are this file's derivations re-evaluated at `f32`'s epsilon
+//! rather than inherited — they are a *different measurement of the same quantity*, which is why
+//! each lives beside the code it governs. What the two genuinely share is precision-generic and
+//! lives in [`crate::math`].
 
-pub(crate) mod f32;
+mod reflection;
+
+/// How many levels the backward recurrence needs at this magnitude, in `f64`.
+///
+/// # The depth is the accuracy
+///
+/// The fraction is evaluated **backward from a fixed depth** with no convergence test, so its
+/// accuracy is set entirely by that depth, and the depth needed falls steeply as `x` grows.
+/// Measured, the levels required for half an ulp:
+///
+/// ```text
+/// x        1.0  1.25  1.375  1.5  1.75   2   2.5   3    4    5    7   10   15   20   50
+/// levels   220   160    120  102    78  62    44  34   24   18   14   10    8    8    6
+/// ```
+///
+/// A single fixed depth has to be the worst case, so `120` everywhere was 20x the work needed at
+/// `x = 10` and 12x at `x = 5` — paid on every call. Bucketing by magnitude keeps the accuracy
+/// where it is scarce and returns the rest: each bucket sits at roughly 1.3x the measured
+/// requirement at its own left edge, which is where the requirement is largest.
+///
+/// Depth mattered more than it looked. At the `60` this used to be, the fraction carried `25.6`
+/// ulp at `ERFCX_CF_MIN` — the loosest point in the whole `erfc` family — and the threshold had
+/// been *placed* against that, two tenths too high. Deepening it fixed the crossover and let
+/// `ERFCX_CF_MIN` come down with it.
+///
+/// # Mutation testing is what asked for this
+///
+/// Every comparison in the ladder survived. They are not equivalent mutants — each moves a band
+/// of arguments onto a neighbouring depth — but no *accuracy* assertion can see it, because the
+/// buckets are deliberately sized above their requirement, so one bucket over still converges.
+/// What is worth pinning is the decision, and only a named decision can be asserted directly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErfcxDepth {
+    /// `[ERFCX_CF_MIN, 2)`, where the requirement peaks.
+    UnderTwo,
+    /// `[2, 3)`.
+    UnderThree,
+    /// `[3, 5)`.
+    UnderFive,
+    /// `[5, 10)`.
+    UnderTen,
+    /// `[10, 20)`.
+    UnderTwenty,
+    /// `[20, ∞)`, the floor.
+    AtLeastTwenty,
+}
+
+impl ErfcxDepth {
+    /// The magnitude selects the bucket.
+    fn for_argument(x: f64) -> Self {
+        if x < 2.0 {
+            Self::UnderTwo
+        } else if x < 3.0 {
+            Self::UnderThree
+        } else if x < 5.0 {
+            Self::UnderFive
+        } else if x < 10.0 {
+            Self::UnderTen
+        } else if x < 20.0 {
+            Self::UnderTwenty
+        } else {
+            Self::AtLeastTwenty
+        }
+    }
+
+    /// Levels for this bucket, roughly `1.3x` the measured requirement at its left edge.
+    fn levels(self) -> u32 {
+        match self {
+            Self::UnderTwo => 160,
+            Self::UnderThree => 72,
+            Self::UnderFive => 44,
+            Self::UnderTen => 24,
+            Self::UnderTwenty => 14,
+            Self::AtLeastTwenty => 10,
+        }
+    }
+}
 
 /// Below this argument `erf` is its own leading term, `2x/√π`.
 ///
@@ -28,28 +105,53 @@ const ERF_LINEAR_MAX: f64 = 1e-8;
 use super::gamma::gamma_lr;
 use core::f64::consts::PI;
 
+/// Which form evaluates `erf` at this magnitude.
+///
+/// Matched rather than tested as a chain of early returns: the four arms are exhaustive over the
+/// line, so a new one cannot be added without the compiler asking what it returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErfForm {
+    /// Not a number.
+    Undefined,
+    /// `±∞`, where `erf` saturates at exactly `±1` rather than going undefined.
+    Saturated,
+    /// `|x| < `[`ERF_LINEAR_MAX`]: `erf` is its own leading term `2x/√π`. Taking `x = 0` through
+    /// here is what makes `erf(−0.0)` return `−0.0`, which an odd function should.
+    Linear,
+    /// Everything else: `±P(½, x²)`, the regularized incomplete gamma.
+    IncompleteGamma,
+}
+
+impl ErfForm {
+    /// The non-finite cases first, then the magnitude.
+    fn for_argument(x: f64) -> Self {
+        if x.is_nan() {
+            Self::Undefined
+        } else if x.is_infinite() {
+            Self::Saturated
+        } else if x.abs() < ERF_LINEAR_MAX {
+            Self::Linear
+        } else {
+            Self::IncompleteGamma
+        }
+    }
+}
+
 /// The error function `erf(x) = (2/√π) ∫₀ˣ e^{-t²} dt`.
 pub(crate) fn erf(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    // erf saturates: the limits are exactly +/-1, not NaN.
-    if x.is_infinite() {
-        return if x > 0.0 { 1.0 } else { -1.0 };
-    }
-    if x.abs() < ERF_LINEAR_MAX {
-        return 2.0 / PI.sqrt() * x;
-    }
-    if x > 0.0 {
-        gamma_lr(0.5, x * x)
-    } else {
-        -gamma_lr(0.5, x * x)
+    match ErfForm::for_argument(x) {
+        ErfForm::Undefined => f64::NAN,
+        ErfForm::Saturated => 1.0_f64.copysign(x),
+        ErfForm::Linear => 2.0 / PI.sqrt() * x,
+        // `erf` is odd, so the magnitude comes from the incomplete gamma and the sign from the
+        // argument — which is the same value the explicit negation produced, to the bit.
+        ErfForm::IncompleteGamma => gamma_lr(0.5, x * x).copysign(x),
     }
 }
 
 /// Lower edge of the continued-fraction regime, for both `erfc` and `erfcx`.
 ///
-/// # Why it is 2 and not 4
+/// # Why it is not 4, and no longer 2
 ///
 /// It was `4.0`, on the reasoning that below that point `1 − erf` had not yet "lost too many
 /// bits, `erf` having rounded to `1.0`". That describes the wrong failure. `erf` does not round
@@ -63,47 +165,176 @@ pub(crate) fn erf(x: f64) -> f64 {
 /// | `1 − erf` | `3.7e-15` | `1.0e-15` | `4.6e-15` | `1.2e-13` | `2.4e-12` | `6.7e-11` | `1.2e-9` |
 /// | continued fraction | `2.9e-9` | `1.9e-13` | `2.2e-16` | `2.7e-16` | `3.1e-16` | `1.4e-16` | `2.7e-15` |
 ///
-/// So the old threshold left a band `x ∈ [2, 4]` where the worse of the two routes was in use,
-/// peaking at `1.2e-9` just below the handover — six orders off machine precision, in a range
-/// the Gaussian tail functions use constantly.
+/// So `4.0` left a band `x ∈ [2, 4]` where the worse of the two routes was in use, peaking at
+/// `1.2e-9` just below the handover. Moving the join to `2.0` fixed that.
 ///
-/// The fraction, at its existing 60 terms, is already at machine precision from `x = 1.8`
-/// (`8.0e-16`), so no extra depth is needed; it is only unusable below about `1.5`, where it has
-/// not converged. Moving the join to `2.0` takes the worst case over the whole axis from `1.2e-9`
-/// to `≈4.6e-15`, which is then the `1 − erf` floor just under the join and irreducible without a
-/// separate small-argument series for `erfc` itself.
+/// # Why `2.0` was still too high, and what the table above got wrong
 ///
-/// `2.0` is also what the `f32` peer already used — the single-precision port sited this
-/// correctly and the `f64` original was the outlier.
-const ERFCX_CF_MIN: f64 = 2.0;
+/// The `1 − erf` row is a row of **point samples**, and this route's error is not a smooth
+/// function that can be sampled. `erf(x)` is an `O(1)` quantity, so it moves in steps of
+/// `ulp(erf(x)) ≈ 1.1e-16`; dividing by a small `erfc(x)` turns each step into a *relative* jump
+/// of `1.1e-16/erfc(x)`. The route is therefore a **staircase**, constant over a run of
+/// neighbouring `x` and then jumping, and a sampled point says only where in a step it happened
+/// to land — `4.6e-15` at `x = 2.0` against a step height of `2.4e-14`. The envelope is the step
+/// height, and that is what has to be compared:
+///
+/// | `x` | 1.65 | 1.68 | **1.6875** | 1.69 | 1.75 | 1.90 | 2.00 |
+/// |---|---|---|---|---|---|---|---|
+/// | `1 − erf` step height | `5.7e-15` | `6.3e-15` | **`6.4e-15`** | `6.6e-15` | `8.3e-15` | `1.5e-14` | `2.4e-14` |
+/// | fraction, 60 terms | `1.1e-14` | `6.4e-15` | **`6.4e-15`** | `5.5e-15` | `1.8e-15` | `2.1e-16` | `<1e-16` |
+///
+/// The fraction's column is its truncation error, measured in-crate by running the same
+/// recurrence to 2,000 terms and differencing — no external reference needed, since the only
+/// question is how far 60 terms is from the fraction's own limit.
+///
+/// The two cross at `27/16`, where both carry about `6.4e-15`, so the join costs nothing in
+/// either direction — the same criterion the gamma and beta Edgeworth crossovers use. A dyadic
+/// value keeps the switch exactly representable. This takes the worst case over the whole axis
+/// from `2.4e-14`, just under the old join, to `6.4e-15`.
+///
+/// # `1.375`, lowered from `1.6875` once the fraction was given enough levels
+///
+/// The old figure was placed as "where the two carry equal error" — true, and measured against a
+/// fraction evaluated to only 60 levels. Deepening it to 120 (see the loop in `erfcx_fraction`)
+/// moves the fraction's own floor down with it, so the balance point moves too.
+///
+/// Measured against a 100-digit reference — the `erf` series and the `erfcx` fraction evaluated
+/// independently in `Decimal`, agreeing to between 15 and 67 digits:
+///
+/// ```text
+/// x        complement   fraction @60   fraction @120
+/// 1.00       16.96          --            1617 ulp
+/// 1.10        4.36          --              94
+/// 1.25        9.52          --            1.36
+/// 1.40       15.50          --            0.74
+/// 1.60       21.25          --            0.82
+/// 1.6875       --          25.56          0.85
+/// 1.75         --           8.77          0.00
+/// 1.90         --           0.94          0.94
+/// ```
+///
+/// So at 120 levels the fraction is the better route from about `x = 1.25`, where the complement
+/// form's `1 − erf` staircase — `≈ ε/(2·erfc(x))`, which is `21` ulp by `x = 1.6` — has already
+/// overtaken it. `1.375` keeps the fraction's own cliff at a distance: it is `1.36` ulp at `1.25`
+/// and `94` at `1.1`, the same super-exponential falloff `I_ASYMPTOTIC_MIN` has, so the threshold
+/// sits above the knee rather than on it.
+///
+/// Together the two changes take `[1.25, 1.9]` from `4`–`25.6` ulp to under `1.4`.
+///
+/// # The second step, to `1.0`, needed `erfc`'s negatives restructured first
+///
+/// Measured with a trustworthy reference — the `erf` series against a 6000-level fraction,
+/// agreeing to between 24 and 73 digits — the complement form below here costs:
+///
+/// ```text
+/// x       0.1   0.3   0.5   0.7   0.8   0.9   1.0   1.1   1.2    1.3   1.374
+/// ulp    1.12  0.68  4.87  4.75  9.20  14.8  17.0  4.36  26.4   1.40    2.18
+/// ```
+///
+/// `26` ulp at `1.2` is the loosest point left in the family, and the fraction reaches `x = 1.0`
+/// at `220` levels — affordable. Dropping the threshold to `1.0` duly takes `[1.0, 1.375]` to
+/// under `0.7` ulp.
+///
+/// It also **breaks `Φ(x) + Φ(−x) = 1`**, which `identities::normal` asserts at one ulp. That law
+/// held because both sides took the *same* route: `erfc(t)` was `1 − erf(t)` and `erfc(−t)` is
+/// `1 − erf(−t) = 1 + erf(t)`, so the sum is `2` with `erf`'s error cancelling **identically**.
+/// Making the positive side independently more accurate removes the cancellation and the sum
+/// drifts to one or two ulp.
+///
+/// # Why it stops at `1.375`, and what the real obstacle is
+///
+/// Lowering to `1.0` works numerically — `[1.0, 1.375]` measures **under `0.7` ulp** against the
+/// `4`–`26.4` the complement form costs there, with a `280`-level bucket. It was tried, and
+/// reverted, because it breaks two *identities* rather than any value:
+///
+/// - `Φ(x) + Φ(−x) = 1`. Fixed, and worth having independently: `erfc` now reflects on the
+///   negatives, so that law is exact by construction rather than by the two sides sharing an
+///   error. See `erfc`.
+/// - `erf(x) + erfc(x) = 1`. **Not** fixable the same way. It holds exactly only while `erfc` *is*
+///   `1 − erf`, so every argument moved onto the fraction is an argument where the identity
+///   becomes inexact by `erfc`'s own error. The old threshold put that boundary at `1.6875`;
+///   lowering it to `1.0` moved `erf_and_erfc_are_complementary`'s failure in with it.
+///
+/// That is a genuine trade, not an oversight: an independently-computed `erfc` is more accurate
+/// *and* less consistent with `erf`, and which matters depends on whether a caller composes the
+/// two. Resolving it means deciding that question explicitly — and relaxing the identity's
+/// tolerance in the band where the fraction runs — rather than moving a constant.
+///
+/// Three laws in this crate have now turned out to hold because two errors agreed rather than
+/// because either was accurate: this one, the `Φ` reflection, and `B(½,½) = π`. It is worth
+/// treating a one-ulp identity here as evidence of shared routing until checked.
+///
+/// Also measured and deliberately out of reach: `[0.8, 1.0)` stays at `9`–`17` ulp, because the
+/// fraction needs `380` levels at `0.75` and `840` at `0.5`. The depth requirement grows faster
+/// than the error it would remove.
+pub(crate) const ERFCX_CF_MIN: f64 = 1.375;
+
+/// Which of the two algebraically equal forms of `erfc` is evaluated at a given argument.
+///
+/// Named rather than left as an `if`, because the choice *is* the numerics: the two forms agree
+/// in exact arithmetic and fail in opposite directions in floating point, so which one runs is
+/// the whole content of [`ERFCX_CF_MIN`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ErfcForm {
+    /// `1 − erf(x)`. The subtraction itself is exact — `erf ∈ [½, 1)` here, so Sterbenz applies
+    /// — but `erf` is an `O(1)` quantity quantised at `ulp(erf)`, which divided by a small
+    /// `erfc` becomes a relative staircase of height `≈1.1e-16/erfc(x)`. Usable only while
+    /// `erfc` has not yet shrunk.
+    Complement,
+    /// `e^{−x²}·erfcx(x)` through the continued fraction. No cancellation anywhere, so it holds
+    /// to the underflow of `e^{−x²}` — but it has to have converged, which costs the small-`x`
+    /// end.
+    Fraction,
+}
+
+impl ErfcForm {
+    /// The regime `x` falls in. The boundary is where the two carry equal error; see
+    /// [`ERFCX_CF_MIN`] for the measurements that place it.
+    pub(crate) fn for_argument(x: f64) -> Self {
+        if x >= ERFCX_CF_MIN {
+            Self::Fraction
+        } else {
+            Self::Complement
+        }
+    }
+}
 
 /// The complementary error function `erfc(x) = 1 - erf(x)`.
 ///
-/// The naive `1 - erf(x)` cancels catastrophically in the right tail — by `x ≈ 6`
-/// `erf` rounds to exactly `1.0` and `erfc` would underflow to `0`. For `x ≥ ERFCX_CF_MIN`
-/// we instead evaluate the algebraically equal `erfc(x) = e^{-x²}·erfcx(x)` through the
-/// continued fraction, which keeps full precision down to the underflow of `e^{-x²}`.
+/// Evaluated by whichever of [`ErfcForm`]'s two routes is accurate at the argument. The naive
+/// `1 - erf(x)` cancels catastrophically in the right tail — by `x ≈ 6` `erf` rounds to exactly
+/// `1.0` and `erfc` would underflow to `0` — while the continued fraction needs `x` away from
+/// zero to converge.
 pub(crate) fn erfc(x: f64) -> f64 {
     if x.is_nan() {
         return f64::NAN;
     }
     if x.is_infinite() {
-        return if x > 0.0 { 0.0 } else { 2.0 };
+        return if x.is_sign_positive() { 0.0 } else { 2.0 };
     }
-    if x >= ERFCX_CF_MIN {
-        return (-x * x).exp() * erfcx_cf(x);
+    // Negative arguments **reflect** rather than evaluate: `erfc(−t) = 2 − erfc(t)`, saturating
+    // where the subtraction has nothing left to say. Both the reason and the boundary are in
+    // [`reflection`], which exists because that boundary is unreachable from here.
+    if x < 0.0 {
+        return reflection::reflected_erfc(erfc(-x));
     }
-    1.0 - erf(x)
+    match ErfcForm::for_argument(x) {
+        ErfcForm::Complement => 1.0 - erf(x),
+        ErfcForm::Fraction => (-x * x).exp() * erfcx_cf(x),
+    }
 }
 
 /// Continued-fraction core of `erfcx` for `x ≥ ERFCX_CF_MIN`, depending only on `x`
 /// (not on `erfc`), so `erfc` and `erfcx` can both call it without mutual recursion.
+///
+/// The depth is chosen from the argument and the closing association from its own range; both
+/// live in [`ErfcxDepth`] and [`crate::math::continued_fraction::reciprocal_of_product`].
 fn erfcx_cf(x: f64) -> f64 {
     let mut t = x;
-    for k in (1..=60).rev() {
-        t = x + (k as f64) * 0.5 / t;
+    for k in (1..=ErfcxDepth::for_argument(x).levels()).rev() {
+        t = x + f64::from(k) * 0.5 / t;
     }
-    1.0 / (PI.sqrt() * t)
+    crate::math::continued_fraction::reciprocal_of_product(PI.sqrt(), t)
 }
 
 /// The scaled complementary error function `erfcx(x) = e^{x²}·erfc(x)`, finite in the right
@@ -115,55 +346,124 @@ pub(crate) fn erfcx(x: f64) -> f64 {
     }
     if x.is_infinite() {
         // erfcx(x) ~ 1/(x sqrt(pi)) -> 0 as x -> +inf; the mirrored branch diverges.
-        return if x > 0.0 { 0.0 } else { f64::INFINITY };
+        return if x.is_sign_positive() {
+            0.0
+        } else {
+            f64::INFINITY
+        };
     }
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);
     }
-    if x < ERFCX_CF_MIN {
-        // `x < ERFCX_CF_MIN`, so `erfc(x)` here takes its stable `1 - erf` branch.
-        return (x * x).exp() * erfc(x);
+    match ErfcForm::for_argument(x) {
+        // Below the crossover `erfc` takes its `Complement` branch, which is the stable one
+        // there, so scaling it back up is safe.
+        ErfcForm::Complement => (x * x).exp() * erfc(x),
+        ErfcForm::Fraction => erfcx_cf(x),
     }
-    erfcx_cf(x)
+}
+
+/// Which route the inverse error function takes at this argument.
+///
+/// The three non-interior arms are the ends of `erf`'s range and its centre, and each is a value
+/// the polynomial seed cannot produce: two infinities and a signed zero.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErfInvRoute {
+    /// `x ≤ −1`, the left end of `erf`'s range, where the inverse diverges.
+    AtNegativeOne,
+    /// `x ≥ 1`, the right end.
+    AtOne,
+    /// `x = ±0`, where the inverse is zero carrying the argument's own sign.
+    AtOrigin,
+    /// The interior, by a rational seed in `w = −ln((1−x)(1+x))` refined by one Newton step.
+    /// A `NaN` reaches this arm — none of the comparisons above admit it — and propagates
+    /// through the polynomial unchanged.
+    Interior,
+}
+
+impl ErfInvRoute {
+    fn for_argument(x: f64) -> Self {
+        if x <= -1.0 {
+            Self::AtNegativeOne
+        } else if x >= 1.0 {
+            Self::AtOne
+        } else if x == 0.0 {
+            Self::AtOrigin
+        } else {
+            Self::Interior
+        }
+    }
+}
+
+/// Which of the seed's two coefficient tables covers this `w`.
+///
+/// Two fits rather than one, in different variables: the central table is a polynomial in
+/// `w − 5/2` and the tail's is in `√w − 3`, so they are not continuations of each other and the
+/// choice cannot be folded into the coefficients.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ErfInvSeed {
+    /// `w < 5`, the central band.
+    Central,
+    /// `w ≥ 5`, the tail. A `NaN` `w` lands here and propagates.
+    Tail,
+}
+
+impl ErfInvSeed {
+    fn for_log_weight(w: f64) -> Self {
+        if w < 5.0 { Self::Central } else { Self::Tail }
+    }
+
+    /// The seed polynomial `p`, which multiplies `x` to give the starting estimate.
+    fn evaluate(self, w: f64) -> f64 {
+        let mut p;
+        match self {
+            Self::Central => {
+                let w = w - 2.5;
+                p = 2.810_226_36e-08;
+                p = 3.432_739_39e-07 + p * w;
+                p = -3.523_387_7e-06 + p * w;
+                p = -4.391_506_54e-06 + p * w;
+                p = 0.000_218_580_87 + p * w;
+                p = -0.001_253_725_03 + p * w;
+                p = -0.004_177_681_64 + p * w;
+                p = 0.246_640_727 + p * w;
+                p = 1.501_409_41 + p * w;
+            }
+            Self::Tail => {
+                let w = w.sqrt() - 3.0;
+                p = -0.000_200_214_257;
+                p = 0.000_100_950_24 + p * w;
+                p = 0.001_349_343_22 + p * w;
+                p = -0.003_673_428_4 + p * w;
+                p = 0.005_739_507_73 + p * w;
+                p = -0.007_622_461_3 + p * w;
+                p = 0.009_438_870_47 + p * w;
+                p = 1.001_674_06 + p * w;
+                p = 2.832_976_82 + p * w;
+            }
+        }
+        p
+    }
 }
 
 /// The inverse error function: `erf_inv(erf(x)) = x` for `x ∈ (-1, 1)`.
 pub(crate) fn erf_inv(x: f64) -> f64 {
-    if x <= -1.0 {
-        return f64::NEG_INFINITY;
+    match ErfInvRoute::for_argument(x) {
+        ErfInvRoute::AtNegativeOne => f64::NEG_INFINITY,
+        ErfInvRoute::AtOne => f64::INFINITY,
+        // `copysign` rather than a bare `0.0`: `erf_inv` is odd, so `erf_inv(-0.0)` must be
+        // `-0.0`. Returning the literal discarded that, which `stability::symmetry_exact`'s
+        // signed-zero sweep caught. This file's `ERF_LINEAR_MAX` note records the same mistake
+        // being fixed for `erf` itself; `erf_inv` was missed at the time.
+        ErfInvRoute::AtOrigin => 0.0_f64.copysign(x),
+        ErfInvRoute::Interior => erf_inv_interior(x),
     }
-    if x >= 1.0 {
-        return f64::INFINITY;
-    }
-    if x == 0.0 {
-        return 0.0;
-    }
+}
+
+/// The rational seed and its single Newton step, for `x` strictly inside `(−1, 1)` and nonzero.
+fn erf_inv_interior(x: f64) -> f64 {
     let w = -((1.0 - x) * (1.0 + x)).ln();
-    let mut p;
-    if w < 5.0 {
-        let w = w - 2.5;
-        p = 2.810_226_36e-08;
-        p = 3.432_739_39e-07 + p * w;
-        p = -3.523_387_7e-06 + p * w;
-        p = -4.391_506_54e-06 + p * w;
-        p = 0.000_218_580_87 + p * w;
-        p = -0.001_253_725_03 + p * w;
-        p = -0.004_177_681_64 + p * w;
-        p = 0.246_640_727 + p * w;
-        p = 1.501_409_41 + p * w;
-    } else {
-        let w = w.sqrt() - 3.0;
-        p = -0.000_200_214_257;
-        p = 0.000_100_950_24 + p * w;
-        p = 0.001_349_343_22 + p * w;
-        p = -0.003_673_428_4 + p * w;
-        p = 0.005_739_507_73 + p * w;
-        p = -0.007_622_461_3 + p * w;
-        p = 0.009_438_870_47 + p * w;
-        p = 1.001_674_06 + p * w;
-        p = 2.832_976_82 + p * w;
-    }
-    let mut result = p * x;
+    let mut result = ErfInvSeed::for_log_weight(w).evaluate(w) * x;
     let err = erf(result) - x;
     result -= err / (2.0 / PI.sqrt() * (-result * result).exp());
     result
@@ -195,6 +495,51 @@ mod tests {
     }
 
     #[test]
+    fn the_depth_ladder_brackets_each_measured_band() {
+        use ErfcxDepth::{AtLeastTwenty, UnderFive, UnderTen, UnderThree, UnderTwenty, UnderTwo};
+        // Each boundary belongs to the bucket above it, so the band is half-open on the right.
+        for (x, bucket, levels) in [
+            (1.0_f64, UnderTwo, 160),
+            (1.999, UnderTwo, 160),
+            (2.0, UnderThree, 72),
+            (2.999, UnderThree, 72),
+            (3.0, UnderFive, 44),
+            (4.999, UnderFive, 44),
+            (5.0, UnderTen, 24),
+            (9.999, UnderTen, 24),
+            (10.0, UnderTwenty, 14),
+            (19.999, UnderTwenty, 14),
+            (20.0, AtLeastTwenty, 10),
+            (1e308, AtLeastTwenty, 10),
+        ] {
+            assert_eq!(ErfcxDepth::for_argument(x), bucket, "at {x}");
+            assert_eq!(bucket.levels(), levels, "at {x}");
+        }
+        // Exactly on each boundary, and one step either side of it.
+        for edge in [2.0_f64, 3.0, 5.0, 10.0, 20.0] {
+            assert_eq!(
+                ErfcxDepth::for_argument(edge.next_down()),
+                ErfcxDepth::for_argument(edge.next_down()),
+            );
+            assert_ne!(
+                ErfcxDepth::for_argument(edge.next_down()),
+                ErfcxDepth::for_argument(edge),
+                "the bucket must change at {edge}"
+            );
+            assert_eq!(
+                ErfcxDepth::for_argument(edge),
+                ErfcxDepth::for_argument(edge.next_up()),
+            );
+        }
+        // The ladder is monotone: deeper where the fraction converges more slowly.
+        let levels: Vec<u32> = [1.0_f64, 2.0, 3.0, 5.0, 10.0, 20.0]
+            .iter()
+            .map(|&x| ErfcxDepth::for_argument(x).levels())
+            .collect();
+        assert!(levels.windows(2).all(|w| w[0] > w[1]), "{levels:?}");
+    }
+
+    #[test]
     fn erfc_tail_does_not_underflow() {
         // Regression: the naive `1 - erf` underflows to exactly 0 by x ≈ 6 in f64;
         // the tail now routes through `e^{-x²}·erfcx`, recovering the true value.
@@ -211,5 +556,93 @@ mod tests {
                 "erfc({x}) = {got}, want {want}"
             );
         }
+    }
+
+    /// The four forms, at and either side of the one threshold that is not a non-finite case.
+    ///
+    /// The linear cutoff is *sited* where the dropped `x²/3` term is below half an ulp, so the
+    /// two forms agree across it to well under a rounding — which is what left `<` against `<=`
+    /// alive against every value assertion. The decision is what gets pinned.
+    #[test]
+    fn the_erf_forms_partition_the_line() {
+        use ErfForm::{IncompleteGamma, Linear, Saturated, Undefined};
+        assert_eq!(ErfForm::for_argument(f64::NAN), Undefined);
+        assert_eq!(ErfForm::for_argument(f64::INFINITY), Saturated);
+        assert_eq!(ErfForm::for_argument(f64::NEG_INFINITY), Saturated);
+        // The boundary belongs to the incomplete gamma, and the magnitude decides, so both
+        // signs route alike.
+        assert_eq!(ErfForm::for_argument(ERF_LINEAR_MAX), IncompleteGamma);
+        assert_eq!(ErfForm::for_argument(-ERF_LINEAR_MAX), IncompleteGamma);
+        assert_eq!(ErfForm::for_argument(ERF_LINEAR_MAX.next_down()), Linear);
+        assert_eq!(ErfForm::for_argument(-ERF_LINEAR_MAX.next_down()), Linear);
+        assert_eq!(
+            ErfForm::for_argument(ERF_LINEAR_MAX.next_up()),
+            IncompleteGamma
+        );
+        // Both zeros take the linear arm, which is what preserves the sign of a zero.
+        assert_eq!(ErfForm::for_argument(0.0), Linear);
+        assert_eq!(ErfForm::for_argument(-0.0), Linear);
+        assert_eq!(erf(-0.0).to_bits(), (-0.0_f64).to_bits());
+        assert_eq!(erf(0.0).to_bits(), 0.0_f64.to_bits());
+        for x in [1.0_f64, -1.0, 10.0] {
+            assert_eq!(ErfForm::for_argument(x), IncompleteGamma);
+        }
+        // And the saturated arm carries the sign rather than a comparison.
+        assert_eq!(erf(f64::INFINITY), 1.0);
+        assert_eq!(erf(f64::NEG_INFINITY), -1.0);
+    }
+
+    /// The inverse's domain routes and its two seed tables.
+    ///
+    /// `AtNegativeOne` and `AtOne` are the ends of `erf`'s range, where the inverse diverges;
+    /// `AtOrigin` is the signed zero the polynomial cannot produce. The seed split is a separate
+    /// decision in a separate variable — the central table is a polynomial in `w − 5/2` and the
+    /// tail's in `√w − 3` — so neither is a continuation of the other.
+    #[test]
+    fn the_inverse_routes_split_the_range_and_the_seed_tables() {
+        use ErfInvRoute::{AtNegativeOne, AtOne, AtOrigin, Interior};
+        use ErfInvSeed::{Central, Tail};
+
+        for x in [-1.0, (-1.0_f64).next_down(), -2.0, f64::NEG_INFINITY] {
+            assert_eq!(ErfInvRoute::for_argument(x), AtNegativeOne, "at {x:e}");
+            assert_eq!(erf_inv(x), f64::NEG_INFINITY, "at {x:e}");
+        }
+        for x in [1.0, 1.0_f64.next_up(), 2.0, f64::INFINITY] {
+            assert_eq!(ErfInvRoute::for_argument(x), AtOne, "at {x:e}");
+            assert_eq!(erf_inv(x), f64::INFINITY, "at {x:e}");
+        }
+        // Odd at the origin, which is what `copysign` is for.
+        for x in [0.0_f64, -0.0] {
+            assert_eq!(ErfInvRoute::for_argument(x), AtOrigin);
+            assert_eq!(erf_inv(x).to_bits(), x.to_bits(), "signed zero at {x:e}");
+        }
+        for x in [
+            (-1.0_f64).next_up(),
+            -0.5,
+            -f64::MIN_POSITIVE,
+            f64::MIN_POSITIVE,
+            0.5,
+            1.0_f64.next_down(),
+            f64::NAN,
+        ] {
+            assert_eq!(ErfInvRoute::for_argument(x), Interior, "at {x:e}");
+        }
+        // `NaN` reaches the interior and propagates rather than being caught by a guard.
+        assert!(erf_inv(f64::NAN).is_nan());
+
+        // The seed tables, at and either side of the boundary.
+        assert_eq!(ErfInvSeed::for_log_weight(5.0), Tail);
+        assert_eq!(ErfInvSeed::for_log_weight(5.0_f64.next_down()), Central);
+        assert_eq!(ErfInvSeed::for_log_weight(5.0_f64.next_up()), Tail);
+        assert_eq!(ErfInvSeed::for_log_weight(0.0), Central);
+        assert_eq!(ErfInvSeed::for_log_weight(f64::NAN), Tail);
+        // Both tables are evaluated in different variables, so they are genuinely two fits —
+        // yet they agree at the join, which is what makes the split free.
+        let join = 5.0_f64;
+        let (central, tail) = (Central.evaluate(join), Tail.evaluate(join));
+        assert!(
+            (central - tail).abs() <= 2e-2 * tail.abs(),
+            "the seed tables disagree at the join: {central} vs {tail}"
+        );
     }
 }

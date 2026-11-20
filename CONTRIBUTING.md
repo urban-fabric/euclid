@@ -208,35 +208,38 @@ counterexample did not reproduce the same case and failure` instead of the law t
 flake that passes in isolation and fails in the full-workspace run. Both `vacuity.rs` files hold
 one `Mutex` across either kind of body; copy that if you add a third.
 
-### Reference values come from a committed generator
+### Reference values are pasted in, and their provenance travels with them
 
 An accuracy test needs something to be accurate *against*, and for the special functions that
-means a high-precision value computed outside euclid and pasted in. The convention, which is
-newer than most of this file:
+means a high-precision value computed outside euclid and pasted in.
 
-**Commit the generator with the owning crate's accuracy tests.** Readers need to be able to
-re-derive the fixtures and check the precision claim. `/bin/` is reserved for local tools.
-
-```sh
-python3 -B crates/euclid-scalar/tests/references/extreme_shapes.py
-```
+**The generator is a local tool and is not committed.** `/bin/references/` is where these live.
+The repository holds Rust and nothing else, so the fixtures are the artefact that ships and the
+script that produced them is not — which puts the whole burden on the pasted table being
+*self-describing*. A reader who cannot re-run the generator must still be able to tell what a
+number is and how far to trust it.
 
 Three rules, each paid for:
 
-- **It validates itself before it emits, and exits non-zero otherwise.** Against closed forms it
-  shares no code with — `I_x(1,1) = x`, `I_x(a,1) = xᵃ`, `Γ(n) = (n−1)!`, and so on. This is not
-  ceremony: the `I_x(2,3)` expectation was first written with `B(2,3)⁻¹ = 6` instead of `12`, and
-  the check caught it before any reference was taken from the harness.
-- **The table names its generator and the command that reproduces it.** Byte-for-byte: the
-  emitter prints Rust rows, so regenerating and pasting should produce no diff.
-- **Provenance includes the exact argument.** Evaluate the reference at `Decimal(x)` for the
-  `f64` the test will actually pass, not at the real-valued expression `x` came from. Where a
-  function is steep this dominates — the incomplete beta's density is `≈3568` at `a = b = 1e7`,
-  so one ulp of `x` is worth `4e-13` of probability, which is `44×` the kernel's own error there.
+- **The generator validates itself before it emits, and exits non-zero otherwise.** Against
+  closed forms it shares no code with — `I_x(1,1) = x`, `I_x(a,1) = xᵃ`, `Γ(n) = (n−1)!`, and so
+  on. This is not ceremony: the `I_x(2,3)` expectation was first written with `B(2,3)⁻¹ = 6`
+  instead of `12`, and the check caught it before any reference was taken from the harness.
+- **The table records what computed it, and how.** Not a path, which would rot the moment the
+  tool moved — the library and the working precision. `extreme_shapes`, which produced the
+  `distribution_extremes` and `gamma` fixtures, bound MPFR through `ctypes` at 256 bits and
+  cross-checked against `Decimal` at 450–500 digits; a table says so in prose, so the precision
+  claim survives the script.
+- **Provenance includes the exact argument.** Evaluate the reference at the `f64` the test will
+  actually pass, not at the real-valued expression it came from. Where a function is steep this
+  dominates — the incomplete beta's density is `≈3568` at `a = b = 1e7`, so one ulp of `x` is
+  worth `4e-13` of probability, which is `44×` the kernel's own error there.
 
-**No arbitrary-precision arithmetic in Rust.** References are computed in Python and pasted in.
-The membership rule keeps a bignum library out of the workspace, and an oracle module here would
-be a second implementation of the thing under test.
+**No arbitrary-precision arithmetic in Rust.** The membership rule keeps a bignum library out of
+the workspace, and an oracle module here would be a second implementation of the thing under
+test. That is also why the generator cannot simply be ported in: it needs MPFR, MPFR needs a
+dependency, and the dependency is the thing being refused. The trade is deliberate — euclid
+stays single-language and dependency-free, and pays for it by hand-carrying provenance.
 
 ### Soak runs
 
@@ -258,6 +261,37 @@ A soak that trips an accuracy budget has **found something**: searching harder
 reached a worse input than the committed baseline, so the recorded number is now
 known to be optimistic. Re-record it with `EUCLID_STABILITY_RECORD=1` only once
 you have decided the kernel is acceptable there.
+
+**But a budget is a number at an effort, not a worst case.** `target(score)` drives
+a hill climb, so more cases mean more climbing: the worst score a property reaches
+rises with the multiplier and does not converge on a true maximum to be discovered.
+`the_erf_round_trip_is_forward_stable` measures `0.551` unset, `0.563` at both `25`
+and `100`, and `0.586` at `400` — so there is no final honest number, only a number
+and the effort that found it. The baselines here are recorded at **`100`**, which is
+why the two documented soak levels pass and a deeper one still trips. A trip above
+that level is the tool working as designed rather than a regression, and the
+judgement to make is the one above — whether the kernel is acceptable at the score,
+not whether the number can be driven to a fixed point. Re-recording at a higher
+effort buys quiet soaks at the price of a looser gate for every ordinary run, so
+raise it deliberately and leave the level stated.
+
+**Re-record single-threaded: `EUCLID_STABILITY_RECORD=1 … -- --test-threads=1`.**
+`budgets.txt` holds every property's baseline in one file, and recording is a
+read-modify-write of the whole thing. Run it on libtest's default thread pool and
+the writes interleave, so the last property to finish wins and every baseline
+recorded concurrently with it is **silently dropped from the file**. That is how
+`the_erf_round_trip_is_forward_stable` briefly vanished while sixteen new
+baselines were being taken: nothing failed, nothing warned, and the file simply
+came back shorter. The same applies to `EUCLID_STABILITY_RECORD=1` over
+regression tapes in one suite file. Check `git diff` on the file afterwards and
+confirm it gained what you expected and lost nothing.
+
+**A `.budget()` may only go on a property that calls `target()`.** The engine
+rejects the pair outright rather than recording nothing, on the grounds that "a
+budget over a property with no score is the one configuration that looks like
+protection and provides none" — so a `settings()` helper shared by scoring and
+non-scoring properties cannot carry it. Give the scoring ones their own
+constructor.
 
 **A git `pre-push` hook will not help you here.** `jj` does not run git hooks, so
 a `.git/hooks/pre-push` script is silently skipped on `jj git push` — exactly when
