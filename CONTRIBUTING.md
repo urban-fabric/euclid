@@ -327,6 +327,40 @@ crate, so `clippy -- -D warnings` is the same gate everywhere. `unsafe_code`,
 `unwrap_used`, `expect_used`, and `panic` are all denied; reference code in tests
 is held to the same bar.
 
+### Measuring cost
+
+Two benchmarks, both `harness = false` and neither with a dependency — a benchmark dependency is
+still a dependency, and `deny.toml` would have to grow an exception for it.
+
+```sh
+cargo bench -p euclid-scalar     # kernel cost, one row per named regime
+cargo bench -p euclid-stability  # engine overhead and shrink cost
+```
+
+`euclid-scalar`'s rows are **regimes rather than functions**, because every kernel here routes
+between two and seven approximations and a single ns/call figure averages over arms that differ by
+more than an order of magnitude. The row label names the arm, and the arms are named in the source
+— `IncompleteGammaMethod`, `ErfcxDepth`, `JRoute`, `LambertSeed` — so a dear row says where to go
+and look.
+
+**Do not read a diff off two separate runs.** This is the rule that matters and the easiest to
+break. On this machine between-run variation exceeded a factor of two on a 16-nanosecond loop while
+each run was internally self-consistent to 1.0×; a min-of-seven harness fixes *within*-run noise
+and cannot touch that. A performance claim derived from two runs of a microbenchmark is a claim
+about the machine. Two kinds of number are safe:
+
+- **Counted quantities** — iterations, probes, terms. Exact, identical everywhere, and what
+  actually governs kernel cost. These are the ones to put in a commit message. The Lambert `W`
+  cycle check was justified this way: 1,064 of 27,218 arguments ran the iteration to its cap of
+  sixty, and the total fell from 101,829 steps to 47,751.
+- **Interleaved A/B**, both arms in the same process microseconds apart, so they see the same
+  machine.
+
+A dear row is not automatically a defect. `K`'s middle range is a forty-node quadrature and `Y`'s
+is a march that integrates Bessel's equation outward, because in those bands the cheap routes have
+no accuracy at all — the cost is the trade their module headers argue for. What the table is for is
+catching a regime that is dear *for no stated reason*, and a cap that no argument ever approaches.
+
 ## Releasing
 
 A release is a **tag**, and consumers pin it. Three steps, in this order:

@@ -12,10 +12,21 @@ use crate::constants::f64::NEG_INV_E;
 /// Iteration cap for the `W` refinement. Halley's method triples the correct digits each
 /// step, so convergence is reached in a handful from any of the starting guesses below.
 ///
-/// Generous rather than measured, and the generosity is load-bearing: the Taylor seed is carried
-/// to `x = 3`, where it returns `34.5` against a true `W(3) = 1.05`, and about twenty steps go on
-/// iterating that away. The `f32` peer rederived the split at `1.5` and the cap at `12` for
-/// exactly this reason; here the extra steps cost accuracy nothing and the number stays.
+/// **A backstop rather than a schedule, which it did not use to be.** The measured worst case is
+/// **23 steps**, at `x = 2.96` — the top of the Taylor band, where the seed returns `34.5`
+/// against a true `W(3) = 1.05` and the iteration has to work that off. Sixty leaves 2.6× over
+/// that, which is headroom rather than waste because nothing reaches it any more.
+///
+/// It is left at sixty deliberately. The `f32` peer argues for a tight cap — "a backstop seven
+/// times larger than any argument needs is one that hides a non-converging case instead of
+/// reporting it" — and that argument is now served by
+/// [`no_argument_runs_the_halley_loop_to_its_cap`](tests), which fails if any argument reaches
+/// the cap at all. With the cap *tested* rather than merely sized, lowering it would only convert
+/// a loop that runs long into a root that is silently truncated, and the measured worst case is
+/// over one band of a domain that spans the whole format.
+///
+/// Before the period-two cycle check in [`lambert_w_steps`], 1,064 arguments out of a
+/// 27,218-point sweep ran all sixty.
 const W_STEPS: u32 = 60;
 
 /// Width of the branch-point window, in `x` above `−1/e`.
@@ -187,34 +198,69 @@ fn lambert_step(w: f64, f: f64, denom_newton: f64) -> f64 {
 /// per regime; see [`LambertSeed`] for the three and [`LambertDomain`] for the arguments that
 /// never reach the iteration at all.
 pub(crate) fn lambert_w(x: f64) -> f64 {
+    lambert_w_steps(x).0
+}
+
+/// `W` together with the number of Halley steps it took.
+///
+/// # Why the count is returned at all
+///
+/// The **period-two cycle** check below is a cost saving that no value assertion can see, so the
+/// step count is the only deterministic observable that separates having it from not. The `f32`
+/// peer returns its count for the same reason and records the same finding; this kernel went
+/// without the check for longer, and the measurement is worth keeping:
+///
+/// Over a sweep of 27,218 arguments spanning the whole branch — dense at the branch point, every
+/// decade to the top of the format, and across the seed split — testing only `next == w`
+/// **ran the loop to its cap of 60 on 1,064 of them**. Halley's last step in `f64` often lands
+/// back where it was two iterations ago rather than exactly on a fixed point: the root lies
+/// between two representable values and the step overshoots each way forever. Adding
+/// `next == previous` takes the worst case to **23 steps** and the total across that sweep from
+/// **101,829 to 47,751 — 53% of the iterations gone**.
+///
+/// Those are counts, so they reproduce on any machine. What they cost is close to nothing:
+/// 26,259 of the 27,218 roots are returned bit-identically, 350 move, and of those the residual
+/// `|ln w + w − ln x|` is *better* in 83 cases and worse in 267 — worst case `3.3e-16` against
+/// `1.1e-16`, which is a step from half an ulp to one and a half. The accuracy envelope over the
+/// whole sweep does not move at all: `1.137e-13` either way.
+///
+/// [`lambert_w`] discards the count; nothing in the kernel branches on it.
+fn lambert_w_steps(x: f64) -> (f64, u32) {
     match LambertDomain::for_argument(x) {
-        LambertDomain::Undefined => f64::NAN,
-        LambertDomain::AtOrigin => x,
-        LambertDomain::AtInfinity => f64::INFINITY,
+        LambertDomain::Undefined => (f64::NAN, 0),
+        LambertDomain::AtOrigin => (x, 0),
+        LambertDomain::AtInfinity => (f64::INFINITY, 0),
         LambertDomain::Iterate => lambert_halley(x),
     }
 }
 
-/// Halley's iteration proper, on an argument already known to have a finite root.
-fn lambert_halley(x: f64) -> f64 {
+/// Halley's iteration proper, on an argument already known to have a finite root, with the number
+/// of steps it took.
+fn lambert_halley(x: f64) -> (f64, u32) {
     let mut w = LambertSeed::for_argument(x).evaluate(x);
+    // The previous iterate, to catch a period-two cycle; see [`lambert_w_steps`] for what that
+    // costs and what it saves. `NaN` so the first comparison cannot fire by accident.
+    let mut previous = f64::NAN;
+    let mut steps = 0;
     for _ in 0..W_STEPS {
+        steps += 1;
         let ew = w.exp();
         let (f, denom_newton) = lambert_residual(w, x, ew);
         if f == 0.0 {
-            return w;
+            return (w, steps);
         }
         let step = lambert_step(w, f, denom_newton);
         if !step.is_finite() {
             break;
         }
         let next = w - step;
-        if next == w {
+        if next == w || next == previous {
             break;
         }
+        previous = w;
         w = next;
     }
-    w
+    (w, steps)
 }
 
 #[cfg(test)]

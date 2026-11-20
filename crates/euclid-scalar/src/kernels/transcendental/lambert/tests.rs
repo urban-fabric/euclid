@@ -262,3 +262,66 @@ fn the_scaled_residual_reaches_the_top_of_the_format() {
     // The root inverts, formed in the log domain because `w·e^w` is at the format's ceiling.
     close(w.ln() + w, f64::MAX.ln(), 1e-14);
 }
+
+/// The iteration's **cost**, which is the only thing the period-two cycle check changes.
+///
+/// Asserted as a step count because the root is very nearly identical either way: over the sweep
+/// this mirrors, 26,259 of 27,218 arguments return bit-identically and the accuracy envelope does
+/// not move at all. Dropping `next == previous` therefore leaves every accuracy test in the crate
+/// passing while 1,064 arguments go back to running all sixty iterations — a performance
+/// regression with no accuracy signature, and this is the instrument for it.
+///
+/// The cap is asserted *unreached* rather than bounded by a guessed number: a loop that runs to
+/// its cap has not converged, and that is worth failing on whatever the cap happens to be.
+#[test]
+fn no_argument_runs_the_halley_loop_to_its_cap() {
+    let mut worst = 0;
+    let mut worst_at = 0.0;
+    let mut total = 0u64;
+    for i in 0..8_000 {
+        let x = NEG_INV_E + f64::from(i) * 1e-3;
+        let (w, steps) = lambert_w_steps(x);
+        assert!(w.is_finite(), "W({x}) = {w}");
+        assert!(
+            steps < W_STEPS,
+            "W({x}) ran the loop to its cap of {W_STEPS}, so it did not converge"
+        );
+        total += u64::from(steps);
+        if steps > worst {
+            worst = steps;
+            worst_at = x;
+        }
+    }
+    // Measured: **23**, at `x = 2.96`, against the cap of sixty. Pinned rather than bounded
+    // because a change to it is exactly what a regression in the seed policy or the cycle check
+    // looks like. The total is pinned for the same reason and is the sharper of the two — the
+    // worst case moved from 60 to 23 when the cycle check went in, but the *total* fell from
+    // 101,829 to 47,751, and that is the number that describes the saving.
+    assert_eq!(worst, 23, "worst case moved to {worst} at x = {worst_at}");
+    assert_eq!(total, 47_751, "total Halley steps over the sweep moved");
+}
+
+/// Both ends of the cycle check, as values.
+///
+/// The `|| next == previous` is an *or*, and weakening it to `&&` is the mutation that matters:
+/// it leaves every root in the crate unchanged and silently restores the cost. The first arm is
+/// reached by an argument that lands exactly on a fixed point, the second by one that oscillates
+/// between two neighbouring representables — this pins an argument of each kind.
+#[test]
+fn the_cycle_check_catches_both_a_fixed_point_and_an_oscillation() {
+    // Exactly on the branch point the seed is already the root, so the residual is zero on the
+    // first step and neither cycle arm is needed.
+    assert_eq!(lambert_w_steps(NEG_INV_E), (-1.0, 1));
+    // An argument that oscillates: it settles well inside the cap with the check, and the root
+    // still inverts.
+    let (w, steps) = lambert_w_steps(-0.3649);
+    assert!(steps < W_STEPS, "did not settle: {steps} steps");
+    assert!((w * w.exp() - -0.3649).abs() < 1e-12, "W(-0.3649) = {w}");
+    // And the worst-case argument, named here next to the number in `W_STEPS`' own
+    // documentation. Formed as the sweep forms it rather than as a rounded literal: the step
+    // count is a property of the exact `f64`, and `2.960_121` is a *different* argument that
+    // settles in 22.
+    let worst_at = NEG_INV_E + 3328.0 * 1e-3;
+    assert_eq!(lambert_w_steps(worst_at).1, 23);
+    assert_eq!(lambert_w_steps(2.960_121).1, 22);
+}

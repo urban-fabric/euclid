@@ -54,5 +54,12 @@ euclid-stability = { workspace = true, optional = true }
 euclid-stability.workspace = true
 euclid-utils.workspace = true
 
+# Kernel cost per named regime. `harness = false` keeps the workspace dependency-free: a
+# benchmark dependency is still a dependency. See the file header for why the rows are regimes
+# and why only the counted half of its output is quotable.
+[[bench]]
+name = "kernels"
+harness = false
+
 [lints]
 workspace = true
