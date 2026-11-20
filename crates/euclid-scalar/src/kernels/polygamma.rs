@@ -44,6 +44,80 @@ const EM_COEFFS: [f64; 6] = [
     -691.0 / 2730.0 / 479_001_600.0, // (-691/2730)/12!
 ];
 
+/// Largest `|s·ln y|` for which a power is formed by squaring rather than by `exp`/`ln`.
+///
+/// `ln(f64::MAX)` is `709.78`, and squaring forms `y^{|s|}` as an actual product — so the
+/// *intermediate* has to stay in range even when the result would not. `700` keeps a margin
+/// under that ceiling for the rounding of the logarithm itself.
+///
+/// Without this bound the scheme is not merely less accurate, it is wrong: at `s = 32`,
+/// `a = 1e10` the product `b^{32}` is `1e320`, which overflows to infinity and makes the
+/// reciprocal **zero** where the true term is the subnormal `3.23e-312`. `powf` has no such
+/// intermediate, computing `exp(−s ln y)` directly, and is why it remains the general route.
+const SQUARING_LOG_MAX: f64 = 700.0;
+
+/// Largest integer `s` admitted to the squaring path, independent of range.
+///
+/// Every sufficiently large `f64` is an integer, so the integrality test alone would admit
+/// `s = 1e28` — where `s as i32` saturates and the exponent is nonsense. Squaring also stops
+/// being the cheaper option long before this.
+const SQUARING_ORDER_MAX: f64 = 1024.0;
+
+/// How the Euler–Maclaurin scheme forms its nineteen powers.
+///
+/// # Both arms exist for a measured reason
+///
+/// `y^{−s}` through `powf` is `exp(−s·ln y)`: two transcendental calls, and this scheme needs
+/// nineteen of them, which is most of its cost. When `s` is an **integer** the same value is a
+/// product by exponentiation-by-squaring, which measured **3.19× faster** on the head —
+/// `120.2 ns` against `37.6 ns`, interleaved in one process, minimum of seven.
+///
+/// That matters because the caller that reaches here most often never has a non-integer `s` at
+/// all: [`polygamma`] passes `s = n + 1` for an integer order. `zeta` is the one that passes
+/// arbitrary reals.
+///
+/// # What the choice costs, stated honestly
+///
+/// It is **not** bit-identical, and it is not free. Against the six values of `ζ(2k)` with exact
+/// closed forms — `π²/6`, `π⁴/90`, `π⁶/945`, `π⁸/9450`, `π¹⁰/93555`, `691π¹²/638512875` — the two
+/// arms carry the *same* error to the ulp: `0, 0, 0.98, 1.00, 3.00, 1.00`. So on every case where
+/// the truth is known exactly, squaring is neither better nor worse. Elsewhere the two disagree
+/// by up to `2.4e-15` relative, about eleven ulp, and there is no reference that says which is
+/// closer. Eleven ulp against three times the speed is the trade, taken deliberately and with
+/// the accuracy suites as the arbiter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ZetaPower {
+    /// An integer `s` whose powers stay in range: form them by squaring.
+    Squaring(i32),
+    /// A real `s`, or an integer whose product would leave the format. `powf` it is.
+    Transcendental,
+}
+
+impl ZetaPower {
+    /// `a` and `b` are the smallest and largest bases the scheme will raise, so both ends are
+    /// checked: a base below one makes a *negative* exponent large, and one above makes the
+    /// positive exponent large.
+    fn for_scheme(s: f64, a: f64, b: f64) -> Self {
+        #[allow(clippy::cast_possible_truncation)]
+        let order = s as i32;
+        let reach = s * a.ln().abs().max(b.ln().abs());
+        if s.fract() == 0.0 && s < SQUARING_ORDER_MAX && reach < SQUARING_LOG_MAX {
+            Self::Squaring(order)
+        } else {
+            Self::Transcendental
+        }
+    }
+
+    /// `y` raised to `offset − s`, which is every power this scheme needs: `0` for `y^{−s}`,
+    /// `1` for the integral term and `−1` for the first Bernoulli correction.
+    fn at(self, y: f64, s: f64, offset: i32) -> f64 {
+        match self {
+            Self::Squaring(order) => y.powi(offset - order),
+            Self::Transcendental => y.powf(f64::from(offset) - s),
+        }
+    }
+}
+
 /// The Hurwitz zeta `ζ(s, a)` for real `s > 1` and `a > 0`, by Euler–Maclaurin.
 ///
 /// `pub(crate)` because the Riemann zeta is `ζ(s, 1)` and reuses this directly rather than
@@ -52,21 +126,23 @@ pub(crate) fn hurwitz_zeta(s: f64, a: f64) -> f64 {
     debug_assert!(s > 1.0);
     debug_assert!(a > 0.0);
 
+    let b = a + f64::from(EM_SPLIT);
+    let power_of = ZetaPower::for_scheme(s, a, b);
+
     // Exact head.
     let mut total = 0.0f64;
     for k in 0..EM_SPLIT {
-        total += (a + f64::from(k)).powf(-s);
+        total += power_of.at(a + f64::from(k), s, 0);
     }
 
-    let b = a + f64::from(EM_SPLIT);
     // Integral term and the half-endpoint.
-    total += b.powf(1.0 - s) / (s - 1.0);
-    total += 0.5 * b.powf(-s);
+    total += power_of.at(b, s, 1) / (s - 1.0);
+    total += 0.5 * power_of.at(b, s, 0);
 
     // Bernoulli corrections. The j-th needs the rising factorial (s)_{2j-1}, built
     // incrementally so no factorial is ever formed.
     let mut rising = s; // (s)_1
-    let mut power = b.powf(-s - 1.0); // b^{-s-2j+1} at j = 1
+    let mut power = power_of.at(b, s, -1); // b^{-s-2j+1} at j = 1
     for (j, &c) in EM_COEFFS.iter().enumerate() {
         // `power` is `b^{-s-2j+1}`, which **underflows to zero** for any large `s` — `b` is
         // `a + EM_SPLIT`, so `17^{-s}` is already zero by `s ≈ 250`. Meanwhile `rising` is

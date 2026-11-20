@@ -24,6 +24,21 @@ const EM_COEFFS: [f32; 6] = [
 /// `ζ(s, 1)` and [`super::transcendental::zeta`] reuses this directly rather than carrying a
 /// second copy of the same summation. `polygamma` only ever asks for an integer `s ≥ 2`; the
 /// scheme itself has no such restriction, and the `f64` peer exposes it on the same grounds.
+/// # Why this does not take the `f64` peer's squaring optimisation
+///
+/// [`crate::kernels::polygamma::ZetaPower`] forms the head's powers by exponentiation-by-squaring
+/// when `s` is an integer, which is 3.19x faster there. **It does not fit in this format, and the
+/// measurement is the reason rather than caution:** applied here it put `polygamma(2, 1.76875)`
+/// **4 `f32` ulp** from the wide kernel rounded down, against the 3 that
+/// `polygamma_agrees_across_precisions_at_every_order` allows.
+///
+/// The cause is structural, not a tuning accident. Squaring accumulates roughly `log₂ s`
+/// roundings where `powf` carries one, and with 24 bits of mantissa that chain is a far larger
+/// share of the budget than it is with 53. The same argument that makes the trade worth taking
+/// in `f64` — eleven ulp of a 53-bit format, against three times the speed — makes it too
+/// expensive in a format whose entire cross-precision allowance is three ulp.
+///
+/// So `powf` stays, and the asymmetry is deliberate.
 pub(super) fn hurwitz_zeta(s: f32, a: f32) -> f32 {
     debug_assert!(s > 1.0);
     debug_assert!(a > 0.0);

@@ -185,3 +185,58 @@ fn the_polygamma_routes_separate_a_pole_from_an_unimplemented_region() {
         }
     }
 }
+
+/// The two power schemes, asserted as decisions, plus the guard that makes the fast one safe.
+///
+/// The arms agree to about eleven ulp, so no value assertion can reliably tell them apart — but
+/// the *guard* is a different matter. Without it the squaring arm is not merely less accurate but
+/// wrong: `b^{32}` at `a = 1e10` is `1e320`, which overflows to infinity and makes the reciprocal
+/// zero where the true term is a subnormal. That case is pinned by value as well as by route.
+#[test]
+fn the_power_scheme_is_chosen_by_integrality_and_by_range() {
+    use ZetaPower::{Squaring, Transcendental};
+
+    // `polygamma` only ever arrives with an integer `s`, which is the case worth being fast.
+    assert_eq!(ZetaPower::for_scheme(3.0, 1.0, 17.0), Squaring(3));
+    assert_eq!(ZetaPower::for_scheme(12.0, 0.5, 16.5), Squaring(12));
+    // `zeta` passes arbitrary reals, which have to go the general way.
+    assert_eq!(ZetaPower::for_scheme(2.5, 1.0, 17.0), Transcendental);
+    assert_eq!(
+        ZetaPower::for_scheme(0.5_f64.next_up() + 2.0, 1.0, 17.0),
+        Transcendental
+    );
+    // An integer too large for the cast, and one whose product would leave the format.
+    assert_eq!(ZetaPower::for_scheme(1.0e28, 1.0, 17.0), Transcendental);
+    assert_eq!(
+        ZetaPower::for_scheme(SQUARING_ORDER_MAX, 1.0, 17.0),
+        Transcendental
+    );
+    // The range guard, at the case that motivated it: `b = 1e10 + 16`, so `s·ln b` is `737`.
+    assert_eq!(
+        ZetaPower::for_scheme(32.0, 1.0e10, 1.0e10 + 16.0),
+        Transcendental
+    );
+    // Either side of the reach boundary, with the base held fixed.
+    let b = 17.0_f64;
+    let edge = (SQUARING_LOG_MAX / b.ln()).floor();
+    assert_eq!(ZetaPower::for_scheme(edge, 1.0, b), Squaring(edge as i32));
+    assert!(matches!(
+        ZetaPower::for_scheme(edge + 1.0, 1.0, b),
+        Transcendental
+    ));
+
+    // And the guarded result is the subnormal rather than the zero a product would give.
+    let term = hurwitz_zeta(32.0, 1.0e10);
+    assert!(term > 0.0 && term.is_finite(), "ζ(32, 1e10) = {term:e}");
+    assert!(
+        term < f64::MIN_POSITIVE,
+        "expected a subnormal, got {term:e}"
+    );
+
+    // Both arms land on `ζ(2k)`'s exact closed forms, which is the only place the truth is known
+    // exactly — and there they carry the same error. `ζ(2) = π²/6`, `ζ(4) = π⁴/90`.
+    let pi = core::f64::consts::PI;
+    close(hurwitz_zeta(2.0, 1.0), pi * pi / 6.0, 1e-15);
+    close(hurwitz_zeta(4.0, 1.0), pi.powi(4) / 90.0, 1e-15);
+    close(hurwitz_zeta(6.0, 1.0), pi.powi(6) / 945.0, 1e-15);
+}

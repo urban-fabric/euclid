@@ -251,7 +251,7 @@ fn airy() {
     section("airy");
     row1("airy_ai", "series (|x|<=2)", 1.0, <f64 as Real>::airy_ai);
     row1("airy_ai", "march (2..9)", 5.0, <f64 as Real>::airy_ai);
-    row1("airy_ai", "asymptotic (>9)", 20.0, <f64 as Real>::airy_ai);
+    row1("airy_ai", "K quadrature (>9)", 20.0, <f64 as Real>::airy_ai);
     row1(
         "airy_ai",
         "negative asymptotic",
@@ -265,6 +265,10 @@ fn airy() {
         <f64 as Real>::airy_ai,
     );
     row1("airy_bi", "march", 5.0, <f64 as Real>::airy_bi);
+    // Past `MARCH_MAX` the positive axis is *not* an asymptotic expansion: it is the same
+    // trapezoidal quadrature `K` uses, reached through `Ai(x) = π⁻¹√(x/3)·K_{1/3}(⅔x^{3/2})`.
+    // That is why the row costs about what `bessel_k0`'s quadrature does rather than the handful
+    // of terms "asymptotic" would suggest — the label used to say the latter and was wrong.
 }
 
 /// Lambert `W` and `ζ`, over [`LambertSeed`] and [`ZetaRoute`].
@@ -433,6 +437,35 @@ fn iteration_depths() {
     depth_row("erfcx levels, x<2", 160, 160);
     depth_row("erfcx levels, x>=20", 10, 160);
 
+    // The incomplete gamma's two routes, replaying their own stopping rules. These are the
+    // numbers that explain the dearest rows in the table above, and they are the reason
+    // `MAX_ITER` is 100_000 rather than something tidier: the lower series walks about
+    // `7.3·√a` terms, so the cap is only ~2.5x the worst case a caller can reach before the
+    // Edgeworth route takes over at `a = 3e7`. The fraction, by contrast, never needs more than
+    // a hundred steps anywhere — its share of that cap is pure slack.
+    let (mut worst_series, mut worst_fraction) = (0, 0);
+    for e in -6..=7 {
+        for m in [1.0, 2.0, 5.0] {
+            let a = m * 10f64.powi(e);
+            if a >= 3e7 {
+                continue; // Edgeworth takes over; neither loop runs
+            }
+            for j in 0..200 {
+                let x = a * (0.01 + 0.03 * f64::from(j));
+                if x <= 0.0 || !x.is_finite() {
+                    continue;
+                }
+                if x < a + 1.0 {
+                    worst_series = worst_series.max(lower_series_terms(a, x));
+                } else {
+                    worst_fraction = worst_fraction.max(upper_fraction_steps(a, x));
+                }
+            }
+        }
+    }
+    depth_row("gamma lower series terms", worst_series, 100_000);
+    depth_row("gamma upper fraction steps", worst_fraction, 100_000);
+
     println!(
         "\nThe two `fixed` rows have no exit test: their depth is the cap, by design, because a\n\
          backward recurrence has to be entered at a chosen level. The headroom column is blank of\n\
@@ -495,6 +528,53 @@ fn halley_steps(x: f64) -> u32 {
         w = next;
     }
     steps
+}
+
+/// Terms the lower incomplete-gamma series takes, replaying its own stopping rule.
+///
+/// Mirrors `gamma_lower_series` with `EPS = 1e-15`. The depth is about `7.3·√a` near `x = a`,
+/// which is where it peaks — 17 terms at `a = 1`, 781 at `1e4`, 7,413 at `1e6`, 32,200 at `2e7`.
+fn lower_series_terms(a: f64, x: f64) -> u32 {
+    const EPS: f64 = 1e-15;
+    let mut denominator = a;
+    let mut term = a.recip();
+    let mut sum = term;
+    for k in 0..100_000u32 {
+        denominator += 1.0;
+        term *= x / denominator;
+        sum += term;
+        if term.abs() < sum.abs() * EPS {
+            return k + 1;
+        }
+    }
+    100_000
+}
+
+/// Steps the upper incomplete-gamma continued fraction takes, replaying Lentz's exit rule.
+///
+/// Mirrors `gamma_upper_fraction`. **Do not be tempted to use this below `x = a + 1`.** It
+/// reports convergence there in three to twelve steps and returns a value that is wrong by
+/// factors of `1e23` and worse — the multiplier comes within tolerance of one while the fraction
+/// has not converged at all. Measured agreement with the series, as `P`: `1e-12` at `x/a = 0.99`
+/// and above, and `3e85`, `NaN`, `5e234` below it. The classical `x < a + 1` split is load-bearing
+/// and the cheap-looking step count on the wrong side of it is a trap.
+fn upper_fraction_steps(a: f64, x: f64) -> u32 {
+    const EPS: f64 = 1e-15;
+    const TINY: f64 = 1e-300;
+    let pivot = |v: f64| if v.abs() < TINY { TINY } else { v };
+    let mut b = x + 1.0 - a;
+    let mut c = TINY.recip();
+    let mut d = b.recip();
+    for i in 1..100_000u32 {
+        b += 2.0;
+        let numerator = -f64::from(i) * (f64::from(i) - a);
+        d = pivot(numerator * d + b).recip();
+        c = pivot(b + numerator / c);
+        if (d * c - 1.0).abs() < EPS {
+            return i;
+        }
+    }
+    100_000
 }
 
 // ===== harness ===========================================================

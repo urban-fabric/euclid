@@ -44,12 +44,13 @@ const MAX_TERMS: u32 = 100_000;
 ///
 /// **`1e-19`, which is deliberately only a little below `f64`'s resolution.** `ε = 2.22e-16`, so
 /// a term at `1e-19` of the sum moves the result by about a thousandth of an ulp, and every term
-/// after it moves it by less. The value was `1e-22`, which asked the peak-relative `I` sums, which walk `O(√x)` terms to converge
-/// three orders past the point where the format can represent the difference —
-/// iterations bought and then discarded.
+/// after it moves it by less. The value was `1e-22`, which asked the peak-relative `I` sums —
+/// which walk `O(√x)` terms — to converge three orders past the point where the format can
+/// represent the difference: iterations bought and then discarded.
 ///
 /// Raising it to `1e-19` is **free rather than a trade.** The outputs are bit-identical across a
-/// 306,280-point sweep covering every kernel in this tree at both signs, while cutting `I₁ᵉ` by **6.8%**.1%**.
+/// 306,280-point sweep covering every kernel in this tree at both signs, while cutting `I₁ᵉ`
+/// by **6.8%**.
 ///
 /// Timings are the minimum of six interleaved A/B runs of two prebuilt binaries pinned to idle
 /// cores, which cancels drift — this machine is shared, and a naive before/after on it reported

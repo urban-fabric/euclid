@@ -162,6 +162,32 @@ pub(crate) fn valid_incomplete_gamma_inputs<T: HostReal>(a: T, x: T) -> bool {
     HostReal::is_finite(a) && a > T::ZERO && x >= T::ZERO
 }
 
+/// Which of the two incomplete-gamma routes is valid at `(a, x)`.
+///
+/// # The split looks like a performance bug and is not one
+///
+/// The series walks about `7.3·√a` terms — 7,413 at `a = 1e6`, 32,200 at `2e7` — while the
+/// continued fraction converges in **65 steps anywhere it is used**. Moving this boundary down
+/// is therefore the single most tempting optimisation in the crate, and it is wrong.
+///
+/// Measured below the boundary, the fraction *reports convergence in three to twelve steps and
+/// returns a different function*. Agreement with the series, as `P`:
+///
+/// ```text
+/// x/a      0.5        0.9        0.99      1.00      1.01
+/// a=1e5    NaN        5.1e234    1.3e3     2.9e-10   2.2e-10
+/// a=1e6    NaN        NaN        1.8e23    1.4e-9    1.0e-9
+/// a=1e7    NaN        NaN        3.2e220   3.3e-8    3.7e-8
+/// ```
+///
+/// The multiplier comes within tolerance of one while the fraction has not converged at all, so
+/// the exit rule fires early and the cheap step count is an illusion. It only becomes a real
+/// answer from about `x/a = 0.99`, and there it costs 88 to 1,951 steps rather than a dozen.
+///
+/// So the depth of the series at large shape is the price of correctness, not slack. The route
+/// that *does* replace it is the Edgeworth approximation above
+/// [`GAMMA_EDGEWORTH_MIN`](crate::kernels::gamma::GAMMA_EDGEWORTH_MIN), chosen on accuracy
+/// grounds, and that threshold is where this cost stops growing.
 pub(crate) fn use_lower_gamma_series<T: HostReal>(a: T, x: T) -> bool {
     x < a + T::ONE
 }
