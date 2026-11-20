@@ -167,19 +167,24 @@ fn error_function() {
     );
 }
 
-/// `erfcx` across [`ErfcxDepth`]'s six buckets.
+/// `erfcx` across [`ErfcxDepth`]'s nine buckets.
 ///
-/// The declared work per bucket is 160, 72, 44, 24, 14 and 10 backward-recurrence levels, so the
-/// measured cost should fall monotonically across these rows by roughly 16× end to end. This row
-/// group is the benchmark's own sanity check; see the file header.
+/// The declared work per bucket is 145, 131, 102, 72, 44, 20, 11, 7 and 5 backward-recurrence
+/// levels, so the measured cost should fall monotonically across these rows by about 29x end to
+/// end. This row group is the benchmark's own sanity check: the levels are a counted quantity and
+/// the timings are not, so a ladder whose costs stop tracking its depths means either the
+/// recurrence stopped being the cost or this file stopped measuring what it claims to.
 fn erfcx_depth_ladder() {
-    section("erfcx depth ladder (160, 72, 44, 24, 14, 10 levels)");
-    row1("erfcx", "under 2     (160)", 1.5, <f64 as Real>::erfcx);
-    row1("erfcx", "under 3      (72)", 2.5, <f64 as Real>::erfcx);
-    row1("erfcx", "under 5      (44)", 4.0, <f64 as Real>::erfcx);
-    row1("erfcx", "under 10     (24)", 7.0, <f64 as Real>::erfcx);
-    row1("erfcx", "under 20     (14)", 15.0, <f64 as Real>::erfcx);
-    row1("erfcx", "at least 20  (10)", 50.0, <f64 as Real>::erfcx);
+    section("erfcx depth ladder (145, 131, 102, 72, 44, 20, 11, 7, 5 levels)");
+    row1("erfcx", "under 3/2    (145)", 1.4, <f64 as Real>::erfcx);
+    row1("erfcx", "under 7/4    (131)", 1.6, <f64 as Real>::erfcx);
+    row1("erfcx", "under 2      (102)", 1.9, <f64 as Real>::erfcx);
+    row1("erfcx", "under 3       (72)", 2.5, <f64 as Real>::erfcx);
+    row1("erfcx", "under 5       (44)", 4.0, <f64 as Real>::erfcx);
+    row1("erfcx", "under 10      (20)", 7.0, <f64 as Real>::erfcx);
+    row1("erfcx", "under 20      (11)", 15.0, <f64 as Real>::erfcx);
+    row1("erfcx", "under 50       (7)", 30.0, <f64 as Real>::erfcx);
+    row1("erfcx", "at least 50    (5)", 100.0, <f64 as Real>::erfcx);
     // Below the crossover `erfcx` goes through `erfc`'s complement form instead, which is the
     // one arm of the ladder that is not a recurrence at all.
     row1("erfcx", "complement (x<1.375)", 0.5, <f64 as Real>::erfcx);
@@ -434,8 +439,8 @@ fn iteration_depths() {
     depth_row("zeta eta terms (fixed)", 24, 24);
 
     // `erfcx`'s backward recurrence is likewise a fixed depth per bucket, chosen per magnitude.
-    depth_row("erfcx levels, x<2", 160, 160);
-    depth_row("erfcx levels, x>=20", 10, 160);
+    depth_row("erfcx levels, x<3/2", 145, 145);
+    depth_row("erfcx levels, x>=50", 5, 145);
 
     // The incomplete gamma's two routes, replaying their own stopping rules. These are the
     // numbers that explain the dearest rows in the table above, and they are the reason
