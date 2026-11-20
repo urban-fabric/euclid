@@ -27,7 +27,7 @@ mod exprel;
 
 pub(crate) use exprel::exprel;
 
-use super::gamma::{digamma, ln_gamma, trigamma};
+use super::gamma::{digamma, gamma, ln_gamma, trigamma};
 
 /// Terms summed exactly before the Euler–Maclaurin tail takes over.
 const EM_SPLIT: u32 = 16;
@@ -281,7 +281,20 @@ pub(crate) fn rgamma(x: f64) -> f64 {
         RgammaRoute::Undefined => f64::NAN,
         RgammaRoute::AtPositiveInfinity => 0.0,
         RgammaRoute::Pole => 0.0,
-        RgammaRoute::Exponential => (-ln_gamma(x)).exp(),
+        RgammaRoute::Exponential => {
+            // `1/Γ(x)` directly where `Γ(x)` is representable, and only through the log domain
+            // where it is not. Going through the logarithm unconditionally costs `lnΓ(x)·ε` of
+            // relative error, because `exp` turns the exponent's absolute rounding into relative
+            // error and that exponent is `O(x ln x)`: `ulp(701)/2 = 5.7e-14` at `x = 170`, where
+            // the reciprocal of a finite `Γ` is two roundings. See `math::scaling::unscale` for
+            // the same argument in the `I` family.
+            let value = gamma(x);
+            if value.is_finite() {
+                value.recip()
+            } else {
+                (-ln_gamma(x)).exp()
+            }
+        }
         RgammaRoute::Reflection => rgamma_reflection(x),
     }
 }
@@ -312,7 +325,20 @@ pub(crate) fn rgamma(x: f64) -> f64 {
 /// 1e-12 budget by `1.07e-12`.
 fn rgamma_reflection(x: f64) -> f64 {
     let s = crate::math::gamma::reflection_sine(x);
-    let magnitude = (ln_gamma(1.0 - x) + s.abs().ln() - core::f64::consts::PI.ln()).exp();
+    // `Γ(1−x)·|sin πx|/π` as a product where every factor is representable, and through the log
+    // domain only where `Γ(1−x)` is not — which needs `x < −170.6`.
+    //
+    // The log form was unconditional and it costs the exponent's absolute rounding as relative
+    // error, which is large at *both* ends: the exponent is `lnΓ(1−x) + ln|s| − ln π`, so it is
+    // `−637` at `x = −2.2e-277` (where `|s| ≈ π|x|` is tiny) and `+362` at `x = −100.5` (where
+    // `lnΓ` is large). Measured `5.13e-14` at the former against `ulp(637)/2 = 5.7e-14`
+    // predicted — the whole of it.
+    let reflected = gamma(1.0 - x);
+    let magnitude = if reflected.is_finite() {
+        reflected * s.abs() / core::f64::consts::PI
+    } else {
+        (ln_gamma(1.0 - x) + s.abs().ln() - core::f64::consts::PI.ln()).exp()
+    };
     // A sign-bit test rather than `s < 0.0`: the sine is never exactly zero here — that would
     // need an integer `x`, which [`RgammaRoute::Pole`] has already taken — so the two spellings
     // agree on every reachable argument and `<` against `<=` is an unkillable mutant. This one
