@@ -40,7 +40,7 @@ use super::bessel::modified_first::i_scaled_asymptotic;
 use super::bessel::modified_second::k_nu_pair_scaled;
 use super::bessel::ordinary::hankel;
 use crate::math::arithmetic::term_is_negligible;
-use crate::math::pair::Slope;
+use crate::math::pair::{Slope, Solutions};
 use core::f32::consts::PI;
 
 /// Iteration cap for the Maclaurin series. The `f64` peer allows 400.
@@ -109,7 +109,7 @@ const MARCH_MAX: f32 = 6.0;
 /// **`1e4`, where the `f64` peer uses `1e10`.** The first correction is `u₁/ζ = (5/72)/ζ`, and
 /// `ζ = ⅔x^{3/2}` is `6.7e5` at `x = 1e4`, putting that term at `1.0e-7` — just under this
 /// format's half-ulp. Taking this branch also keeps `ζ` out of the arithmetic entirely: it
-/// overflows above `x ≈ 1.4e25` here rather than `f64`'s `3e205`, and the leading forms are
+/// overflows above `x ≈ 6.39e25` here rather than `f64`'s `4.17e205`, and the leading forms are
 /// exactly the ones that stay representable.
 const LEADING_MIN: f32 = 1e4;
 
@@ -133,11 +133,14 @@ fn zeta(ax: f32) -> f32 {
     (2.0 / 3.0) * ax * ax.sqrt()
 }
 
-/// The two entire solutions of `y″ = xy` and their derivatives, from the Maclaurin series.
+/// The two entire solutions of `y″ = xy`, each with its derivative, from the Maclaurin series.
 ///
 /// Neither Pochhammer symbol nor factorial is ever formed: dividing consecutive terms collapses
 /// both into a two-factor denominator, leaving four plain recurrences in `x³`.
-fn fg(x: f32) -> (f32, f32, f32, f32) {
+///
+/// Grouped by *solution* rather than by derivative order, as the `f64` peer is: the march
+/// transports `(f, f′)` and `(g, g′)` independently, so that pairing is the one the caller needs.
+fn fg(x: f32) -> Solutions<Slope<f32>> {
     let x3 = x * x * x;
     let (mut a, mut b, mut p, mut q) = (1.0f32, x, x * x * 0.5, 1.0f32);
     let (mut f, mut g, mut f_prime, mut g_prime) = (a, b, p, q);
@@ -161,13 +164,12 @@ fn fg(x: f32) -> (f32, f32, f32, f32) {
             break;
         }
     }
-    (f, g, f_prime, g_prime)
+    Solutions::new(Slope::new(f, f_prime), Slope::new(g, g_prime))
 }
 
-/// `(Ai, Ai′, Bi, Bi′)` at `x`, from the series.
-fn series_airy(x: f32) -> (f32, f32, f32, f32) {
-    let (f, g, f_prime, g_prime) = fg(x);
-    crate::math::airy::combine(f, g, f_prime, g_prime)
+/// The Airy pair and its derivatives at `x`, from the series.
+fn series_airy(x: f32) -> Solutions<Slope<f32>> {
+    crate::math::airy::combine(fg(x))
 }
 
 /// One Taylor step of `y″ = xy`, carrying both the value and the derivative.
@@ -176,10 +178,10 @@ fn series_airy(x: f32) -> (f32, f32, f32, f32) {
 /// below are bounded by the order, not the array. Narrowing the Horner bound drops the top one or
 /// two coefficients, which that constant records as "near `1e-13`, far under this format's
 /// resolution": `c₁₂h¹²` at the largest step is below an ulp of the value it is added to.
-fn march_step(x0: f32, y: f32, y_prime: f32, h: f32) -> (f32, f32) {
+fn march_step(x0: f32, at: Slope<f32>, h: f32) -> Slope<f32> {
     let mut c = [0.0f32; MARCH_ORDER + 2];
-    c[0] = y;
-    c[1] = y_prime;
+    c[0] = at.value;
+    c[1] = at.derivative;
     for n in 0..MARCH_ORDER {
         let previous = if n >= 1 { c[n - 1] } else { 0.0 };
         c[n + 2] = (x0 * c[n] + previous) / (((n + 2) * (n + 1)) as f32);
@@ -193,32 +195,36 @@ fn march_step(x0: f32, y: f32, y_prime: f32, h: f32) -> (f32, f32) {
             derivative = derivative * h + (n as f32) * c[n];
         }
     }
-    (value, derivative)
+    Slope::new(value, derivative)
 }
 
 /// Transport a solution and its derivative from `x_start` to `x_end` in equal steps.
-fn transport(x_start: f32, x_end: f32, y: f32, y_prime: f32) -> (f32, f32) {
+fn transport(x_start: f32, x_end: f32, from: Slope<f32>) -> Slope<f32> {
     let span = x_end - x_start;
     let count = (span.abs() / MAX_STEP).ceil().max(1.0);
     let h = span / count;
-    let (mut value, mut derivative) = (y, y_prime);
+    let mut at = from;
     let mut x = x_start;
     let mut taken = 0.0f32;
     while taken < count {
-        (value, derivative) = march_step(x, value, derivative, h);
+        at = march_step(x, at, h);
         x += h;
         taken += 1.0;
     }
-    (value, derivative)
+    at
 }
 
-/// `(Ai, Ai′, Bi, Bi′)` on the negative axis, by marching out from the series.
-fn march_airy(x: f32) -> (f32, f32, f32, f32) {
+/// The Airy pair and its derivatives on the negative axis, by marching out from the series.
+///
+/// Each half is a complete solution of the equation, so the two are transported independently
+/// and combined only at the end.
+fn march_airy(x: f32) -> Solutions<Slope<f32>> {
     let start = -SERIES_MAX;
-    let (f0, g0, f0_prime, g0_prime) = fg(start);
-    let (f, f_prime) = transport(start, x, f0, f0_prime);
-    let (g, g_prime) = transport(start, x, g0, g0_prime);
-    crate::math::airy::combine(f, g, f_prime, g_prime)
+    let seed = fg(start);
+    crate::math::airy::combine(Solutions::new(
+        transport(start, x, seed.first_kind),
+        transport(start, x, seed.second_kind),
+    ))
 }
 
 /// `(Aiᵉ, Aiᵉ′)` from the `K_{1/3}`, `K_{2/3}` quadrature, for `x > `[`AI_SERIES_MAX`].
@@ -253,40 +259,40 @@ use regimes::{quad, quad_scaled};
 
 /// The Airy function of the first kind `Ai(x)`.
 pub(crate) fn ai(x: f32) -> f32 {
-    quad(x).0
+    quad(x).first_kind.value
 }
 
 /// `Ai′(x)`.
 pub(crate) fn ai_prime(x: f32) -> f32 {
-    quad(x).1
+    quad(x).first_kind.derivative
 }
 
 /// The Airy function of the second kind `Bi(x)`.
 pub(crate) fn bi(x: f32) -> f32 {
-    quad(x).2
+    quad(x).second_kind.value
 }
 
 /// `Bi′(x)`.
 pub(crate) fn bi_prime(x: f32) -> f32 {
-    quad(x).3
+    quad(x).second_kind.derivative
 }
 
 /// The scaled `Aiᵉ(x) = e^{ζ}Ai(x)` for `x ≥ 0`, and `Ai(x)` below.
 pub(crate) fn aie(x: f32) -> f32 {
-    quad_scaled(x).0
+    quad_scaled(x).first_kind.value
 }
 
 /// The scaled `Aiᵉ′(x)`.
 pub(crate) fn aie_prime(x: f32) -> f32 {
-    quad_scaled(x).1
+    quad_scaled(x).first_kind.derivative
 }
 
 /// The scaled `Biᵉ(x) = e^{−ζ}Bi(x)` for `x ≥ 0`, and `Bi(x)` below.
 pub(crate) fn bie(x: f32) -> f32 {
-    quad_scaled(x).2
+    quad_scaled(x).second_kind.value
 }
 
 /// The scaled `Biᵉ′(x)`.
 pub(crate) fn bie_prime(x: f32) -> f32 {
-    quad_scaled(x).3
+    quad_scaled(x).second_kind.derivative
 }

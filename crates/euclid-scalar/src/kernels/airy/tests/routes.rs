@@ -51,21 +51,30 @@ fn the_separable_band_is_open_at_both_ends() {
 /// Against an independent reference at a relative tolerance they are unmissable.
 #[test]
 fn the_positive_band_unscales_both_of_the_first_pair() {
-    use super::super::{aie, aie_prime, bie, bie_prime, positive_unscaled, zeta};
+    use super::super::regimes::positive_unscaled;
+    use super::super::{aie, aie_prime, bie, bie_prime, zeta};
+    use crate::math::pair::Solutions;
     for x in [AI_SERIES_MAX.next_up(), 1.5_f64, 3.0, 9.0, 30.0, 90.0] {
-        let (ai, ai_prime, bi, bi_prime) = positive_unscaled(x);
+        // Destructured by field name: `first_kind` is the `Ai` half whatever order the
+        // quadruple happens to be laid out in.
+        let Solutions {
+            first_kind: ai,
+            second_kind: bi,
+        } = positive_unscaled(x);
         // The scaled forms are the primitives, so `Ai = Aiᵉ·e^{−ζ}` is the defining relation and
         // an independent route to the same number.
         let decay = (-zeta(x)).exp();
         let want = aie(x) * decay;
         let want_prime = aie_prime(x) * decay;
         assert!(
-            (ai - want).abs() <= 1e-12 * want.abs(),
-            "Ai({x}): {ai:e} vs {want:e}"
+            (ai.value - want).abs() <= 1e-12 * want.abs(),
+            "Ai({x}): {:e} vs {want:e}",
+            ai.value
         );
         assert!(
-            (ai_prime - want_prime).abs() <= 1e-12 * want_prime.abs(),
-            "Ai'({x}): {ai_prime:e} vs {want_prime:e}"
+            (ai.derivative - want_prime).abs() <= 1e-12 * want_prime.abs(),
+            "Ai'({x}): {:e} vs {want_prime:e}",
+            ai.derivative
         );
         // The same relation pins the *second* pair, which is what selects between the series
         // and the `I` asymptotic: `Bi = Biᵉ·e^{+ζ}`. Checking only its sign left the regime
@@ -75,20 +84,24 @@ fn the_positive_band_unscales_both_of_the_first_pair() {
         let want = bie(x) * growth;
         let want_prime = bie_prime(x) * growth;
         assert!(
-            (bi - want).abs() <= 1e-12 * want.abs(),
-            "Bi({x}): {bi:e} vs {want:e}"
+            (bi.value - want).abs() <= 1e-12 * want.abs(),
+            "Bi({x}): {:e} vs {want:e}",
+            bi.value
         );
         assert!(
-            (bi_prime - want_prime).abs() <= 1e-12 * want_prime.abs(),
-            "Bi'({x}): {bi_prime:e} vs {want_prime:e}"
+            (bi.derivative - want_prime).abs() <= 1e-12 * want_prime.abs(),
+            "Bi'({x}): {:e} vs {want_prime:e}",
+            bi.derivative
         );
         // Both decay and both keep their signs across the whole positive axis.
-        assert!(ai > 0.0 && ai_prime < 0.0, "at {x}");
-        assert!(bi > 0.0 && bi_prime > 0.0, "at {x}");
+        assert!(ai.value > 0.0 && ai.derivative < 0.0, "at {x}");
+        assert!(bi.value > 0.0 && bi.derivative > 0.0, "at {x}");
     }
     // The series arm is selected below `AI_SERIES_MAX` and needs no exponential at all.
     assert_eq!(positive_unscaled(0.5), super::super::series::airy(0.5));
     // And they decay monotonically, which the exponential factor is what delivers.
-    assert!(positive_unscaled(1.5).0 > positive_unscaled(9.0).0);
-    assert!(positive_unscaled(1.5).1 < positive_unscaled(9.0).1);
+    assert!(positive_unscaled(1.5).first_kind.value > positive_unscaled(9.0).first_kind.value);
+    assert!(
+        positive_unscaled(1.5).first_kind.derivative < positive_unscaled(9.0).first_kind.derivative
+    );
 }

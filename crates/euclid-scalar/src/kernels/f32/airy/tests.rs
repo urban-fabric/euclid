@@ -9,6 +9,7 @@ use super::*;
 // The regime tables and the four-at-once evaluations moved into `regimes` when this module
 // outgrew one file.
 use super::regimes::{AiryRegime, PositiveRegime, positive_unscaled};
+use crate::math::pair::Solutions;
 
 /// The whole axis as a table.
 ///
@@ -67,15 +68,19 @@ fn the_airy_regimes_partition_the_axis() {
 #[test]
 fn the_march_step_transports_the_airy_equation() {
     // A zero step is the identity, exactly — which pins the Horner loops' seeding.
-    assert_eq!(march_step(3.0, 2.0, -1.0, 0.0), (2.0, -1.0));
-    assert_eq!(march_step(0.0, 0.0, 0.0, 0.5), (0.0, 0.0));
+    let at = Slope::new(2.0, -1.0);
+    assert_eq!(march_step(3.0, at, 0.0), at);
+    assert_eq!(
+        march_step(0.0, Slope::uniform(0.0), 0.5),
+        Slope::uniform(0.0)
+    );
 
     // At `x₀ = 0` the recurrence collapses to `cₙ₊₂ = cₙ₋₁/((n+2)(n+1))`, whose two solutions are
     // the **closed-form Airy series** `f = 1 + x³/6 + x⁶/180 + ⋯` and `g = x + x⁴/12 + x⁷/504 +
     // ⋯`. Independent mathematics, so this checks the denominators against something other than
     // a transcription of them.
     let h = 0.5_f32;
-    let (value, derivative) = march_step(0.0, 1.0, 0.0, h);
+    let (value, derivative) = march_step(0.0, Slope::new(1.0, 0.0), h).into_parts();
     let f = 1.0 + h.powi(3) / 6.0 + h.powi(6) / 180.0 + h.powi(9) / 12960.0;
     let f_prime = h.powi(2) / 2.0 + h.powi(5) / 30.0 + h.powi(8) / 1440.0;
     assert!((value - f).abs() <= 1e-6, "{value} vs {f}");
@@ -84,7 +89,7 @@ fn the_march_step_transports_the_airy_equation() {
         "{derivative} vs {f_prime}"
     );
 
-    let (value, derivative) = march_step(0.0, 0.0, 1.0, h);
+    let (value, derivative) = march_step(0.0, Slope::new(0.0, 1.0), h).into_parts();
     let g = h + h.powi(4) / 12.0 + h.powi(7) / 504.0 + h.powi(10) / 45360.0;
     let g_prime = 1.0 + h.powi(3) / 3.0 + h.powi(6) / 72.0 + h.powi(9) / 4536.0;
     assert!((value - g).abs() <= 1e-6, "{value} vs {g}");
@@ -96,7 +101,7 @@ fn the_march_step_transports_the_airy_equation() {
     // With `x₀ ≠ 0` the `x₀·cₙ` factor enters, and the equation fixes the first three terms:
     // `y + y′h + (x₀y/2)h² + ((x₀y′ + y)/6)h³`. A small step leaves the rest negligible.
     let (x0, y, y_prime, h) = (3.0_f32, 2.0_f32, -1.0_f32, 0.01_f32);
-    let (value, _) = march_step(x0, y, y_prime, h);
+    let value = march_step(x0, Slope::new(y, y_prime), h).value;
     let taylor = y + y_prime * h + (x0 * y / 2.0) * h * h + ((x0 * y_prime + y) / 6.0) * h * h * h;
     assert!((value - taylor).abs() <= 1e-6, "{value} vs {taylor}");
 }
@@ -108,17 +113,20 @@ fn the_saturated_limit_keeps_the_sign_of_its_zero() {
     // so the limit is `−0.0`, not `0.0`. The two compare equal, which is exactly why dropping
     // the sign survived every value assertion; only the bit pattern separates them. This is the
     // same distinction `erf(−0.0)` carries, and an odd function should not lose it.
-    let (ai, ai_prime, bi, bi_prime) = quad(LEADING_MIN);
-    assert_eq!(ai.to_bits(), 0.0_f32.to_bits(), "Ai saturates to +0");
+    let Solutions {
+        first_kind: ai,
+        second_kind: bi,
+    } = quad(LEADING_MIN);
+    assert_eq!(ai.value.to_bits(), 0.0_f32.to_bits(), "Ai saturates to +0");
     assert_eq!(
-        ai_prime.to_bits(),
+        ai.derivative.to_bits(),
         (-0.0_f32).to_bits(),
         "Ai' saturates to -0"
     );
-    assert!(ai_prime.is_sign_negative());
-    assert!(!ai.is_sign_negative());
-    assert_eq!(bi, f32::INFINITY);
-    assert_eq!(bi_prime, f32::INFINITY);
+    assert!(ai.derivative.is_sign_negative());
+    assert!(!ai.value.is_sign_negative());
+    assert_eq!(bi.value, f32::INFINITY);
+    assert_eq!(bi.derivative, f32::INFINITY);
     assert_eq!(
         crate::kernels::f32::airy::ai_prime(1e6).to_bits(),
         (-0.0_f32).to_bits()
@@ -141,29 +149,36 @@ fn the_positive_band_unscales_both_of_the_first_pair() {
         9.0,
         20.0,
     ] {
-        let (ai, ai_prime, bi, bi_prime) = positive_unscaled(x);
+        let Solutions {
+            first_kind: ai,
+            second_kind: bi,
+        } = positive_unscaled(x);
         let wide = f64::from(x);
         let want_ai = crate::kernels::airy::ai(wide) as f32;
         let want_ai_prime = crate::kernels::airy::ai_prime(wide) as f32;
         assert!(
-            (ai - want_ai).abs() <= 1e-4 * want_ai.abs(),
-            "Ai({x}): {ai:e} vs {want_ai:e}"
+            (ai.value - want_ai).abs() <= 1e-4 * want_ai.abs(),
+            "Ai({x}): {:e} vs {want_ai:e}",
+            ai.value
         );
         assert!(
-            (ai_prime - want_ai_prime).abs() <= 1e-4 * want_ai_prime.abs(),
-            "Ai'({x}): {ai_prime:e} vs {want_ai_prime:e}"
+            (ai.derivative - want_ai_prime).abs() <= 1e-4 * want_ai_prime.abs(),
+            "Ai'({x}): {:e} vs {want_ai_prime:e}",
+            ai.derivative
         );
         // Both decay and both keep their signs: `Ai > 0`, `Ai′ < 0` on the whole positive axis.
-        assert!(ai > 0.0 && ai_prime < 0.0, "at {x}");
-        assert!(bi > 0.0 && bi_prime > 0.0, "at {x}");
+        assert!(ai.value > 0.0 && ai.derivative < 0.0, "at {x}");
+        assert!(bi.value > 0.0 && bi.derivative > 0.0, "at {x}");
     }
     // And they decay monotonically, which the exponential factor is what delivers.
-    assert!(positive_unscaled(1.5).0 > positive_unscaled(9.0).0);
-    assert!(positive_unscaled(1.5).1 < positive_unscaled(9.0).1);
+    assert!(positive_unscaled(1.5).first_kind.value > positive_unscaled(9.0).first_kind.value);
+    assert!(
+        positive_unscaled(1.5).first_kind.derivative < positive_unscaled(9.0).first_kind.derivative
+    );
 
     // The sweep stops at `20` because that is where the format does. `Ai ~ e^{−ζ}/(2√π x^{1/4})`
     // with `ζ = ⅔x^{3/2}`, so by `x = 28.4` the true value is under `f32::MIN_POSITIVE` — at
     // `x = 30` it is `3.2e-49`. Returning zero there is the format's answer, not a lost one.
-    assert_eq!(positive_unscaled(30.0).0, 0.0);
-    assert!(positive_unscaled(28.0).0 > 0.0);
+    assert_eq!(positive_unscaled(30.0).first_kind.value, 0.0);
+    assert!(positive_unscaled(28.0).first_kind.value > 0.0);
 }

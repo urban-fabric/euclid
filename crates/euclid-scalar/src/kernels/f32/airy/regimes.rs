@@ -6,26 +6,28 @@
 //! evaluation both public pairs are carved out of.
 
 use super::*;
+use crate::math::airy::OscillatoryPhase;
 
-/// `(Ai, Ai′, Bi, Bi′)` on the negative axis beyond [`MARCH_MAX`], from the Hankel expansion.
-pub(super) fn negative_asymptotic(ax: f32) -> (f32, f32, f32, f32) {
-    let z = zeta(ax);
-    if !z.is_finite() {
-        // Past `|x| ≈ 1.4e25` the phase is not merely inaccurate but unrepresentable: `ζ` itself
-        // has overflowed, so there is no argument to hand to `sin`. Zero is finite, inside the
-        // envelope, and the mean of the oscillation — the honest answer once the phase is gone.
-        // Accuracy departs far earlier, around `|x| ≈ 1e5`, where `ulp(ζ)` passes `2π`.
-        return (0.0, 0.0, 0.0, 0.0);
-    }
+/// The quadruple on the negative axis beyond [`MARCH_MAX`], from the Hankel expansion.
+pub(super) fn negative_asymptotic(ax: f32) -> Solutions<Slope<f32>> {
+    let z = match OscillatoryPhase::for_zeta(zeta(ax)) {
+        OscillatoryPhase::Known(z) => z,
+        // The phase has overflowed; see `OscillatoryPhase` for why zero is the honest answer.
+        OscillatoryPhase::Lost => return Solutions::uniform(Slope::uniform(0.0)),
+    };
     let j_third = hankel(1.0 / 3.0, z).first_kind;
     let j_neg_third = hankel(-1.0 / 3.0, z).first_kind;
     let j_two_thirds = hankel(2.0 / 3.0, z).first_kind;
     let j_neg_two_thirds = hankel(-2.0 / 3.0, z).first_kind;
-    (
-        (ax.sqrt() / 3.0) * (j_third + j_neg_third),
-        (ax / 3.0) * (j_two_thirds - j_neg_two_thirds),
-        (ax / 3.0).sqrt() * (j_neg_third - j_third),
-        (ax / SQRT_3) * (j_neg_two_thirds + j_two_thirds),
+    Solutions::new(
+        Slope::new(
+            (ax.sqrt() / 3.0) * (j_third + j_neg_third),
+            (ax / 3.0) * (j_two_thirds - j_neg_two_thirds),
+        ),
+        Slope::new(
+            (ax / 3.0).sqrt() * (j_neg_third - j_third),
+            (ax / SQRT_3) * (j_neg_two_thirds + j_two_thirds),
+        ),
     )
 }
 
@@ -56,33 +58,29 @@ impl PositiveRegime {
     }
 }
 
-/// `(Aiᵉ, Aiᵉ′, Biᵉ, Biᵉ′)` on the positive axis below [`LEADING_MIN`].
-pub(super) fn positive_scaled(x: f32, z: f32) -> (f32, f32, f32, f32) {
+/// The scaled quadruple on the positive axis below [`LEADING_MIN`].
+pub(super) fn positive_scaled(x: f32, z: f32) -> Solutions<Slope<f32>> {
     match PositiveRegime::for_argument(x) {
         // Both halves from their Bessel asymptotics, which are natively scaled.
-        PositiveRegime::BothBessel => {
-            let (ai, ai_prime) = ai_pair_scaled(x, z).into_parts();
-            let (bi, bi_prime) = bi_pair_scaled(x, z).into_parts();
-            (ai, ai_prime, bi, bi_prime)
-        }
-        // Both from the series, which is unscaled, so each pair takes its own exponential.
+        PositiveRegime::BothBessel => Solutions::new(ai_pair_scaled(x, z), bi_pair_scaled(x, z)),
+        // Both from the series, which is unscaled, so each pair takes its own exponential — and
+        // they take *different* ones: `Aiᵉ = e^{ζ}Ai` grows where `Biᵉ = e^{−ζ}Bi` decays.
         PositiveRegime::BothSeries => {
-            let (ai, ai_prime, bi, bi_prime) = series_airy(x);
-            let (growth, decay) = (z.exp(), (-z).exp());
-            (ai * growth, ai_prime * growth, bi * decay, bi_prime * decay)
+            let series = series_airy(x);
+            Solutions::new(
+                series.first_kind.scaled_by(z.exp()),
+                series.second_kind.scaled_by((-z).exp()),
+            )
         }
         // `Ai` has left the series but `Bi` has not: the quadrature for one, the series for the
         // other, and only the latter needs the exponential.
-        PositiveRegime::AiQuadrature => {
-            let (_, _, series_bi, series_bi_prime) = series_airy(x);
-            let decay = (-z).exp();
-            let (ai, ai_prime) = ai_pair_scaled(x, z).into_parts();
-            (ai, ai_prime, series_bi * decay, series_bi_prime * decay)
-        }
+        PositiveRegime::AiQuadrature => Solutions::new(
+            ai_pair_scaled(x, z),
+            series_airy(x).second_kind.scaled_by((-z).exp()),
+        ),
     }
 }
 
-/// All four unscaled values at once.
 /// Which regime of the whole axis an Airy argument falls in.
 ///
 /// # Why the whole axis, and not one chain per entry point
@@ -152,15 +150,21 @@ impl AiryRegime {
     }
 }
 
-pub(super) fn quad(x: f32) -> (f32, f32, f32, f32) {
+/// The unscaled quadruple `(Ai, Ai′, Bi, Bi′)`.
+///
+/// Overflows and underflows above `x ≈ 26` exactly as the true values do; reach for the scaled
+/// forms there, which is what the saturating `Leading` arm is saying.
+pub(super) fn quad(x: f32) -> Solutions<Slope<f32>> {
     match AiryRegime::for_argument(x) {
-        AiryRegime::Undefined => (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
-        AiryRegime::AtPositiveInfinity => (0.0, 0.0, f32::INFINITY, f32::INFINITY),
-        AiryRegime::AtNegativeInfinity => (0.0, 0.0, 0.0, 0.0),
+        AiryRegime::Undefined => Solutions::uniform(Slope::uniform(f32::NAN)),
+        AiryRegime::AtPositiveInfinity => {
+            Solutions::new(Slope::uniform(0.0), Slope::uniform(f32::INFINITY))
+        }
+        AiryRegime::AtNegativeInfinity => Solutions::uniform(Slope::uniform(0.0)),
         AiryRegime::NegativeSeries => series_airy(x),
         AiryRegime::NegativeMarch => march_airy(x),
         AiryRegime::NegativeAsymptotic => negative_asymptotic(-x),
-        AiryRegime::Leading => (0.0, -0.0, f32::INFINITY, f32::INFINITY),
+        AiryRegime::Leading => Solutions::new(Slope::new(0.0, -0.0), Slope::uniform(f32::INFINITY)),
         AiryRegime::Positive => positive_unscaled(x),
     }
 }
@@ -171,32 +175,29 @@ pub(super) fn quad(x: f32) -> (f32, f32, f32, f32) {
 /// relevant threshold. That matters: recovering an unscaled value from a scaled one costs a
 /// relative `ζ·ε`, because `ζ`'s own rounding is amplified by `e^{ζ}` — and `ζ` reaches 18 by
 /// `x = 9`, so in this format that is already `2e-6`.
-pub(super) fn positive_unscaled(x: f32) -> (f32, f32, f32, f32) {
+pub(super) fn positive_unscaled(x: f32) -> Solutions<Slope<f32>> {
     let regime = PositiveRegime::for_argument(x);
     match regime {
         PositiveRegime::BothSeries => return series_airy(x),
         PositiveRegime::AiQuadrature | PositiveRegime::BothBessel => {}
     }
     let z = zeta(x);
-    let (scaled_ai, scaled_ai_prime) = ai_pair_scaled(x, z).into_parts();
-    let decay = (-z).exp();
-    let (ai, ai_prime) = (scaled_ai * decay, scaled_ai_prime * decay);
-    let (bi, bi_prime) = match regime {
-        PositiveRegime::AiQuadrature => {
-            let (_, _, series_bi, series_bi_prime) = series_airy(x);
-            (series_bi, series_bi_prime)
-        }
+    let ai = ai_pair_scaled(x, z).scaled_by((-z).exp());
+    let bi = match regime {
+        PositiveRegime::AiQuadrature => series_airy(x).second_kind,
         PositiveRegime::BothSeries | PositiveRegime::BothBessel => {
-            crate::math::scaling::unscale_pair(bi_pair_scaled(x, z), z).into_parts()
+            crate::math::scaling::unscale_pair(bi_pair_scaled(x, z), z)
         }
     };
-    (ai, ai_prime, bi, bi_prime)
+    Solutions::new(ai, bi)
 }
 
-/// All four scaled values at once. The negative axis is unscaled by convention.
-pub(super) fn quad_scaled(x: f32) -> (f32, f32, f32, f32) {
+/// The scaled quadruple `(Aiᵉ, Aiᵉ′, Biᵉ, Biᵉ′)`, finite at every finite argument.
+///
+/// The negative axis is unscaled by convention.
+pub(super) fn quad_scaled(x: f32) -> Solutions<Slope<f32>> {
     match AiryRegime::for_argument(x) {
-        AiryRegime::Undefined => (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+        AiryRegime::Undefined => Solutions::uniform(Slope::uniform(f32::NAN)),
         // The negative axis is unscaled by convention, so there the scaled quadruple *is* the
         // unscaled one — including at `−∞`, where the envelope has decayed to zero.
         AiryRegime::AtNegativeInfinity
@@ -204,7 +205,10 @@ pub(super) fn quad_scaled(x: f32) -> (f32, f32, f32, f32) {
         | AiryRegime::NegativeMarch
         | AiryRegime::NegativeAsymptotic => quad(x),
         // `Aiᵉ ~ 1/(2√π x^{1/4}) → 0`, `Biᵉ` likewise; the derivatives grow without bound.
-        AiryRegime::AtPositiveInfinity => (0.0, f32::NEG_INFINITY, 0.0, f32::INFINITY),
+        AiryRegime::AtPositiveInfinity => Solutions::new(
+            Slope::new(0.0, f32::NEG_INFINITY),
+            Slope::new(0.0, f32::INFINITY),
+        ),
         AiryRegime::Leading => crate::math::airy::leading_scaled(x),
         AiryRegime::Positive => positive_scaled(x, zeta(x)),
     }

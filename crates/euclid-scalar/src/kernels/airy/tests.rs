@@ -144,7 +144,7 @@ fn bi_asymptotic_matches_the_sum_at_opposite_orders() {
 
 #[test]
 fn airy_routes_choose_the_series_at_exact_cutoffs() {
-    use super::PositiveRegime::{AiQuadrature, BothBessel, BothSeries};
+    use super::regimes::PositiveRegime::{AiQuadrature, BothBessel, BothSeries};
 
     let ai = super::AI_SERIES_MAX;
     let bi = super::BI_SERIES_MAX;
@@ -157,7 +157,7 @@ fn airy_routes_choose_the_series_at_exact_cutoffs() {
         (bi, AiQuadrature),
         (bi.next_up(), BothBessel),
     ] {
-        assert_eq!(super::positive_regime(x), regime);
+        assert_eq!(super::regimes::PositiveRegime::for_argument(x), regime);
     }
 
     assert!(super::negative_axis(-f64::from_bits(1)));

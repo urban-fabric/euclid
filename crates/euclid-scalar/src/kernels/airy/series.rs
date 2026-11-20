@@ -54,6 +54,7 @@
 //! [`super::march`] takes over there.
 
 use crate::math::arithmetic::term_is_negligible;
+use crate::math::pair::{Slope, Solutions};
 
 /// Iteration cap. The ratio of successive terms is `x³/(9k²)`, so at the largest argument this
 /// module is asked for the loop exits in well under 20 passes; the cap exists only so a `NaN`
@@ -81,16 +82,19 @@ const MAX_TERMS: u32 = 400;
 /// it cancels.
 const TERM_EPS: f64 = 1e-19;
 
-/// `(f, g, f′, g′)` at `x`, by the four recurrences above.
-///
 /// `√3`, narrowed from the single definition in [`crate::math::airy::SQRT_3`] so this format
 /// cannot drift from it.
 pub(super) const SQRT_3: f64 = crate::math::airy::SQRT_3;
 
+/// `f` and `g` at `x`, each with its derivative, by the four recurrences above.
+///
 /// Returned as the raw pair of solutions rather than as `Ai`/`Bi` so that [`super::march`] can
 /// use them as its starting values: the march needs `(f, f′)` and `(g, g′)` as two independent
-/// solutions of the same equation, not their Airy combinations.
-pub(super) fn fg(x: f64) -> (f64, f64, f64, f64) {
+/// solutions of the same equation, not their Airy combinations. Grouping them by *solution*
+/// rather than by derivative order is what says that — `Solutions<Slope<f64>>` is two
+/// independently transportable things, where `(f, g, f′, g′)` was four loose numbers whose
+/// pairing the reader had to supply.
+pub(super) fn fg(x: f64) -> Solutions<Slope<f64>> {
     let x3 = x * x * x;
     let (mut a, mut b, mut p, mut q) = (1.0f64, x, x * x * 0.5, 1.0f64);
     let (mut f, mut g, mut f_prime, mut g_prime) = (a, b, p, q);
@@ -114,12 +118,11 @@ pub(super) fn fg(x: f64) -> (f64, f64, f64, f64) {
             break;
         }
     }
-    (f, g, f_prime, g_prime)
+    Solutions::new(Slope::new(f, f_prime), Slope::new(g, g_prime))
 }
 
-/// `(Ai, Ai′, Bi, Bi′)` at `x`, from the series. Accurate for `|x| ≤ `[`super::SERIES_MAX`];
-/// see the module header for what happens beyond it.
-pub(super) fn airy(x: f64) -> (f64, f64, f64, f64) {
-    let (f, g, f_prime, g_prime) = fg(x);
-    crate::math::airy::combine(f, g, f_prime, g_prime)
+/// The Airy pair and its derivatives at `x`, from the series. Accurate for
+/// `|x| ≤ `[`super::SERIES_MAX`]; see the module header for what happens beyond it.
+pub(super) fn airy(x: f64) -> Solutions<Slope<f64>> {
+    crate::math::airy::combine(fg(x))
 }

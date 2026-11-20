@@ -50,6 +50,7 @@
 //! instead.
 
 use super::series;
+use crate::math::pair::{Slope, Solutions};
 
 /// Taylor order. The step is bounded by [`MAX_STEP`], so the omitted tail is about
 /// `|h|^{N+1}/(N+1)!`; at `N = 24` and `|h| = ½` that is below `1e-40`, which leaves the
@@ -64,11 +65,15 @@ pub(super) const ORDER: usize = 24;
 /// Horner evaluations.
 pub(super) const MAX_STEP: f64 = 0.5;
 
-/// Advance one solution of `y″ = xy` from `x₀` to `x₀ + h`, returning `(y, y′)` there.
-fn step(x0: f64, y: f64, y_prime: f64, h: f64) -> (f64, f64) {
+/// Advance one solution of `y″ = xy` from `x₀` to `x₀ + h`.
+///
+/// The value and the derivative travel together because the equation couples them: `c₀` and `c₁`
+/// *are* the pair, and every higher coefficient follows from both. A stepper that took them
+/// apart would be taking apart the state of the solution.
+fn step(x0: f64, at: Slope<f64>, h: f64) -> Slope<f64> {
     let mut c = [0.0f64; ORDER + 2];
-    c[0] = y;
-    c[1] = y_prime;
+    c[0] = at.value;
+    c[1] = at.derivative;
     for n in 0..ORDER {
         let previous = if n >= 1 { c[n - 1] } else { 0.0 };
         c[n + 2] = (x0 * c[n] + previous) / (((n + 2) * (n + 1)) as f64);
@@ -82,34 +87,40 @@ fn step(x0: f64, y: f64, y_prime: f64, h: f64) -> (f64, f64) {
             derivative = derivative * h + (n as f64) * c[n];
         }
     }
-    (value, derivative)
+    Slope::new(value, derivative)
 }
 
-/// Transport `(y, y′)` from `x_start` to `x_end` in equal steps of at most [`MAX_STEP`].
-fn transport(x_start: f64, x_end: f64, y: f64, y_prime: f64) -> (f64, f64) {
+/// Transport a solution and its derivative from `x_start` to `x_end` in equal steps of at most
+/// [`MAX_STEP`].
+fn transport(x_start: f64, x_end: f64, from: Slope<f64>) -> Slope<f64> {
     let span = x_end - x_start;
     let count = (span.abs() / MAX_STEP).ceil().max(1.0);
     let h = span / count;
-    let (mut value, mut derivative) = (y, y_prime);
+    let mut at = from;
     let mut x = x_start;
     let mut taken = 0.0f64;
     while taken < count {
-        (value, derivative) = step(x, value, derivative, h);
+        at = step(x, at, h);
         x += h;
         taken += 1.0;
     }
-    (value, derivative)
+    at
 }
 
-/// `(Ai, Ai′, Bi, Bi′)` at `x < 0`, by marching out from `−`[`super::SERIES_MAX`].
+/// The Airy pair and its derivatives at `x < 0`, by marching out from `−`[`super::SERIES_MAX`].
 ///
 /// `f` and `g` are transported separately and combined only at the end, through the same
-/// [`crate::math::airy::combine`] the series branch uses. Starting the march exactly where that branch
-/// stops makes the two agree at the join by construction.
-pub(super) fn airy(x: f64) -> (f64, f64, f64, f64) {
+/// [`crate::math::airy::combine`] the series branch uses. Starting the march exactly where that
+/// branch stops makes the two agree at the join by construction.
+///
+/// The two `transport` calls are why the seed is a [`Solutions`] of two [`Slope`]s rather than
+/// four numbers: each half is a complete solution of the equation, and transporting one has
+/// nothing to do with the other.
+pub(super) fn airy(x: f64) -> Solutions<Slope<f64>> {
     let start = -super::SERIES_MAX;
-    let (f0, g0, f0_prime, g0_prime) = series::fg(start);
-    let (f, f_prime) = transport(start, x, f0, f0_prime);
-    let (g, g_prime) = transport(start, x, g0, g0_prime);
-    crate::math::airy::combine(f, g, f_prime, g_prime)
+    let seed = series::fg(start);
+    crate::math::airy::combine(Solutions::new(
+        transport(start, x, seed.first_kind),
+        transport(start, x, seed.second_kind),
+    ))
 }

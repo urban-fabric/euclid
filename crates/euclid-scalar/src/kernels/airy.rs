@@ -76,7 +76,7 @@
 
 use crate::kernels::bessel::asymptotic::{hankel, i_scaled};
 use crate::kernels::bessel::modified_second::k_nu_pair_scaled;
-use crate::math::pair::Slope;
+use crate::math::pair::{Kind, Slope, Solutions};
 use core::f64::consts::PI;
 
 mod march;
@@ -135,7 +135,7 @@ const MARCH_MAX: f64 = 9.0;
 /// The first correction is `u₁/ζ = (5/72)/ζ`, which at `x = 1e10` is `7e-18`. Measured against
 /// the Bessel routes the two agree to `1.2e-16` here and to `3e-15` an order of magnitude lower,
 /// which is what sites the threshold. Taking this branch also keeps `ζ` out of the arithmetic
-/// entirely — it would overflow above `x ≈ 3e205`, and the leading forms are exactly the ones
+/// entirely — it would overflow above `x ≈ 4.17e205`, and the leading forms are exactly the ones
 /// that stay representable: `Aiᵉ → 1/(2√π·x^{1/4})` and `Biᵉ → 1/(√π·x^{1/4})`.
 const LEADING_MIN: f64 = 1e10;
 
@@ -174,23 +174,6 @@ fn bi_pair_scaled(x: f64, z: f64) -> Slope<f64> {
     )
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PositiveRegime {
-    BothSeries,
-    AiQuadrature,
-    BothBessel,
-}
-
-fn positive_regime(x: f64) -> PositiveRegime {
-    if x > BI_SERIES_MAX {
-        PositiveRegime::BothBessel
-    } else if x > AI_SERIES_MAX {
-        PositiveRegime::AiQuadrature
-    } else {
-        PositiveRegime::BothSeries
-    }
-}
-
 /// Both signed zeros use the series at the origin.
 fn negative_axis(x: f64) -> bool {
     x < 0.0
@@ -198,51 +181,9 @@ fn negative_axis(x: f64) -> bool {
 
 mod regimes;
 
-// The parent carves the two public pairs out of `quad`, so it needs the regime table and
-// both four-at-once evaluations back.
-use regimes::{AiryPairing, quad, quad_scaled};
-
-/// The quadruple on `0 ≤ x < `[`LEADING_MIN`].
-///
-/// Each pair takes the route that is unscaled *natively*, so no exponential is formed below the
-/// relevant threshold. That matters: recovering an unscaled value from a scaled one costs a
-/// relative `ζ·ε`, because `ζ`'s own rounding is amplified by `e^{ζ}`. Measured, that is
-/// `1.7e-15` at `x = 20` and `1.5e-13` at `x = 100` — unavoidable once the exponential is
-/// needed, and worth avoiding entirely while it is not.
-///
-/// Named rather than inlined in [`quad`] so the decay multiply is reachable: the unscaled
-/// surface's own sweeps carry a budget wide enough to absorb a change to it, and `Ai′` is small
-/// across this band. The single-precision peer carries the same split.
-fn positive_unscaled(x: f64) -> (f64, f64, f64, f64) {
-    let regime = positive_regime(x);
-    match regime {
-        PositiveRegime::BothSeries => return series::airy(x),
-        PositiveRegime::AiQuadrature | PositiveRegime::BothBessel => {}
-    }
-    let z = zeta(x);
-    let (scaled_ai, scaled_ai_prime) = ai_pair_scaled(x, z).into_parts();
-    let decay = (-z).exp();
-    let (ai, ai_prime) = (scaled_ai * decay, scaled_ai_prime * decay);
-    let (bi, bi_prime) = match regime {
-        PositiveRegime::AiQuadrature => {
-            let (_, _, series_bi, series_bi_prime) = series::airy(x);
-            (series_bi, series_bi_prime)
-        }
-        PositiveRegime::BothSeries | PositiveRegime::BothBessel => {
-            crate::math::scaling::unscale_pair(bi_pair_scaled(x, z), z).into_parts()
-        }
-    };
-    (ai, ai_prime, bi, bi_prime)
-}
-
-/// Which of the two solutions a caller asked for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Half {
-    /// `Ai` and `Ai′`.
-    First,
-    /// `Bi` and `Bi′`.
-    Second,
-}
+// The parent carves the two public pairs out of `quad`, so it needs the regime tables and both
+// four-at-once evaluations back.
+use regimes::{AiryPairing, PositiveRegime, quad, quad_scaled};
 
 /// `(Ai, Ai′)` or `(Bi, Bi′)` alone, skipping the other solution where it is separable.
 ///
@@ -264,26 +205,17 @@ enum Half {
 /// each value is bit-identical to what the quadruple produced. Splitting changes cost, not
 /// results — including the Wronskian, which combines the two halves and gets the same two pairs
 /// whether they were computed in one call or two.
-fn pair(x: f64, half: Half) -> Slope<f64> {
+fn pair(x: f64, kind: Kind) -> Slope<f64> {
     // Outside the separable band the quadruple shares its work and is the cheaper route; see
     // [`AiryPairing`] for the band and why the decision is named.
     match AiryPairing::for_argument(x) {
-        AiryPairing::Shared => {
-            let (ai, ai_prime, bi, bi_prime) = quad(x);
-            match half {
-                Half::First => Slope::new(ai, ai_prime),
-                Half::Second => Slope::new(bi, bi_prime),
-            }
-        }
+        AiryPairing::Shared => quad(x).of_kind(kind),
         AiryPairing::Separable => {
             let z = zeta(x);
-            match half {
-                Half::First => ai_pair_scaled(x, z).scaled_by((-z).exp()),
-                Half::Second => match positive_regime(x) {
-                    PositiveRegime::AiQuadrature => {
-                        let (_, _, series_bi, series_bi_prime) = series::airy(x);
-                        Slope::new(series_bi, series_bi_prime)
-                    }
+            match kind {
+                Kind::First => ai_pair_scaled(x, z).scaled_by((-z).exp()),
+                Kind::Second => match PositiveRegime::for_argument(x) {
+                    PositiveRegime::AiQuadrature => series::airy(x).second_kind,
                     PositiveRegime::BothSeries | PositiveRegime::BothBessel => {
                         crate::math::scaling::unscale_pair(bi_pair_scaled(x, z), z)
                     }
@@ -294,23 +226,16 @@ fn pair(x: f64, half: Half) -> Slope<f64> {
 }
 
 /// The scaled peer of [`pair`]; see there for why the split is only valid on part of the axis.
-fn pair_scaled(x: f64, half: Half) -> Slope<f64> {
+fn pair_scaled(x: f64, kind: Kind) -> Slope<f64> {
     match AiryPairing::for_argument(x) {
-        AiryPairing::Shared => {
-            let (ai, ai_prime, bi, bi_prime) = quad_scaled(x);
-            match half {
-                Half::First => Slope::new(ai, ai_prime),
-                Half::Second => Slope::new(bi, bi_prime),
-            }
-        }
+        AiryPairing::Shared => quad_scaled(x).of_kind(kind),
         AiryPairing::Separable => {
             let z = zeta(x);
-            match half {
-                Half::First => ai_pair_scaled(x, z),
-                Half::Second => match positive_regime(x) {
+            match kind {
+                Kind::First => ai_pair_scaled(x, z),
+                Kind::Second => match PositiveRegime::for_argument(x) {
                     PositiveRegime::AiQuadrature => {
-                        let (_, _, series_bi, series_bi_prime) = series::airy(x);
-                        Slope::new(series_bi, series_bi_prime).scaled_by((-z).exp())
+                        series::airy(x).second_kind.scaled_by((-z).exp())
                     }
                     PositiveRegime::BothSeries | PositiveRegime::BothBessel => bi_pair_scaled(x, z),
                 },
@@ -321,40 +246,40 @@ fn pair_scaled(x: f64, half: Half) -> Slope<f64> {
 
 /// The Airy function of the first kind `Ai(x)`.
 pub(crate) fn ai(x: f64) -> f64 {
-    pair(x, Half::First).value
+    pair(x, Kind::First).value
 }
 
 /// The derivative `Ai′(x)`.
 pub(crate) fn ai_prime(x: f64) -> f64 {
-    pair(x, Half::First).derivative
+    pair(x, Kind::First).derivative
 }
 
 /// The Airy function of the second kind `Bi(x)`.
 pub(crate) fn bi(x: f64) -> f64 {
-    pair(x, Half::Second).value
+    pair(x, Kind::Second).value
 }
 
 /// The derivative `Bi′(x)`.
 pub(crate) fn bi_prime(x: f64) -> f64 {
-    pair(x, Half::Second).derivative
+    pair(x, Kind::Second).derivative
 }
 
 /// The scaled `Aiᵉ(x) = e^{ζ}Ai(x)` for `x > 0`, and `Ai(x)` itself for `x ≤ 0`.
 pub(crate) fn aie(x: f64) -> f64 {
-    pair_scaled(x, Half::First).value
+    pair_scaled(x, Kind::First).value
 }
 
 /// The scaled `Aiᵉ′(x) = e^{ζ}Ai′(x)` for `x > 0`, and `Ai′(x)` itself for `x ≤ 0`.
 pub(crate) fn aie_prime(x: f64) -> f64 {
-    pair_scaled(x, Half::First).derivative
+    pair_scaled(x, Kind::First).derivative
 }
 
 /// The scaled `Biᵉ(x) = e^{−ζ}Bi(x)` for `x > 0`, and `Bi(x)` itself for `x ≤ 0`.
 pub(crate) fn bie(x: f64) -> f64 {
-    pair_scaled(x, Half::Second).value
+    pair_scaled(x, Kind::Second).value
 }
 
 /// The scaled `Biᵉ′(x) = e^{−ζ}Bi′(x)` for `x > 0`, and `Bi′(x)` itself for `x ≤ 0`.
 pub(crate) fn bie_prime(x: f64) -> f64 {
-    pair_scaled(x, Half::Second).derivative
+    pair_scaled(x, Kind::Second).derivative
 }

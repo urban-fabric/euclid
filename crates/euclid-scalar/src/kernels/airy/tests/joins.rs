@@ -11,7 +11,30 @@ use super::super::{
     AI_SERIES_MAX, BI_SERIES_MAX, LEADING_MIN, MARCH_MAX, SERIES_MAX, ai_pair_scaled,
     bi_pair_scaled, series, zeta,
 };
+use crate::math::pair::{Slope, Solutions};
 use euclid_utils::{assert_close, rel, sweep};
+
+/// The four values of two quadruples, zipped and labelled.
+///
+/// Three of the joins below compare a whole quadruple against a whole quadruple. Written as four
+/// separate assertions that is four chances to pair `Ai′` with `Bi′`, which a join test would
+/// then pass for the wrong reason. Pairing them here by *field* means the only comparisons that
+/// can be written are the four correct ones.
+fn paired(
+    got: Solutions<Slope<f64>>,
+    want: Solutions<Slope<f64>>,
+) -> [(&'static str, f64, f64); 4] {
+    [
+        ("Ai", got.first_kind.value, want.first_kind.value),
+        ("Ai'", got.first_kind.derivative, want.first_kind.derivative),
+        ("Bi", got.second_kind.value, want.second_kind.value),
+        (
+            "Bi'",
+            got.second_kind.derivative,
+            want.second_kind.derivative,
+        ),
+    ]
+}
 
 #[test]
 fn the_series_and_the_k_quadrature_agree_across_their_overlap() {
@@ -20,18 +43,18 @@ fn the_series_and_the_k_quadrature_agree_across_their_overlap() {
     // here would mean one of them is wrong in a way no single-route test could localize.
     for x in sweep(0.3, AI_SERIES_MAX, 40) {
         let z = zeta(x);
-        let (series_ai, series_ai_prime, _, _) = series::airy(x);
+        let series_ai = series::airy(x).first_kind;
         let (quad_ai, quad_ai_prime) = ai_pair_scaled(x, z).into_parts();
         let decay = (-z).exp();
         assert_close(
             quad_ai * decay,
-            series_ai,
+            series_ai.value,
             2e-15,
             "Ai: quadrature vs series",
         );
         assert_close(
             quad_ai_prime * decay,
-            series_ai_prime,
+            series_ai.derivative,
             2e-15,
             "Ai': quadrature vs series",
         );
@@ -45,7 +68,7 @@ fn the_series_and_the_i_asymptotic_agree_across_their_overlap() {
     // precision from about x = 9. Both are checked over the whole band.
     for x in sweep(BI_SERIES_MAX, 20.0, 40) {
         let z = zeta(x);
-        let (_, _, series_bi, series_bi_prime) = series::airy(x);
+        let series_bi = series::airy(x).second_kind;
         let (asym_bi, asym_bi_prime) = bi_pair_scaled(x, z).into_parts();
         let decay = (-z).exp();
         // The bound carries `ζ·ε`, because *this comparison* is what introduces it: the series
@@ -57,13 +80,13 @@ fn the_series_and_the_i_asymptotic_agree_across_their_overlap() {
         let bound = 2e-15 + 2.0 * z * f64::EPSILON;
         assert_close(
             asym_bi,
-            series_bi * decay,
+            series_bi.value * decay,
             bound,
             "Bi: asymptotic vs series",
         );
         assert_close(
             asym_bi_prime,
-            series_bi_prime * decay,
+            series_bi.derivative * decay,
             bound,
             "Bi': asymptotic vs series",
         );
@@ -76,28 +99,14 @@ fn the_march_agrees_with_both_routes_it_joins() {
     // from both ends: against the series where the series is still exact, and against the
     // Hankel expansion where that has become so. Nothing else constrains the band between.
     for x in sweep(-SERIES_MAX, -0.5, 25) {
-        let marched = march::airy(x);
-        let (s_ai, s_ai_prime, s_bi, s_bi_prime) = series::airy(x);
-        for (name, got, want) in [
-            ("Ai", marched.0, s_ai),
-            ("Ai'", marched.1, s_ai_prime),
-            ("Bi", marched.2, s_bi),
-            ("Bi'", marched.3, s_bi_prime),
-        ] {
+        for (name, got, want) in paired(march::airy(x), series::airy(x)) {
             assert_close(got, want, 1e-14, &format!("{name}: march vs series"));
         }
     }
     // At the far end the comparison has to be absolute: both routes are accurate to ~1e-15
     // *absolute* there, and the functions pass through zero inside this range.
     for x in sweep(-14.0, -MARCH_MAX, 25) {
-        let marched = march::airy(x);
-        let hankel = negative_asymptotic(-x);
-        for (name, got, want) in [
-            ("Ai", marched.0, hankel.0),
-            ("Ai'", marched.1, hankel.1),
-            ("Bi", marched.2, hankel.2),
-            ("Bi'", marched.3, hankel.3),
-        ] {
+        for (name, got, want) in paired(march::airy(x), negative_asymptotic(-x)) {
             assert!(
                 (got - want).abs() < 1e-12,
                 "{name}: march {got:e} vs hankel {want:e} at x = {x}"
@@ -113,13 +122,7 @@ fn the_leading_order_branch_matches_the_route_it_replaces() {
     // compared directly: if the threshold were set too low, this would catch it.
     for x in [LEADING_MIN * 0.5, LEADING_MIN * 0.9, LEADING_MIN] {
         let full = positive_scaled(x, zeta(x));
-        let leading = crate::math::airy::leading_scaled(x);
-        for (name, got, want) in [
-            ("Aie", leading.0, full.0),
-            ("Aie'", leading.1, full.1),
-            ("Bie", leading.2, full.2),
-            ("Bie'", leading.3, full.3),
-        ] {
+        for (name, got, want) in paired(crate::math::airy::leading_scaled(x), full) {
             assert!(
                 rel(got, want) < 1e-15,
                 "{name}: leading {got:e} vs full {want:e} at x = {x:e}"
@@ -132,7 +135,7 @@ fn the_leading_order_branch_matches_the_route_it_replaces() {
 fn the_quadrature_is_reached_with_a_usable_zeta_everywhere_it_is_used() {
     // `ζ = ⅔x^{3/2}` is what every positive-axis route is parameterized by, and two things can
     // go wrong with it: it underflows to zero for tiny `x`, which would leave the quadrature
-    // integrating nothing, and it overflows for `x > 3e205`. Both are avoided by thresholds
+    // integrating nothing, and it overflows for `x > 4.17e205`. Both are avoided by thresholds
     // rather than by luck, so both are asserted.
     for x in [AI_SERIES_MAX, 1.5, 10.0, 1e3, 1e6, LEADING_MIN * 0.99] {
         let z = zeta(x);
@@ -155,17 +158,11 @@ fn the_quadrature_is_reached_with_a_usable_zeta_everywhere_it_is_used() {
 fn the_positive_crossover_agrees_from_both_sides() {
     let x = super::BI_SERIES_MAX;
     let z = super::zeta(x);
-    let (ai_a, aip_a, bi_a, bip_a) = positive_scaled(x, z);
-    // The other side of the comparison: what the mutant would take at exactly this argument.
-    let (ai_b, aip_b) = super::ai_pair_scaled(x, z).into_parts();
-    let (bi_b, bip_b) = super::bi_pair_scaled(x, z).into_parts();
+    // The other side of the comparison: what the mutant would take at exactly this argument,
+    // which is both halves straight from their asymptotics.
+    let mutant = Solutions::new(super::ai_pair_scaled(x, z), super::bi_pair_scaled(x, z));
 
-    for (name, from_series, from_asymptotic) in [
-        ("Ai^e", ai_a, ai_b),
-        ("Ai^e'", aip_a, aip_b),
-        ("Bi^e", bi_a, bi_b),
-        ("Bi^e'", bip_a, bip_b),
-    ] {
+    for (name, from_series, from_asymptotic) in paired(positive_scaled(x, z), mutant) {
         let relative = ((from_series - from_asymptotic) / from_asymptotic).abs();
         assert!(
             relative < 1e-13,
