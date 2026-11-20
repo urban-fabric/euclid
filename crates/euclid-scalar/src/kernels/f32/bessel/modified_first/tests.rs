@@ -3,6 +3,7 @@
 //! A child module in its own file so implementation plus tests stay inside the crate's
 //! 400-line budget, while `use super::*` still reaches the private peak-factored sums.
 
+use super::scaled::{LN_I0_SERIES_MAX, LnI0Form};
 use super::*;
 
 fn agrees(a: f32, b: f64, tol: f32) {

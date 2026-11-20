@@ -6,6 +6,9 @@
 //! row, so the derivative had crossed it unchecked in both precisions.
 
 use super::*;
+// The regime tables and the four-at-once evaluations moved into `regimes` when this module
+// outgrew one file.
+use super::regimes::{AiryRegime, PositiveRegime, positive_unscaled};
 
 /// The whole axis as a table.
 ///

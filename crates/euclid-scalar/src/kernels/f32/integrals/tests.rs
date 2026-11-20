@@ -8,6 +8,9 @@
 //! naive sum would have lost it, and a convergence break changes cost rather than value.
 
 use super::*;
+// The route tables moved into the two halves when this module outgrew one file.
+use super::exponential::{E1Route, EiRoute, e1_route, ei_asymptotic_sum, ei_route};
+use super::trigonometric::{CosIntRoute, SinIntRoute, TrigIntegralRoute};
 use crate::kernels::integrals as reference;
 use euclid_utils::assert_close_f32;
 

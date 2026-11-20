@@ -1,0 +1,102 @@
+//! Unit tests for the regularized incomplete gamma pair.
+//!
+//! Beside [`super`] rather than with `Γ`'s own tests, because what they reach is this module's:
+//! the [`IncompleteGammaMethod`] table and the small-shape logarithm. The method table is the
+//! part no value assertion covers — every route is accurate in its own region, so one region
+//! over still agrees to several digits and only the decision separates them.
+
+use super::*;
+
+fn close(a: f64, b: f64, tol: f64) {
+    assert!((a - b).abs() <= tol * b.abs().max(1.0), "{a} vs {b}");
+}
+
+#[test]
+fn small_shape_log_normalizer_matches_mpfr_at_the_cutoff() {
+    // From `extreme_shapes`, a local generator over MPFR at 256 bits. See CONTRIBUTING.md,
+    // "Reference values are pasted in": the generator is not committed, so the precision is
+    // recorded here instead of a path.
+    let expected = -0.576_393_598_283_369_6;
+    assert!((ln_gamma1p_over_a(SMALL_SHAPE) - expected).abs() <= f64::EPSILON / 2.0);
+}
+
+#[test]
+fn regularized_incomplete_gamma_bounds_and_complement() {
+    for &(a, x) in &[(1.0, 0.5), (2.5, 3.0), (5.0, 2.0), (10.0, 12.0)] {
+        let p = gamma_lr(a, x);
+        let q = gamma_ur(a, x);
+        assert!((0.0..=1.0).contains(&p), "P out of range: {p}");
+        close(p + q, 1.0, 1e-10);
+    }
+    close(gamma_lr(1.0, 2.0), 1.0 - (-2.0f64).exp(), 1e-10);
+}
+
+/// The eight incomplete-gamma routes, at and either side of every boundary.
+///
+/// Both tails dispatch on this one decision, so a misroute moves *two* public functions at once
+/// — and every arm returns a probability in `[0, 1]`, so a wrong one still looks plausible. The
+/// table is the only thing that separates them.
+#[test]
+fn the_incomplete_gamma_methods_partition_the_quadrant() {
+    use IncompleteGammaMethod::{
+        AtInfinity, AtZero, Edgeworth, Invalid, LowerSeries, SmallShapeFraction, SmallShapeSeries,
+        UpperFraction,
+    };
+    for (a, x, want) in [
+        // Rejected inputs: a non-positive or non-finite shape, a negative argument, any NaN.
+        (0.0, 1.0, Invalid),
+        (-1.0, 1.0, Invalid),
+        (f64::INFINITY, 1.0, Invalid),
+        (f64::NAN, 1.0, Invalid),
+        (1.0, -0.125, Invalid),
+        (1.0, f64::NAN, Invalid),
+        // The two limits, which both tails return as exact constants.
+        (2.0, 0.0, AtZero),
+        (2.0, -0.0, AtZero),
+        (2.0, f64::INFINITY, AtInfinity),
+        // The Edgeworth handover, closed on the left.
+        (GAMMA_EDGEWORTH_MIN, 1.0, Edgeworth),
+        (GAMMA_EDGEWORTH_MIN.next_down(), 1.0, LowerSeries),
+        (1e30, 1.0, Edgeworth),
+        // The small shape, also closed, and it still picks a tail because the series is an
+        // expansion in `x` valid only below `a + 1`.
+        (SMALL_SHAPE, 0.5, SmallShapeSeries),
+        (SMALL_SHAPE, 2.0, SmallShapeFraction),
+        (SMALL_SHAPE.next_up(), 0.5, LowerSeries),
+        (SMALL_SHAPE.next_up(), 2.0, UpperFraction),
+        (1e-30, 0.5, SmallShapeSeries),
+        // And the tail split at `x = a + 1`, which belongs to the fraction.
+        (2.0, 1.0, LowerSeries),
+        (2.0, 3.0_f64.next_down(), LowerSeries),
+        (2.0, 3.0, UpperFraction),
+        (2.0, 5.0, UpperFraction),
+    ] {
+        assert_eq!(
+            IncompleteGammaMethod::for_arguments(a, x),
+            want,
+            "at a={a:e}, x={x:e}"
+        );
+    }
+
+    // The two tails agree about the route, which is what lets each be a bare `match`: every
+    // argument gives a complementary pair, whichever arm produced it.
+    for (a, x) in [
+        (SMALL_SHAPE, 0.5),
+        (SMALL_SHAPE, 4.0),
+        (2.0, 1.0),
+        (2.0, 5.0),
+        (1e4, 1e4),
+        (GAMMA_EDGEWORTH_MIN, 3e7),
+    ] {
+        let (lower, upper) = (gamma_lr(a, x), gamma_ur(a, x));
+        assert!((lower + upper - 1.0).abs() <= 1e-12, "at a={a:e}, x={x:e}");
+        assert!((0.0..=1.0).contains(&lower) && (0.0..=1.0).contains(&upper));
+    }
+    // The limits are exact in both tails, not merely close.
+    assert_eq!((gamma_lr(2.0, 0.0), gamma_ur(2.0, 0.0)), (0.0, 1.0));
+    assert_eq!(
+        (gamma_lr(2.0, f64::INFINITY), gamma_ur(2.0, f64::INFINITY)),
+        (1.0, 0.0)
+    );
+    assert!(gamma_lr(0.0, 1.0).is_nan() && gamma_ur(0.0, 1.0).is_nan());
+}

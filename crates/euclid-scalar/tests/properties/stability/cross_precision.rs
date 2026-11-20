@@ -271,463 +271,92 @@ macro_rules! tracks_f64_at_scale {
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_GAMMA: u32 = 512;
 
-property! {
-    #![config(settings("f32_precision_gamma"))]
-
-    /// `Γ` at `f32`, against the `f64` kernel rounded.
-    ///
-    /// The domain crosses the small-shape route, the Lanczos core and the recurrence, and stops
-    /// below the overflow at `Γ(35)` so the comparison stays defined.
-    fn the_f32_gamma_tracks_f64(x in generate::float32::in_range(0.02, 34.0)) {
-        if !x.is_finite() || x <= 0.0 {
-            return Ok(());
-        }
-        tracks_f64!("gamma", x, ALLOWED_GAMMA, Real::gamma, Real::gamma);
-    }
-}
+// --- the per-family ulp budgets -------------------------------------------
+// Kept together rather than beside each law: what matters about a budget is how it
+// compares to its neighbours, and a family whose allowance is an order above the rest
+// is the thing a reader should notice. Each is measured, not chosen; see the header.
 
 /// Measured worst: **4 ulp** — in ulps of the `ulp(1)` envelope, which is the unit beside its two zeros.
 ///
 /// Contract set at `16`, about 4x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_LN_GAMMA: u32 = 16;
-
-property! {
-    #![config(settings("f32_precision_ln_gamma")
-        .require("ln_gamma recurrence", 2.5)
-        .require("ln_gamma asymptotic", 45.0))]
-
-    /// `lnΓ` at `f32`, across the recurrence/asymptotic handover at `10`.
-    ///
-    /// Both sides are required: the recurrence walks up to the threshold and the asymptotic
-    /// takes over above it, and a climb that stopped reaching one of them would be reporting a
-    /// clean pass over half the kernel.
-    fn the_f32_ln_gamma_tracks_f64(x in generate::float32::in_range(0.02, 400.0)) {
-        if !x.is_finite() || x <= 0.0 {
-            return Ok(());
-        }
-        classify!("ln_gamma recurrence", x < 10.0);
-        classify!("ln_gamma asymptotic", x >= 10.0);
-        // `lnΓ` has two zeros in this domain, at `x = 1` and `x = 2`, and they are the reason the
-        // fixed grid quotes 72 ulp for this kernel while the climb measured 4: the grid happens
-        // to land near one of them and a hill climb on a thin feature does not have to. Both are
-        // cancellation zeros — `Γ` is near 1 and `ln` of a value near 1 has absolute accuracy,
-        // not relative — so `ulp(1)` is the honest unit. Above `x ≈ 2.4` the value exceeds the
-        // envelope and this reverts to an ordinary ulp count.
-        tracks_f64_at_scale!(
-            "ln_gamma",
-            x,
-            ALLOWED_LN_GAMMA,
-            1.0,
-            Real::ln_gamma,
-            Real::ln_gamma
-        );
-    }
-}
-
 /// Measured worst: **2 ulp** — in ulps of the `ulp(1)` envelope, beside the zero at `1.4616`.
 ///
 /// Contract set at `8`, about 4x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_DIGAMMA: u32 = 8;
-
-property! {
-    #![config(settings("f32_precision_digamma")
-        .require("psi recurrence", 4.0)
-        .require("psi asymptotic", 22.0))]
-
-    /// `ψ` at `f32`, across `PSI_ASYMPTOTIC_MIN`, which the port rederived at `6` rather than
-    /// inheriting the `f64` value.
-    fn the_f32_digamma_tracks_f64(x in generate::float32::in_range(0.02, 60.0)) {
-        if !x.is_finite() || x <= 0.0 {
-            return Ok(());
-        }
-        classify!("psi recurrence", x < 6.0);
-        classify!("psi asymptotic", x >= 6.0);
-        // `ψ` has a zero at `1.4616`, and like `Ei`'s it is a cancellation of `O(1)` terms rather
-        // than an analytic one, so the envelope is `ulp(1)`. This was a latent flake rather than
-        // an observed failure: the measured worst was 4 ulp because *this* seed's climb never
-        // got close enough to the zero. A kernel whose test passes only while the search misses
-        // a thin region is a kernel with no test there.
-        tracks_f64_at_scale!(
-            "digamma",
-            x,
-            ALLOWED_DIGAMMA,
-            1.0,
-            Real::digamma,
-            Real::digamma
-        );
-    }
-}
-
 /// Measured worst: **6 ulp** — no zeros, so this is an ordinary ulp count.
 ///
 /// Contract set at `32`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_TRIGAMMA: u32 = 32;
-
-property! {
-    #![config(settings("f32_precision_trigamma"))]
-
-    /// `ψ'` at `f32`. Steeper than `ψ` near the origin, where it diverges like `1/x²`.
-    fn the_f32_trigamma_tracks_f64(x in generate::float32::in_range(0.02, 60.0)) {
-        if !x.is_finite() || x <= 0.0 {
-            return Ok(());
-        }
-        tracks_f64!("trigamma", x, ALLOWED_TRIGAMMA, Real::trigamma, Real::trigamma);
-    }
-}
-
-// ---- the error function family ------------------------------------------
-
 /// Measured worst: **14 ulp** — worst near the inflection, not at the tails.
 ///
 /// Contract set at `64`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_ERF: u32 = 64;
-
-property! {
-    #![config(settings("f32_precision_erf"))]
-
-    /// `erf` at `f32`, including the linear region near the origin.
-    fn the_f32_erf_tracks_f64(x in generate::float32::in_range(-6.0, 6.0)) {
-        if !x.is_finite() {
-            return Ok(());
-        }
-        tracks_f64!("erf", x, ALLOWED_ERF, Real::erf, Real::erf);
-    }
-}
-
 /// Measured worst: **32 ulp** — this is the *base*; the allowance adds `x²` per argument.
 ///
 /// Contract set at `128`, about 4x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_ERFC: u32 = 128;
-
-property! {
-    #![config(settings("f32_precision_erfc")
-        .require("erfc complement form", 9.0)
-        .require("erfc fraction form", 38.0))]
-
-    /// `erfc` at `f32`, across the form crossover.
-    ///
-    /// This is the threshold the erf work moved — `1 − erf` below it, the continued fraction
-    /// above — so both sides are labelled and required. The `f32` peer sites its own crossover
-    /// independently of the `f64` one, which is exactly the kind of divergence a narrowing
-    /// comparison catches and an identity does not.
-    fn the_f32_erfc_tracks_f64(x in generate::float32::in_range(-3.0, 10.0)) {
-        if !x.is_finite() {
-            return Ok(());
-        }
-        classify!("erfc complement form", x < 1.6875);
-        classify!("erfc fraction form", x >= 1.6875);
-        // The allowance carries `x²`, which is the conditioning rather than slack. The tail
-        // route is `e^{−x²}·erfcx(x)`, and forming `−x²` in `f32` costs `ε·x²` *absolute* in the
-        // exponent; `exp` turns an absolute error in its argument into a relative error in its
-        // result, so the output cannot be better than `ε·x²` relative however the kernel is
-        // written. At `x = 9.15` that is `1.0e-5`, about 84 ulp — and the measured gap there is
-        // 28, so the kernel is comfortably inside a bound it cannot escape. A flat contract
-        // would have had to be 84+ ulp everywhere to admit this one argument, which would have
-        // made it vacuous at `x = 1`.
-        tracks_f64_conditioned!(
-            "erfc",
-            x,
-            f64::from(ALLOWED_ERFC) + f64::from(x) * f64::from(x),
-            Real::erfc,
-            Real::erfc
-        );
-    }
-}
-
 /// Measured worst: **26 ulp** — worst just above the continued fraction's envelope.
 ///
 /// Contract set at `128`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_ERFCX: u32 = 128;
-
-property! {
-    #![config(settings("f32_precision_erfcx")
-        .require("erfcx below the envelope", 2.5)
-        .require("erfcx fraction", 23.0))]
-
-    /// `erfcx` at `f32`. The scaled form is where the continued fraction's convergence shows,
-    /// and the `f32` port had to widen its own envelope rather than inherit `2.0`.
-    fn the_f32_erfcx_tracks_f64(x in generate::float32::in_range(0.01, 40.0)) {
-        if !x.is_finite() || x <= 0.0 {
-            return Ok(());
-        }
-        classify!("erfcx below the envelope", x < 1.6875);
-        classify!("erfcx fraction", x >= 1.6875);
-        tracks_f64!("erfcx", x, ALLOWED_ERFCX, Real::erfcx, Real::erfcx);
-    }
-}
-
 /// Measured worst: **3 ulp** — Giles fitted these coefficients for `f32`, and it shows.
 ///
 /// Contract set at `16`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_ERF_INV: u32 = 16;
-
-property! {
-    #![config(settings("f32_precision_erf_inv"))]
-
-    /// `erf⁻¹` at `f32`, which takes no Newton step because Giles fitted its coefficients *for*
-    /// `f32` — so this is the one kernel here whose narrow version is not a narrowed wide one.
-    fn the_f32_erf_inv_tracks_f64(x in generate::float32::in_range(-0.999, 0.999)) {
-        if !x.is_finite() {
-            return Ok(());
-        }
-        tracks_f64!("erf_inv", x, ALLOWED_ERF_INV, Real::erf_inv, Real::erf_inv);
-    }
-}
-
-// ---- the modified Bessel functions --------------------------------------
-
 /// Measured worst: **47 ulp** — the peak-factored sum walks `O(√x)` terms and drifts like `√n·ε`.
 ///
 /// Contract set at `256`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_I0E: u32 = 256;
-
-property! {
-    #![config(settings("f32_precision_i0e")
-        .require("i0e no-log", 2.0)
-        .require("i0e peak-factored", 27.0)
-        .require("i0e asymptotic", 18.0))]
-
-    /// `I₀ᵉ` at `f32`, across all three forms the regime split selects.
-    ///
-    /// The domain deliberately spans `I1_NO_LOG_MAX` at `1` and `I_ASYMPTOTIC_MIN` at `100`, and
-    /// all three are required. The asymptotic side is the one worth insisting on: the series is
-    /// wrong by a factor of 15 by `x = 1e8` while staying finite and plausible, so the handover
-    /// is load bearing rather than an optimisation.
-    fn the_f32_i0e_tracks_f64(x in generate::float32::in_range(0.0, 400.0)) {
-        if !x.is_finite() || x < 0.0 {
-            return Ok(());
-        }
-        classify!("i0e no-log", x < 1.0);
-        classify!("i0e peak-factored", (1.0..100.0).contains(&x));
-        classify!("i0e asymptotic", x >= 100.0);
-        tracks_f64!("bessel_i0e", x, ALLOWED_I0E, Real::bessel_i0e, Real::bessel_i0e);
-    }
-}
-
 /// Measured worst: **49 ulp** — as `I₀ᵉ`, plus the `h/(k+1)` factor.
 ///
 /// Contract set at `256`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_I1E: u32 = 256;
-
-property! {
-    #![config(settings("f32_precision_i1e")
-        .require("i1e no-log", 2.0)
-        .require("i1e peak-factored", 27.0)
-        .require("i1e asymptotic", 18.0))]
-
-    /// `I₁ᵉ` at `f32`. Unlike `I₀ᵉ` this one really does take the no-logarithm route, where
-    /// `I₁ ~ x/2` must come back exact.
-    ///
-    /// Swept on the positive axis only, deliberately: `I₁ᵉ` is odd, so the narrowing gap at `−x`
-    /// is the mirror of the gap at `x` and a two-sided sweep would measure each argument twice.
-    /// The *sign* is what a one-sided sweep cannot see, and `cargo mutants` duly found that it
-    /// was unchecked here — it is now pinned by `the_first_kind_is_odd_in_every_form` beside the
-    /// kernel, which is the stronger assertion since it is exact rather than budgeted.
-    fn the_f32_i1e_tracks_f64(x in generate::float32::in_range(0.0, 400.0)) {
-        if !x.is_finite() || x < 0.0 {
-            return Ok(());
-        }
-        classify!("i1e no-log", x < 1.0);
-        classify!("i1e peak-factored", (1.0..100.0).contains(&x));
-        classify!("i1e asymptotic", x >= 100.0);
-        tracks_f64!("bessel_i1e", x, ALLOWED_I1E, Real::bessel_i1e, Real::bessel_i1e);
-    }
-}
-
 /// Measured worst: **18 ulp** — worst in the quadrature rather than the series.
 ///
 /// Contract set at `128`, about 7x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_K0E: u32 = 128;
-
-property! {
-    #![config(settings("f32_precision_k0e")
-        .require("k0e series", 2.0)
-        .require("k0e quadrature", 46.0))]
-
-    /// `K₀ᵉ` at `f32`, across the series/quadrature handover the port moved to `1.5`.
-    fn the_f32_k0e_tracks_f64(x in generate::float32::in_range(0.01, 200.0)) {
-        if !x.is_finite() || x <= 0.0 {
-            return Ok(());
-        }
-        classify!("k0e series", x <= 1.5);
-        classify!("k0e quadrature", x > 1.5);
-        tracks_f64!("bessel_k0e", x, ALLOWED_K0E, Real::bessel_k0e, Real::bessel_k0e);
-    }
-}
-
-// ---- oscillating, Airy, and the transcendentals -------------------------
-
 /// Measured worst: **7 ulp** — in ulps of the `√(2/πx)` amplitude envelope.
 ///
 /// Contract set at `32`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_J0: u32 = 32;
-
-property! {
-    #![config(settings("f32_precision_j0")
-        .require("j0 series", 3.0)
-        .require("j0 march", 24.0)
-        .require("j0 Hankel", 20.0))]
-
-    /// `J₀` at `f32`, counted against its amplitude envelope `√(2/πx)`.
-    ///
-    /// `J₀` has infinitely many zeros in this domain, so an ulp count against the value measures
-    /// distance to the nearest zero rather than the quality of the kernel — see
-    /// [`narrowing_margin_at_scale`]. The envelope is the Hankel amplitude, capped at `1` because
-    /// it diverges as `x → 0` while `J₀(0) = 1`.
-    fn the_f32_j0_tracks_f64(x in generate::float32::in_range(0.0, 40.0)) {
-        if !x.is_finite() || x < 0.0 {
-            return Ok(());
-        }
-        classify!("j0 series", x < 2.0);
-        classify!("j0 march", (2.0..7.0).contains(&x));
-        classify!("j0 Hankel", x >= 7.0);
-        let envelope = if x > 0.0 {
-            (2.0 / (core::f32::consts::PI * x)).sqrt().min(1.0)
-        } else {
-            1.0
-        };
-        tracks_f64_at_scale!(
-            "bessel_j0",
-            x,
-            ALLOWED_J0,
-            envelope,
-            Real::bessel_j0,
-            Real::bessel_j0
-        );
-    }
-}
-
 /// Measured worst: **91 ulp** — in ulps of the `π^{−1/2}|x|^{−1/4}` envelope; the loosest kernel here.
 ///
 /// Contract set at `512`, about 6x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_AIRY_AI: u32 = 512;
-
-property! {
-    #![config(settings("f32_precision_airy_ai")
-        .require("airy oscillatory", 12.0)
-        .require("airy decaying", 35.0))]
-
-    /// `Ai` at `f32`, over both signs, counted against its amplitude envelope.
-    ///
-    /// The oscillatory left half and the decaying right half are different algorithms, and the
-    /// port rederived three of their four thresholds. On the left the envelope is the standard
-    /// `π^{−1/2}|x|^{−1/4}`; on the right `Ai` decays monotonically with no zeros, so the value
-    /// is its own scale and the criterion reduces to an ordinary ulp count.
-    fn the_f32_airy_ai_tracks_f64(x in generate::float32::in_range(-15.0, 15.0)) {
-        if !x.is_finite() {
-            return Ok(());
-        }
-        classify!("airy oscillatory", x < 0.0);
-        classify!("airy decaying", x >= 0.0);
-        let envelope = if x < 0.0 {
-            x.abs().powf(-0.25) / core::f32::consts::PI.sqrt()
-        } else {
-            0.0
-        };
-        tracks_f64_at_scale!(
-            "airy_ai",
-            x,
-            ALLOWED_AIRY_AI,
-            envelope,
-            Real::airy_ai,
-            Real::airy_ai
-        );
-    }
-}
-
 /// Measured worst: **5 ulp** — Halley converges cubically, so the seed is the only risk.
 ///
 /// Contract set at `32`, about 6x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_LAMBERT_W: u32 = 32;
-
-property! {
-    #![config(settings("f32_precision_lambert_w")
-        .require("W near the branch point", 3.0)
-        .require("W ordinary", 25.0))]
-
-    /// `W` at `f32`, from just above the branch point outwards.
-    ///
-    /// The branch point is `−1/e`, where `W` has a square-root singularity and the Halley
-    /// iteration is seeded from a series rather than from the logarithm. `f32` leaves that
-    /// neighbourhood about `1e4` times further out than `f64` does, so the window is labelled.
-    fn the_f32_lambert_w_tracks_f64(x in generate::float32::in_range(-0.36, 300.0)) {
-        if !x.is_finite() {
-            return Ok(());
-        }
-        classify!("W near the branch point", x < -0.3);
-        classify!("W ordinary", x >= -0.3);
-        tracks_f64!("lambert_w", x, ALLOWED_LAMBERT_W, Real::lambert_w, Real::lambert_w);
-    }
-}
-
 /// Measured worst: **3 ulp** — the compensated series and the fraction agree closely.
 ///
 /// Contract set at `16`, about 5x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_SIN_INT: u32 = 16;
-
-property! {
-    #![config(settings("f32_precision_sin_int")
-        .require("Si series", 3.5)
-        .require("Si fraction", 45.0))]
-
-    /// `Si` at `f32`, across `TRIG_SERIES_MAX`, which the measurement left at the `f64` value.
-    fn the_f32_sin_int_tracks_f64(x in generate::float32::in_range(0.0, 60.0)) {
-        if !x.is_finite() || x < 0.0 {
-            return Ok(());
-        }
-        classify!("Si series", x < 4.0);
-        classify!("Si fraction", x >= 4.0);
-        tracks_f64!("sin_int", x, ALLOWED_SIN_INT, Real::sin_int, Real::sin_int);
-    }
-}
-
 /// Measured worst: **8 ulp** — in ulps of the `ulp(1)` envelope, beside the zero at `0.3725`.
 ///
 /// Contract set at `32`, about 4x that, per the headroom
 /// convention in the module header. The budget beside it pins the measurement.
 const ALLOWED_EXP_INT_EI: u32 = 32;
 
-property! {
-    #![config(settings("f32_precision_exp_int_ei")
-        .require("Ei series", 8.0)
-        .require("Ei asymptotic", 18.0))]
-
-    /// `Ei` at `f32`, across `EI_ASYMPTOTIC_MIN`. Every term of the series is positive for
-    /// `x > 0`, so the series cannot cancel — it can only be stopped too early, which is what
-    /// the lower cap risks and this comparison would see.
-    fn the_f32_exp_int_ei_tracks_f64(x in generate::float32::in_range(0.01, 60.0)) {
-        if !x.is_finite() || x <= 0.0 {
-            return Ok(());
-        }
-        classify!("Ei series", x < 20.0);
-        classify!("Ei asymptotic", x >= 20.0);
-        // `Ei` has a zero at `0.3725074`, reached by cancellation rather than analytically:
-        // `Ei = γ + ln x + Σ`, all `O(1)` there, summing to `1e-3`. So the achievable absolute
-        // error beside it is `ε·1`, not `ε·|Ei|`, and the fair unit is `ulp(1)` — the suite found
-        // `x = 0.37225` at 310 ulp of the *value*, which is `1.85e-8` absolute, or a sixth of one
-        // ulp of 1. Away from the zero `|Ei|` exceeds the envelope and this is an ordinary ulp
-        // count.
-        tracks_f64_at_scale!(
-            "exp_int_ei",
-            x,
-            ALLOWED_EXP_INT_EI,
-            1.0,
-            Real::exp_int_ei,
-            Real::exp_int_ei
-        );
-    }
-}
+#[path = "cross_precision/bessel.rs"]
+mod bessel;
+#[path = "cross_precision/erf.rs"]
+mod erf;
+#[path = "cross_precision/gamma.rs"]
+mod gamma;
+#[path = "cross_precision/transcendental.rs"]
+mod transcendental;

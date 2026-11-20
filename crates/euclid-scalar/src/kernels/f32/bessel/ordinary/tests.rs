@@ -7,6 +7,11 @@
 //! value comparison on `J` cannot see it at all — the recurrence converges from any sufficient
 //! node count, and from a few too many just as well.
 
+use super::first::{JRoute, alias_nodes, j_aliased, j_series};
+use super::second::{
+    Y_MAX_TERMS, Y_SERIES_MAX, YRoute, taylor_step, y0_series, y0_series_terms, y1_series,
+    y1_series_terms,
+};
 use super::*;
 use crate::kernels::bessel::{ordinary_first, ordinary_second};
 use euclid_utils::assert_close_f32;
