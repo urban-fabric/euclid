@@ -689,45 +689,36 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// hundred — and anything that multiplies or divides gammas is better off doing it in the
     /// log domain and exponentiating once at the end, if at all.
     ///
-    /// **The cause is not identified, and an earlier version of this note claimed it was.** It
-    /// said `powf(b, p)` carries `|p ln b|·ε`, which at `x = 171` is `85 × 5.17 × ε = 9.8e-14`
-    /// against the `1.0e-13` measured — a match to one significant figure, and wrong.
+    /// # The cause is the approximation, not its arithmetic
     ///
-    /// `powf` is correctly rounded here. Forming `b^p·e^{−b}` at `b = 176.5, p = 170.5` the way
-    /// `math::gamma::lanczos_half_power` does, against an 80-digit reference:
+    /// Found by measuring each piece of the Lanczos product separately, after two wrong
+    /// explanations. Every piece is sub-ulp at `x = 170.5`:
     ///
-    /// | split | 2 | 4 | 8 | 16 |
-    /// |-------|---|---|---|----|
-    /// | relative error | `2.5e-17` | `2.6e-16` | `2.6e-16` | `2.6e-16` |
+    /// | piece | `base^{p/2}` | `e^{−base/2}` | their product | coefficient sum |
+    /// |-------|--------------|---------------|---------------|-----------------|
+    /// | error | `0.2` ulp | `0.3` ulp | `1.0` ulp | `0.6` ulp |
     ///
-    /// Four orders below the `1.96e-13` the discredited model predicts, and flat in the split —
-    /// libm's `pow` carries extra precision internally, so the exponent's magnitude does not
-    /// reach the result. The agreement was a coincidence of two numbers near `1e-13`.
+    /// A product of sub-ulp factors cannot be `456` ulp out, so the arithmetic is not where the
+    /// digits go. Evaluating **the same formula with the same coefficients at 60 digits** and
+    /// comparing against true `Γ`:
     ///
-    /// Two of the three candidates are now eliminated, by measuring the pieces separately.
+    /// | `x` | 20.5 | 60.5 | 120.5 | 170.5 |
+    /// |-----|------|------|-------|-------|
+    /// | formula evaluated exactly | `5.2` | `144.4` | `353.7` | `458.8` ulp |
+    /// | this kernel | `1.6` | `145.1` | `354.9` | `456.5` ulp |
     ///
-    /// **Not `powf`**, per the table above.
+    /// They agree. **The error is the truncation of the `g = 7`, nine-coefficient Lanczos
+    /// approximation**, which this kernel is reproducing faithfully to within an ulp or two. No
+    /// amount of care in the arithmetic touches it, and neither would a double-double anything.
     ///
-    /// **Not the rounding of `base`**, and the reason is worth keeping. `base = x + g − ½` is
-    /// rounded, and `base^{p/2}` would amplify that by `p/2` — `2.7e-14` at `x = 171`, which is
-    /// the right size to be the answer. It does not, because the `e^{−base/2}` factor beside it
-    /// has the opposite sensitivity: together they respond to `base` as `(p/2)/b − ½` per unit,
-    /// and with `p = x − ½` against `b = x + g − ½` that ratio tends to one, so the two nearly
-    /// cancel. Measured response to one ulp of `base`, after squaring:
+    /// Two earlier notes here proposed mechanisms that matched the measurement to one
+    /// significant figure and were both wrong — `powf`'s conditioning, then the rounding of
+    /// `base`. Each was eliminated by measuring the piece it blamed. That is the whole reason
+    /// this entry now reports a cause rather than a plausible story.
     ///
-    /// | `x` | 20 | 60 | 120 | 171 |
-    /// |-----|----|----|-----|-----|
-    /// | relative | `6.7e-16` | `1.6e-15` | `4.5e-16` | `1.2e-15` |
-    ///
-    /// Twenty-three times below the naive prediction. The Lanczos form is self-stabilising in
-    /// `base`, which is not obvious from reading it and is worth not rediscovering.
-    ///
-    /// **The remaining candidate is the coefficient sum.** Its terms alternate and are large
-    /// against their total — at `x = 171` they run `+3.96, −7.32, +4.46, −1.02, …` to a sum of
-    /// `1.15`, so about `47×` of cancellation, or `1.0e-14` of inherited error. That is within
-    /// an order of the `1.0e-13` measured and is the only piece left unaccounted for, but the
-    /// gap is a factor of ten and I have not closed it. The figure above is a measurement; this
-    /// is a narrowed search, not yet an explanation.
+    /// Raising the accuracy means more coefficients, a larger `g`, or handing large arguments to
+    /// a Stirling series instead — a change to the approximation, chosen against a measurement
+    /// of what the surface needs. `ln_gamma` is unaffected and stays the better route.
     fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
