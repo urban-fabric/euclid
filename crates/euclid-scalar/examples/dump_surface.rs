@@ -1,0 +1,120 @@
+//! Evaluate one function of the public surface at arguments read from stdin, bit-exactly.
+//!
+//! The Rust half of the local differential-accuracy harness. It knows nothing about references:
+//! it reads `f64` bit patterns as hex, applies the named function, and writes the result's bit
+//! pattern back. The oracle is a separate Python process binding MPFR at 256 bits, which is
+//! where it has to live — CONTRIBUTING keeps arbitrary-precision arithmetic out of this
+//! workspace, on the grounds that an oracle module here would be a second implementation of the
+//! thing under test.
+//!
+//! Hex in, hex out, so nothing is lost to decimal formatting on either side of the pipe. A
+//! `NaN` result is written as its bit pattern like any other, which is what lets the driver
+//! check the off-domain answers too.
+//!
+//! ```sh
+//! echo 3ff0000000000000 | cargo run --release --example dump_surface -- gamma
+//! ```
+
+// The workspace denies `panic`, `expect_used` and `unwrap_used`, which is right for a numerics
+// library whose callers cannot catch a panic across an FFI boundary. This is a developer harness
+// driven by a local script, not library code: a bad function name or unreadable stdin is a usage
+// error, and failing loudly on the spot is the correct behaviour rather than something to thread
+// a `Result` through. Allowed deliberately and scoped to this file.
+#![allow(clippy::panic, clippy::expect_used)]
+
+use euclid_scalar::Real;
+use std::io::{BufWriter, Read, Write};
+
+/// One-argument functions of the real surface, by the name the driver passes.
+///
+/// Called as `Real::f(x)` rather than `x.f()`: several of these names are candidates for
+/// addition to `std`, and the method form would silently change meaning the day one lands.
+///
+/// Matched rather than looked up in a map: an unknown name is a usage error worth failing on,
+/// and the list is the harness's contract with its driver.
+fn apply(name: &str, x: f64) -> f64 {
+    match name {
+        "gamma" => Real::gamma(x),
+        "ln_gamma" => Real::ln_gamma(x),
+        "digamma" => Real::digamma(x),
+        "trigamma" => Real::trigamma(x),
+        "rgamma" => Real::rgamma(x),
+        "erf" => Real::erf(x),
+        "erfc" => Real::erfc(x),
+        "erfcx" => Real::erfcx(x),
+        "erf_inv" => Real::erf_inv(x),
+        "bessel_j0" => Real::bessel_j0(x),
+        "bessel_j1" => Real::bessel_j1(x),
+        "bessel_y0" => Real::bessel_y0(x),
+        "bessel_y1" => Real::bessel_y1(x),
+        "bessel_i0" => Real::bessel_i0(x),
+        "bessel_i1" => Real::bessel_i1(x),
+        "bessel_k0" => Real::bessel_k0(x),
+        "bessel_k1" => Real::bessel_k1(x),
+        "bessel_i0e" => Real::bessel_i0e(x),
+        "bessel_k0e" => Real::bessel_k0e(x),
+        "airy_ai" => Real::airy_ai(x),
+        "airy_ai_prime" => Real::airy_ai_prime(x),
+        "airy_bi" => Real::airy_bi(x),
+        "airy_bi_prime" => Real::airy_bi_prime(x),
+        "zeta" => Real::zeta(x),
+        "exp_int_e1" => Real::exp_int_e1(x),
+        "exp_int_ei" => Real::exp_int_ei(x),
+        "sin_int" => Real::sin_int(x),
+        "cos_int" => Real::cos_int(x),
+        "lambert_w" => Real::lambert_w(x),
+        "ndtr" => Real::ndtr(x),
+        "ndtri" => Real::ndtri(x),
+        "log_ndtr" => Real::log_ndtr(x),
+        "exprel" => Real::exprel(x),
+        "sinc" => Real::sinc(x),
+        "cos_m1" => Real::cos_m1(x),
+        "ln_bessel_i0" => Real::ln_bessel_i0(x),
+        "bessel_i1_over_i0" => Real::bessel_i1_over_i0(x),
+        other => panic!("unknown function {other}"),
+    }
+}
+
+/// Two-argument functions, read as a pair of hex words per line.
+fn apply2(name: &str, a: f64, b: f64) -> f64 {
+    match name {
+        "gamma_lr" => Real::gamma_lr(a, b),
+        "gamma_ur" => Real::gamma_ur(a, b),
+        "ln_beta" => Real::ln_beta(a, b),
+        "beta" => Real::beta(a, b),
+        "ln_rising_factorial" => Real::ln_rising_factorial(a, b),
+        "xlogy" => Real::xlogy(a, b),
+        "ln_add_exp" => Real::ln_add_exp(a, b),
+        other => panic!("unknown two-argument function {other}"),
+    }
+}
+
+fn main() {
+    let name = std::env::args()
+        .nth(1)
+        .expect("usage: dump_surface <function>");
+    let mut input = String::new();
+    std::io::stdin()
+        .read_to_string(&mut input)
+        .expect("stdin should be readable");
+    let out = std::io::stdout();
+    let mut out = BufWriter::new(out.lock());
+    for line in input.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut words = line.split_whitespace();
+        let first = u64::from_str_radix(words.next().expect("a hex word"), 16)
+            .expect("a 16-digit hex word");
+        let value = match words.next() {
+            None => apply(&name, f64::from_bits(first)),
+            Some(second) => apply2(
+                &name,
+                f64::from_bits(first),
+                f64::from_bits(u64::from_str_radix(second, 16).expect("a 16-digit hex word")),
+            ),
+        };
+        writeln!(out, "{:016x}", value.to_bits()).expect("stdout should be writable");
+    }
+}

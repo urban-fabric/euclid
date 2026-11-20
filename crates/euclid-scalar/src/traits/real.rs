@@ -891,11 +891,23 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// The Bessel function of the first kind `J₀(x)`, even in `x`.
     ///
     /// # Precision
-    /// Machine precision in absolute terms at every argument (measured below `1e-15`). Below
-    /// `|x| = 18` this comes from an *aliased trapezoidal rule* — `J₀`'s integral
+    /// Machine precision in absolute terms at every argument, and it *improves* with `|x|`
+    /// because the envelope decays. Measured against MPFR at 256 bits, worst of 80 log-uniform
+    /// points per decade:
+    ///
+    /// | `x` | 1e0 | 1e2 | 1e4 | 1e6 | 1e9 | 1e11 | 1e13 |
+    /// |-----|-----|-----|-----|-----|-----|------|------|
+    /// | absolute error | `2.8e-16` | `2.1e-17` | `1.7e-18` | `1.6e-19` | `3.4e-21` | `4.2e-22` | `5.3e-23` |
+    ///
+    /// Below `|x| = 18` this comes from an *aliased trapezoidal rule* — `J₀`'s integral
     /// representation is periodic and entire, so an equally-spaced rule is exact except for
     /// the Fourier modes it aliases, and those are `J_N(x)` for `N` above `x`, already below
     /// rounding. Above `18`, from the Hankel expansion. See the note above regarding the zeros.
+    ///
+    /// The table used to read `1.2e-15` at `1e2` and `4.1e-10` at `1e13` — breaking this
+    /// function's own promise from `x = 100` upward — because the Hankel phase `ω = x − π/4` was
+    /// formed as a single `f64` and so carried `ulp(x)/2` radians. It is now applied through the
+    /// angle-subtraction identities, which is what makes the row above fall rather than rise.
     fn bessel_j0(self) -> Self;
 
     /// The Bessel function of the first kind `J₁(x)`, odd in `x`.

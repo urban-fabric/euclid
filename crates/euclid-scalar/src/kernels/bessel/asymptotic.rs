@@ -182,8 +182,44 @@ pub(crate) fn hankel_sums(nu: f64, x: f64) -> Converged<Solutions<f64>> {
 pub(crate) fn hankel(nu: f64, x: f64) -> Solutions<f64> {
     let sums = hankel_sums(nu, x).value;
     let (p, q) = (sums.first_kind, sums.second_kind);
-    let omega = x - (nu * 0.5 + 0.25) * PI;
-    let (sin_omega, cos_omega) = omega.sin_cos();
+    // The phase is `ω = x − (ν/2 + ¼)π`, and **it must not be formed as a single `f64`.**
+    //
+    // `x` is exact; `x − c` rounds to a multiple of `ulp(x)`, and that rounding *is* the angle's
+    // absolute error. An oscillating function then returns it as that fraction of its envelope,
+    // so the damage grows like `ulp(x)·√x`: half an ulp of phase against an amplitude of
+    // `√(2/πx)` gives `ε√(2x/π)/2` of absolute error.
+    //
+    // This function formed `ω` directly until it was measured against MPFR at 256 bits over a
+    // log-uniform sweep of the whole range. The surface promises "machine precision in absolute
+    // terms at every argument (measured below `1e-15`)", and the direct form broke that from
+    // `x = 100` upward:
+    //
+    // ```text
+    // x        1e2      1e3      1e4      1e6      1e9      1e11     1e13
+    // was    1.2e-15  4.5e-15  7.8e-15  1.6e-13  3.8e-12  4.7e-12  4.1e-10
+    // ```
+    //
+    // The single-precision peer has always used the identities below, and its note explains why
+    // in terms of `ulp(x)` at `x = 227` — adding that "the `f64` peer forms `ω` directly and can
+    // afford to", since `ulp(227)` is `3e-14` in this format. That comparison is sound at that
+    // argument and does not generalise: `ulp(x)` is linear in `x`, so by `x = 1e13` it is
+    // `2e-3` radians here. The justification held exactly where it was taken.
+    //
+    // ```text
+    // sin ω = sin x·cos c − cos x·sin c,    cos ω = cos x·cos c + sin x·sin c
+    // ```
+    //
+    // `sin x` and `cos x` are evaluated at the *exact* argument, where the library's own
+    // reduction keeps them to an ulp however large `x` is, and the shift is applied afterwards
+    // through constants that are `O(1)`.
+    let (sin_x, cos_x) = x.sin_cos();
+    // `c = (ν/2 + ¼)π` is `O(1)` whatever `ν` is, so its sine and cosine are accurate to an ulp
+    // computed directly — the precision problem is `x`, never the shift. Evaluated for general
+    // `ν` rather than special-cased to `|cos c| = |sin c| = √2/2` at `ν ∈ {0, 1}`, so the Airy
+    // family reaches it through `ν = ±⅓, ±⅔` as well.
+    let (sin_c, cos_c) = ((nu * 0.5 + 0.25) * PI).sin_cos();
+    let sin_omega = sin_x * cos_c - cos_x * sin_c;
+    let cos_omega = cos_x * cos_c + sin_x * sin_c;
     let amplitude = (2.0 / (PI * x)).sqrt();
     Solutions::new(
         amplitude * (cos_omega * p - sin_omega * q),
