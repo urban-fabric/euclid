@@ -141,17 +141,111 @@ pub(crate) fn erf_inv(x: f64) -> f64 {
 }
 
 /// The rational seed and its single Newton step, for `x` strictly inside `(−1, 1)` and nonzero.
+///
+/// Three named pieces rather than one expression. They were one, and that is why a
+/// ten-percent error near `|x| = 1` could not be attributed: the seed and the step are
+/// different mechanisms with different failure modes, and a wrong answer out of the pair says
+/// nothing about which produced it. Each is now separately assertable.
 fn erf_inv_interior(x: f64) -> f64 {
-    let w = -((1.0 - x) * (1.0 + x)).ln();
-    let mut result = ErfInvSeed::for_log_weight(w).evaluate(w) * x;
-    let err = erf(result) - x;
-    result -= err / (2.0 / PI.sqrt() * (-result * result).exp());
-    result
+    let seed = erf_inv_seed(x);
+    seed - newton_residual(x, seed) / erf_density(seed)
+}
+
+/// `w = −ln((1−x)(1+x))`, the log weight Giles's fit is parameterised by.
+fn erf_inv_log_weight(x: f64) -> f64 {
+    -((1.0 - x) * (1.0 + x)).ln()
+}
+
+/// Giles's rational approximation, before any refinement.
+///
+/// # Giles's seed collapses in the tail, and one Newton step cannot recover it
+///
+/// Splitting [`erf_inv_interior`] into [`erf_inv_seed`], [`newton_residual`] and
+/// [`erf_density`] is what attributed this: at `x = 0.9999999999999999` the seed returns
+/// **`5.1764`** where the root is `5.8636`, and the step reaches only `5.2713`. Newton is
+/// quadratic *near* a root; eleven percent away, against a function as flat as `erf` is out
+/// there, one step buys almost nothing. The defect was the seed, not the refinement.
+///
+/// Measured against MPFR at 300 bits, both routes over the same arguments:
+///
+/// ```text
+/// 1 − x        1e-1   1e-2   1e-4    1e-6      1e-9       1.1e-16
+/// erf_inv      18.9   48.9   17.5   9187    1.2e9        4.6e14     ulp
+/// erfc_inv     11.2    0.5    0.7      0.0     0.0           0.0     ulp
+/// ```
+///
+/// `erfc_inv` is better at every point including the first, so the obvious repair is
+/// `erf_inv(x) = sign(x)·erfc_inv(1 − |x|)` — exact, since `1 − |x|` is exact for `|x| ≥ ½`.
+///
+/// **It cannot be written that way.** `erfc_inv` routes through `ndtri`, which calls back into
+/// `erf_inv`: the change compiles, returns the correct `5.8635847487551676` at the argument
+/// above, and then overflows the stack at `1 − 1e-9`. Tried and reverted.
+///
+/// So the repair has to be local to this file, and it is the *seed* that needs replacing rather
+/// than the step. The asymptotic inverse is the candidate: `erfc(r) ≈ e^{−r²}/(r√π)` gives
+/// `r ≈ √w` with `w = −ln((1−x)(1+x))`, which is `6.0036` against the true `5.8636` — a
+/// 2.4% error where Giles's fit gives 11.8% — and refines quickly because the log-space
+/// residual is not flat. That is the shape of the fix; it needs its own measurement pass.
+fn erf_inv_seed(x: f64) -> f64 {
+    let w = erf_inv_log_weight(x);
+    ErfInvSeed::for_log_weight(w).evaluate(w) * x
+}
+
+/// `erf′(r) = (2/√π)e^{−r²}`, the Newton denominator.
+///
+/// Named because it is the term that makes the residual's accuracy matter: it vanishes like
+/// `e^{−r²}`, so an absolute error in the numerator is amplified by `1/erf′` — `6.6e14` at
+/// `r = 5.86`.
+fn erf_density(r: f64) -> f64 {
+    2.0 / PI.sqrt() * (-r * r).exp()
+}
+
+/// `erf(r) − x`, the Newton numerator.
+fn newton_residual(x: f64, r: f64) -> f64 {
+    erf(r) - x
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tail defect, attributed to the seed and pinned until it is repaired.
+    ///
+    /// This is what splitting `erf_inv_interior` bought: the pair returns `5.2713` for a root of
+    /// `5.8636` and the pair alone cannot say which half is wrong. Separately, the seed is
+    /// `5.1764` — eleven percent low — and the step recovers a tenth of that, because `erf` is
+    /// too flat out there for one Newton step to cross eleven percent.
+    ///
+    /// Asserted rather than left as a comment so that a change to either piece has to come
+    /// past it, and so the numbers in `ERF_INV_COMPLEMENT_MIN`'s note stay honest.
+    #[test]
+    fn the_tail_seed_is_what_loses_the_digits() {
+        let x = 0.9999999999999999_f64;
+        let root = 5.863_584_748_755_167_6_f64;
+
+        let seed = erf_inv_seed(x);
+        assert!(
+            (seed - 5.176_440_620_921_45).abs() < 1e-12,
+            "Giles's tail seed moved: {seed}"
+        );
+        assert!(
+            (seed - root).abs() / root > 0.11,
+            "the seed is supposed to be the broken half, and is now within 11% of the root"
+        );
+
+        // One step from there cannot close it: the density is `2.6e-12`, so the step is bounded
+        // by what the residual can say, and the residual is a difference of two numbers near 1.
+        let stepped = seed - newton_residual(x, seed) / erf_density(seed);
+        assert!(
+            (stepped - erf_inv(x)).abs() < 1e-15,
+            "the step is the whole refinement"
+        );
+        assert!(
+            (stepped - root).abs() / root > 0.09,
+            "erf_inv's tail has been repaired — update ERF_INV_COMPLEMENT_MIN's note and \
+             replace this assertion with the round trip it should now satisfy"
+        );
+    }
 
     /// The inverse's domain routes and its two seed tables.
     ///
