@@ -206,11 +206,39 @@ pub(super) const I1_NO_LOG_MAX: f64 = 1.0;
 /// fifth of a decade below; going lower buys a region the series already handles adequately and
 /// risks the part that is unusable.
 ///
-/// After the change `I₀ᵉ` and `I₁ᵉ` are within **2.11 ulp uniformly from `x = 20` to `1e5`**,
+/// After that change `I₀ᵉ` and `I₁ᵉ` are within **2.11 ulp uniformly from `x = 20` to `1e5`**,
 /// against 57–75 ulp over `[20, 40]` and 4–8 over `[1e3, 1e4]` before.
 ///
+/// # `17`, lowered from `20` by a no-regression search against MPFR
+///
+/// The `20` above was argued from the *shape* of the cliff — "`0.125` ulp at `20`, `8.7` at `16`,
+/// `27212` at `12`" — and placed on the flat side of it. That reasoning is right and the figures
+/// were taken from the expansion alone, without the series' own error beside them. Measured
+/// against MPFR at adaptive precision, worst `I₀ᵉ` error over 30 points per unit band, with the
+/// threshold forced down so both routes can be seen over the same arguments:
+///
+/// ```text
+/// x        [11,12) [12,13) [13,14) [14,15) [15,16) [16,17) [17,18) [18,19) [19,20) [20,21)
+/// series        24      27      71      68      56      54      78      79      25       5
+/// expansion 485573   60261    7530     948     120      16       7       6       6       5
+/// ```
+///
+/// The expansion overtakes the series at `16` and is flat from `17` — six or seven ulp, which is
+/// what it holds for the rest of the axis. So `[17, 20)` was being served at 78, 79 and 25 ulp by
+/// a route that is both **less accurate and more expensive** there: the benchmark puts the
+/// peak-shifted sum at `41.8 ns` against the expansion's `30.2 ns`.
+///
+/// `17` rather than `16` for the margin. The expansion's degradation below the crossover is
+/// super-exponential — `120` ulp at `15`, `948` at `14`, half a million at `11` — so a threshold
+/// one unit above where it merely *ties* is too close to that. At `17` it is already at its
+/// asymptotic floor, two units clear.
+///
+/// This does not move the family's worst case, and that is worth saying plainly: `[13, 16)` is
+/// still the series at 56–71 ulp, which is the `1.7e-14` the surface documents. What it fixes is
+/// four units of argument that were three times worse than the band above them for no reason.
+///
 /// Below the threshold the series is short and accurate; above it, it is never used.
-pub(super) const I_ASYMPTOTIC_MIN: f64 = 20.0;
+pub(super) const I_ASYMPTOTIC_MIN: f64 = 17.0;
 
 /// Which of the three forms of the `I` series a magnitude selects.
 ///
