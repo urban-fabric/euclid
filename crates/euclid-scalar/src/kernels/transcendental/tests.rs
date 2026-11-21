@@ -165,7 +165,7 @@ fn cvz_steps_match_their_exact_coefficients() {
 
 #[test]
 fn zeta_routes_include_the_pole_and_the_reflection_boundary() {
-    use super::ZetaRoute::{Eta, Hurwitz, Reflection, Value};
+    use super::ZetaRoute::{Eta, Hurwitz, NearOrigin, Reflection, Value};
     let one = 1.0_f64;
     for (s, route) in [
         (one.next_down(), Eta),
@@ -175,12 +175,19 @@ fn zeta_routes_include_the_pole_and_the_reflection_boundary() {
         // reflection is eight to twenty times more accurate from there down. Both sides of the
         // new boundary, and the old one, which is now well inside the reflection.
         (super::ZETA_ETA_MIN, Reflection),
-        (super::ZETA_ETA_MIN.next_up(), Eta),
+        // Just inside the fit's interval, not the eta arm: the band `(-1/8, 0)` is where
+        // `eta`'s series is divergent and the Chebyshev fit took over.
+        (super::ZETA_ETA_MIN.next_up(), NearOrigin),
         ((-one).next_up(), Reflection),
         (-one, Reflection),
         ((-one).next_down(), Reflection),
         (-0.5, Reflection),
-        ((-0.01_f64), Eta),
+        ((-0.01_f64), NearOrigin),
+        // The positive side of what `eta` used to own is unchanged, and so is the exact zero.
+        (0.01_f64, Eta),
+        (0.5_f64, Eta),
+        (f64::MIN_POSITIVE, Eta),
+        (-f64::MIN_POSITIVE, NearOrigin),
         (-2.0, Value(0.0)),
         (-4.0, Value(0.0)),
         (-6.0, Value(0.0)),

@@ -103,6 +103,13 @@ enum ZetaRoute {
     Value(f64),
     Hurwitz,
     Eta,
+    /// `(−1/8, 0)`: a Chebyshev fit, where the eta accelerator is summing a divergent series.
+    ///
+    /// Added because the eta arm is **not uniform** over the interval it owns — `4`–`9` ulp above
+    /// zero and `15`–`20` below it — and the asymmetry is `η`'s own: `Σ(−1)^{n−1}n^{−s}`
+    /// converges for `s > 0` and has growing terms for `s < 0`. See
+    /// [`zeta_near_origin`](crate::math::zeta::zeta_near_origin).
+    NearOrigin,
     Reflection,
 }
 
@@ -139,8 +146,10 @@ fn zeta_route(s: f64) -> ZetaRoute {
         ZetaRoute::Value(f64::INFINITY)
     } else if s == 0.0 {
         ZetaRoute::Value(-0.5)
-    } else if s > ZETA_ETA_MIN {
+    } else if s > 0.0 {
         ZetaRoute::Eta
+    } else if s > ZETA_ETA_MIN {
+        ZetaRoute::NearOrigin
     } else if s % 2.0 == 0.0 {
         ZetaRoute::Value(0.0) // Negative even integers are trivial zeros.
     } else {
@@ -180,6 +189,7 @@ pub(crate) fn zeta(s: f64) -> f64 {
         ZetaRoute::Value(value) => value,
         ZetaRoute::Hurwitz => hurwitz_zeta(s, 1.0),
         ZetaRoute::Eta => zeta_eta(s),
+        ZetaRoute::NearOrigin => crate::math::zeta::zeta_near_origin(s),
         ZetaRoute::Reflection => zeta_reflection(s),
     }
 }
