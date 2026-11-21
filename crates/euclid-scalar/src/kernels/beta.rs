@@ -240,7 +240,16 @@ pub(crate) fn beta_reg(a: f64, b: f64, x: f64) -> f64 {
 /// Evaluate the fraction in the chosen orientation. An unconverged fraction
 /// leaves the decision to use an approximation with the caller.
 fn beta_fraction_cdf(a: f64, b: f64, x: f64) -> Option<f64> {
-    let front = crate::math::beta::beta_fraction_prefactor(a, b, x, ln_beta(a, b));
+    // Above the Stirling threshold the prefactor is formed about the mode, where its three
+    // large logarithms cancel symbolically instead of numerically. See
+    // `math::beta::beta_power_terms`.
+    let front = if a.min(b) >= STIRLING_MIN && crate::math::beta::use_beta_power_terms(a, b, x) {
+        let remainders =
+            stirling_remainder_of_sum(a, b) - stirling_remainder(a) - stirling_remainder(b);
+        crate::math::beta::beta_power_terms(a, b, x, remainders)
+    } else {
+        crate::math::beta::beta_fraction_prefactor(a, b, x, ln_beta(a, b))
+    };
     if crate::math::beta::use_lower_beta_fraction(a, b, x) {
         beta_cf(a, b, x).map(|h| front * h / a)
     } else {

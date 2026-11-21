@@ -311,7 +311,7 @@ pub(crate) fn gamma_lower_series<T: HostReal>(a: T, x: T, tolerance: T, limit: u
 /// rearrangement helps.
 const LN_1P_SERIES_MAX: f64 = 0.5;
 
-/// `ln(1+u) − u` for `|u| ≤ `[`LN_1P_SERIES_MAX`], by series.
+/// `ln(1+u) − u`, by series near zero and directly beyond it.
 ///
 /// Both terms are `≈ u` while the result is `≈ −u²/2`, so the direct difference throws away
 /// `1/|u|` of relative accuracy. That matters here because this value is multiplied by `a` and
@@ -321,9 +321,16 @@ const LN_1P_SERIES_MAX: f64 = 0.5;
 /// The series is `−u²/2 + u³/3 − u⁴/4 + ⋯`, summed by ratio. For `u < 0` every term carries the
 /// same sign, so nothing cancels at all; for `u > 0` it alternates with the first term dominant.
 ///
-/// No direct-form arm: the caller owns that decision, because the bound it tests is about `u`
-/// carrying `x` and not about this series converging.
+/// Two callers want different things from the bound, so both arms live here and
+/// [`log_scaled_gamma`] keeps its *own* extra guard. For the beta prefactor the only question is
+/// whether this series converges, and past `|u| = ½` the direct difference is the better form —
+/// it loses about `1/|u|` relative digits, which by then is a fraction of one. For the gamma
+/// prefactor there is a second and unrelated reason to stay inside the band: out there `u` stops
+/// carrying `x` at all. See [`LN_1P_SERIES_MAX`].
 pub(crate) fn ln_1p_minus_linear<T: HostReal>(u: T) -> T {
+    if u.abs() > T::from_f64(LN_1P_SERIES_MAX) {
+        return u.ln_1p() - u;
+    }
     // t_k = (−1)^{k+1} u^k / k, starting at k = 2, advanced by t_{k+1} = t_k·(−u)·k/(k+1).
     let mut index = T::TWO;
     let mut term = -u * u * T::HALF;
