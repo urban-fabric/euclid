@@ -25,9 +25,9 @@
 
 use crate::math::continued_fraction::LENTZ_TINY_F32;
 use crate::math::gamma::{
-    gamma_edgeworth, gamma_lower_series, gamma_reflection, gamma_upper_fraction, lanczos_gamma,
-    lanczos_log_gamma, lanczos_reflected_gamma, log_gamma_reflection, log_scaled_gamma,
-    reflection_sine, use_gamma_reflection, use_lower_gamma_series, valid_incomplete_gamma_inputs,
+    gamma_edgeworth, gamma_lower_series, gamma_reflection, gamma_upper_fraction, lanczos_log_gamma,
+    lanczos_reflected_gamma, log_gamma_reflection, log_scaled_gamma, reflection_sine,
+    use_gamma_reflection, use_lower_gamma_series, valid_incomplete_gamma_inputs,
 };
 
 /// Lanczos `g` parameter and coefficients (g = 7, n = 9), narrowed to `f32`.
@@ -235,9 +235,81 @@ pub(crate) fn gamma(x: f32) -> f32 {
         })
     } else if x > GAMMA_OVERFLOW_MIN {
         f32::INFINITY
+    } else if x >= 1.0 {
+        reduced_gamma(x)
     } else {
-        lanczos_gamma(x, G, &LANCZOS)
+        // `Γ(x) = Γ(1+x)/x` on the rest of `(0, 1)`. `ln_gamma1p_factored` takes `x` itself and
+        // returns `lnΓ(1+x)`, so the shifted argument is never formed and never rounded — and
+        // `|lnΓ(1+x)| ≤ 0.1214` there, so `exp` of it costs a hundredth of an ulp against the
+        // several the Lanczos product was spending.
+        ln_gamma1p_factored(x).exp() / x
     }
+}
+
+/// `Γ(x)` for `1 ≤ x ≤ `[`GAMMA_OVERFLOW_MIN`], by reduction to `[1, 2)`.
+///
+/// `Γ(x) = (x−1)(x−2)⋯r·Γ(r)` with `r ∈ [1, 2)`. Every subtraction is exact — the result lands in
+/// a binade no coarser than `x`'s — so the only error is the product's roundings and `Γ(r)`'s,
+/// and `Γ(r)` is `exp` of a logarithm bounded by `0.1214`, which costs a hundredth of an ulp.
+///
+/// # The Lanczos product's error here is arithmetic, not truncation
+///
+/// This arm is the `f64` peer's and arrives for a different reason. There, Lanczos's *truncation*
+/// was the problem — `456` ulp by `x = 170`, reproduced exactly at 60 digits. In `f32` that same
+/// truncation is about `1e-15` relative and so is three orders *below* `ε`; what costs here is
+/// the product form's own arithmetic. [`lanczos_gamma`] takes a `powf`, an `exp`, a nine-term
+/// rational sum and three multiplications, and a dozen `f32` roundings at half an ulp each is
+/// several ulp of result.
+///
+/// It shows up most clearly where the answer is an exactly representable integer, since there is
+/// then no reference to argue about. Measured against `Γ`'s exact values, in `f32` ulp:
+///
+/// ```text
+/// x             1     2     3     4     5     6     10     12
+/// Γ(x)          1     1     2     6    24   120 362880 39916800
+/// Lanczos     3.0   3.0   1.0   5.3  10.0   0.0   17.3   10.9   ulp
+/// reduced       0     0     0     0     0     0      0      0
+/// ```
+///
+/// The `f64` kernel returns every one of those exactly, and `gamma`'s own `fixed_point` property
+/// asserts `Γ(1) = 1` at zero ulp — for `f64`. Nothing had ever asked `f32`, because the
+/// single-precision surface had never been swept; this is the first thing that sweep found.
+///
+/// # The product has to be accumulated *upward*, which `f64` never had to care about
+///
+/// Taking the factors as they fall — `(x−1)(x−2)⋯r` and then one multiplication by `Γ(r)` —
+/// builds `Γ(x)/Γ(r)`, and `Γ(r) ≤ 1` on `[1, 2)`, so that partial product is **larger than the
+/// answer**. In `f64` the arm stops at `STIRLING_MIN = 20` where `Γ(20)` is `1.2e17` against a
+/// format limit of `1.8e308`, so it cannot matter. Here the arm runs to `35.1` and `Γ(35.03)` is
+/// `3.34e38` against `f32`'s `3.40e38`: the first version overflowed to `inf` for every argument
+/// in `[35.0347, 35.1]`, where the true value fits.
+///
+/// `no_f32_kernel_saturates_where_the_wide_peer_does_not` caught it, which is what that property
+/// is for — it compares *classification* against the wide peer, so it sees a finite value turned
+/// infinite even where it would not argue about digits.
+///
+/// Seeding with `Γ(r)` and multiplying by `r, r+1, …, x−1` in ascending order fixes it
+/// structurally: every intermediate is `Γ(r+k)`, which increases monotonically to `Γ(x)` and so
+/// never exceeds the answer. `remaining -= 1.0` and `factor += 1.0` are both exact here, since
+/// every value involved is under `2^24`.
+///
+/// The loop runs at most thirty-four times, since it is entered only at or below
+/// [`GAMMA_OVERFLOW_MIN`] of `35.1`, and a `NaN` cannot enter it — the comparison above is false
+/// for one.
+fn reduced_gamma(x: f32) -> f32 {
+    let mut remaining = x;
+    let mut steps = 0u32;
+    while remaining >= 2.0 {
+        remaining -= 1.0;
+        steps += 1;
+    }
+    let mut product = ln_gamma(remaining).exp();
+    let mut factor = remaining;
+    for _ in 0..steps {
+        product *= factor;
+        factor += 1.0;
+    }
+    product
 }
 
 /// Reflected argument past which `Γ` on the negative side has certainly rounded to signed zero.
