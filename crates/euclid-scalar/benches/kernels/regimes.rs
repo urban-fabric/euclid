@@ -94,19 +94,24 @@ pub(super) fn error_function() {
 /// the timings are not, so a ladder whose costs stop tracking its depths means either the
 /// recurrence stopped being the cost or this file stopped measuring what it claims to.
 pub(super) fn erfcx_depth_ladder() {
-    section("erfcx depth ladder (145, 131, 102, 72, 44, 20, 11, 7, 5 levels)");
-    row1("erfcx", "under 3/2    (145)", 1.4, <f64 as Real>::erfcx);
-    row1("erfcx", "under 7/4    (131)", 1.6, <f64 as Real>::erfcx);
-    row1("erfcx", "under 2      (102)", 1.9, <f64 as Real>::erfcx);
+    section("erfcx: Chebyshev under 2, then the ladder (72, 44, 20, 11, 7, 5 levels)");
+    // The first three rows used to be the ladder's deepest buckets — 145, 131 and 102 levels,
+    // priced at 313, 271 and 183 ns. They now take the Chebyshev series, which is flat in `x`
+    // and is why all three read alike. Kept as separate rows so the ladder's old shape stays
+    // visible in the table rather than being quietly deleted along with its cost.
+    row1("erfcx", "chebyshev  (was 145)", 1.4, <f64 as Real>::erfcx);
+    row1("erfcx", "chebyshev  (was 131)", 1.6, <f64 as Real>::erfcx);
+    row1("erfcx", "chebyshev  (was 102)", 1.9, <f64 as Real>::erfcx);
     row1("erfcx", "under 3       (72)", 2.5, <f64 as Real>::erfcx);
     row1("erfcx", "under 5       (44)", 4.0, <f64 as Real>::erfcx);
     row1("erfcx", "under 10      (20)", 7.0, <f64 as Real>::erfcx);
     row1("erfcx", "under 20      (11)", 15.0, <f64 as Real>::erfcx);
     row1("erfcx", "under 50       (7)", 30.0, <f64 as Real>::erfcx);
     row1("erfcx", "at least 50    (5)", 100.0, <f64 as Real>::erfcx);
-    // Below the crossover `erfcx` goes through `erfc`'s complement form instead, which is the
+    // Below two, `erfcx` takes the Chebyshev series rather than either neighbour, so this row
+    // now measures the same route as the three above it. It used to go through `erfc`'s
     // one arm of the ladder that is not a recurrence at all.
-    row1("erfcx", "complement (x<1.375)", 0.5, <f64 as Real>::erfcx);
+    row1("erfcx", "chebyshev (x<1/2)", 0.5, <f64 as Real>::erfcx);
 }
 
 /// The Bessel family, over [`JRoute`], [`YRoute`] and [`IForm`].

@@ -17,6 +17,7 @@
 mod depth;
 mod inverse;
 mod reflection;
+mod scaled;
 
 use depth::ErfcxDepth;
 
@@ -272,11 +273,35 @@ const ERF_SERIES_MAX_TERMS: u32 = 40;
 /// than the error it would remove.
 pub(crate) const ERFCX_CF_MIN: f64 = 1.375;
 
+/// Where `erfc` leaves `1 − erf` for the scaled form.
+///
+/// **`3/8`, down from `11/8` once the scaled form stopped being expensive.** The old value was
+/// sited where `1 − erf` and a *145-level continued fraction* carried equal error, and that is a
+/// different question from the one this constant now asks: below `2` the scaled form is
+/// [`scaled::erfcx_chebyshev`], two dozen coefficients, so the only thing left to balance is
+/// accuracy.
+///
+/// The complement's relative error is `erf`'s own error divided by `erfc`, which grows without
+/// bound as `erfc` shrinks; the scaled form's is about `x²ε` from squaring the argument plus the
+/// series' own ulp, which is flat. They cross where `erf/erfc ≈ 2/3`, at `x ≈ 0.37`. Measured,
+/// worst ulp per band against a 400-bit reference:
+///
+/// ```text
+/// x            [0.3,0.5]  [0.5,0.75]  [0.75,1]  [1,1.375]
+/// at 11/8              4           7        21         71   ulp
+/// at 3/8               2           2         2          3
+/// ```
+///
+/// It does not go lower because the complement keeps winning there: as `x → 0` its numerator
+/// `erf` goes to zero while `erfc` goes to one, so its error vanishes, while the scaled form
+/// keeps a two-ulp floor. Below `3/8` both measure `2` ulp and the complement is the cheaper.
+const ERFC_SCALED_MIN: f64 = 0.375;
+
 /// Which of the two algebraically equal forms of `erfc` is evaluated at a given argument.
 ///
 /// Named rather than left as an `if`, because the choice *is* the numerics: the two forms agree
 /// in exact arithmetic and fail in opposite directions in floating point, so which one runs is
-/// the whole content of [`ERFCX_CF_MIN`].
+/// the whole content of [`ERFC_SCALED_MIN`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ErfcForm {
     /// `1 − erf(x)`. The subtraction itself is exact — `erf ∈ [½, 1)` here, so Sterbenz applies
@@ -284,17 +309,20 @@ pub(crate) enum ErfcForm {
     /// `erfc` becomes a relative staircase of height `≈1.1e-16/erfc(x)`. Usable only while
     /// `erfc` has not yet shrunk.
     Complement,
-    /// `e^{−x²}·erfcx(x)` through the continued fraction. No cancellation anywhere, so it holds
-    /// to the underflow of `e^{−x²}` — but it has to have converged, which costs the small-`x`
-    /// end.
+    /// `e^{−x²}·erfcx(x)`. No cancellation anywhere, so it holds to the underflow of `e^{−x²}`.
+    ///
+    /// It used to be bounded below by the continued fraction's convergence, which is what kept
+    /// it out of `[3/8, 11/8]` where the complement was at its worst. `erfcx` now has a
+    /// Chebyshev route under `x = 2`, so that constraint is gone and this arm reaches down to
+    /// where it stops being the better of the two on accuracy alone.
     Fraction,
 }
 
 impl ErfcForm {
     /// The regime `x` falls in. The boundary is where the two carry equal error; see
-    /// [`ERFCX_CF_MIN`] for the measurements that place it.
+    /// [`ERFC_SCALED_MIN`] for the measurements that place it.
     pub(crate) fn for_argument(x: f64) -> Self {
-        if x >= ERFCX_CF_MIN {
+        if x >= ERFC_SCALED_MIN {
             Self::Fraction
         } else {
             Self::Complement
@@ -323,7 +351,9 @@ pub(crate) fn erfc(x: f64) -> f64 {
     }
     match ErfcForm::for_argument(x) {
         ErfcForm::Complement => 1.0 - erf(x),
-        ErfcForm::Fraction => (-x * x).exp() * erfcx_cf(x),
+        // Through `erfcx` rather than straight to the fraction, so this picks up the Chebyshev
+        // route below `x = 2` — the same value, an order of magnitude cheaper.
+        ErfcForm::Fraction => (-x * x).exp() * scaled::erfcx_positive(x),
     }
 }
 
@@ -358,12 +388,7 @@ pub(crate) fn erfcx(x: f64) -> f64 {
     if x < 0.0 {
         return 2.0 * (x * x).exp() - erfcx(-x);
     }
-    match ErfcForm::for_argument(x) {
-        // Below the crossover `erfc` takes its `Complement` branch, which is the stable one
-        // there, so scaling it back up is safe.
-        ErfcForm::Complement => (x * x).exp() * erfc(x),
-        ErfcForm::Fraction => erfcx_cf(x),
-    }
+    scaled::erfcx_positive(x)
 }
 
 #[cfg(test)]

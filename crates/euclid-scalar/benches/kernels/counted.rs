@@ -43,7 +43,10 @@ pub(super) fn iteration_depths() {
     depth_row("zeta eta terms (fixed)", 24, 24);
 
     // `erfcx`'s backward recurrence is likewise a fixed depth per bucket, chosen per magnitude.
-    depth_row("erfcx levels, x<3/2", 145, 145);
+    // The deepest buckets are no longer *reached*: below `x = 2` the Chebyshev series runs
+    // instead, so the ladder now starts at the 72-level bucket. Reporting 145 here would price
+    // a loop nothing enters, which is the same thing the gamma series row had to stop doing.
+    depth_row("erfcx levels, 2 <= x < 3", 72, 145);
     depth_row("erfcx levels, x>=50", 5, 145);
 
     // The incomplete gamma's two routes, replaying their own stopping rules — and only at the
