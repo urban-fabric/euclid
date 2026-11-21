@@ -135,6 +135,19 @@ enum ZetaRoute {
 /// routing choice.
 const ZETA_ETA_MIN: f64 = -0.125;
 
+/// Half-width of the interval the Chebyshev fit owns, `|s| < 1/8`.
+///
+/// Symmetric, and the positive half is the one that had to be argued for. The eta arm measures
+/// `4`–`9` ulp above zero against `15`–`20` below it, so by raw ulp the positive side looks
+/// settled. Ranked by *amplification* it was the worst point in the crate — `5` ulp at
+/// `s = +0.00457` where `κ = 0.0084`, so 19.7× the floor — because `ζ ≈ −0.504` there is
+/// essentially insensitive to `s` and five ulp has nothing to hide behind.
+///
+/// `1/8` rather than wider because the fit's cost is set by the distance to `ζ`'s pole at `s = 1`:
+/// at `±1/8` that is `0.875` against a half-width of `1/8` and sixteen terms, and widening pulls
+/// the pole closer relative to the interval. `1/8` also makes `t = 8s` exact.
+const ZETA_FIT_MAX: f64 = 0.125;
+
 fn zeta_route(s: f64) -> ZetaRoute {
     if s.is_nan() || s == f64::NEG_INFINITY {
         ZetaRoute::Value(f64::NAN)
@@ -146,10 +159,10 @@ fn zeta_route(s: f64) -> ZetaRoute {
         ZetaRoute::Value(f64::INFINITY)
     } else if s == 0.0 {
         ZetaRoute::Value(-0.5)
-    } else if s > 0.0 {
-        ZetaRoute::Eta
-    } else if s > ZETA_ETA_MIN {
+    } else if s.abs() < ZETA_FIT_MAX {
         ZetaRoute::NearOrigin
+    } else if s > ZETA_ETA_MIN {
+        ZetaRoute::Eta
     } else if s % 2.0 == 0.0 {
         ZetaRoute::Value(0.0) // Negative even integers are trivial zeros.
     } else {

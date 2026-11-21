@@ -27,31 +27,41 @@ pub(crate) fn eta_divisor<T: HostReal>(s: T) -> T {
     -((T::ONE - s) * T::ln_2()).exp_m1()
 }
 
-/// Chebyshev coefficients of `ζ` on `[−1/8, 0]`, in `T₀ … T₁₁`.
+/// Chebyshev coefficients of `ζ` on `[−1/8, 1/8]`, in `T₀ … T₁₅`.
 ///
 /// Derived locally by `zeta_cheb.py` against `mpfr_zeta` at 400 bits, never transcribed. The
 /// transform runs in `decimal` at 60 digits off node values and node *positions* carried as text,
 /// because each of those floors the coefficients at `1e-16` and reads like convergence.
 ///
-/// Twelve terms reach `1e-18`. They fall by about 34 per order, which is the convergence the
-/// geometry predicts: `ζ` is analytic at the origin and its nearest singularity is the pole at
-/// `s = 1`, `1.125` away against this interval's half-width of `1/16`.
-const ZETA_ORIGIN_FIT: [f64; 12] = [
-    -0.447_893_518_370_447_55,
-    -0.050_416_973_991_116_78,
-    -0.001_639_899_172_026_797_3,
-    -4.814_981_894_263_676e-5,
-    -1.415_702_002_011_507_3e-6,
-    -4.168_126_784_305_215_4e-8,
-    -1.226_982_004_570_934_4e-9,
-    -3.611_889_248_434_135e-11,
-    -1.063_241_225_906_391_2e-12,
-    -3.129_889_917_397_883e-14,
-    -9.213_535_654_111_285e-16,
-    -2.712_211_665_517_532_5e-17,
+/// Sixteen terms reach `1e-18`, falling by about 16 per order — the convergence the geometry
+/// predicts, since `ζ` is analytic at the origin and its nearest singularity is the pole at
+/// `s = 1`, `0.875` from the centre against a half-width of `1/8`.
+///
+/// The interval was `[−1/8, 0]` and twelve terms when only the negative side was known to be
+/// bad. It is symmetric now because the *amplification*-ranked sweep put the positive side at the
+/// top of the whole crate: `5` ulp at `s = +0.00457` against `κ = 0.0084`, which is 19.7× the
+/// floor. Five ulp reads as unremarkable and is not, because `ζ ≈ −0.504` there is about as
+/// well-conditioned as a function gets — the same reason raw ulp is the wrong ranking.
+const ZETA_ORIGIN_FIT: [f64; 16] = [
+    -0.507_930_080_214_922_6,
+    -0.116_352_648_601_810_38,
+    -0.007_961_200_090_847_24,
+    -0.000_498_360_352_399_564_9,
+    -3.124_241_167_451_909e-5,
+    -1.960_573_209_206_908_6e-6,
+    -1.230_181_809_614_793_7e-7,
+    -7.718_896_011_135_485e-9,
+    -4.843_304_462_787_156e-10,
+    -3.038_983_039_675_661_5e-11,
+    -1.906_842_326_368_144e-12,
+    -1.196_468_560_173_940_5e-13,
+    -7.507_369_620_755_791e-15,
+    -4.710_579_157_629_438e-16,
+    -2.955_703_145_206_63e-17,
+    -1.854_587_470_085_129_2e-18,
 ];
 
-/// `ζ(s)` on `(−1/8, 0)` from [`ZETA_ORIGIN_FIT`], by Clenshaw.
+/// `ζ(s)` on `(−1/8, 1/8)` from [`ZETA_ORIGIN_FIT`], by Clenshaw.
 ///
 /// # Why this interval has its own arm
 ///
@@ -67,12 +77,12 @@ const ZETA_ORIGIN_FIT: [f64; 12] = [
 /// as `s → 0⁻` the pole of `ζ(1−s)` is cancelled against a vanishing `sin(πs/2)`. Measured, it
 /// goes from `19` ulp to `60` by `−1/64`.
 ///
-/// `t = 16s + 1` maps the interval to `[−1, 1]` and is one fused multiply-add, so the argument
-/// reaches the recurrence with a single rounding. Clenshaw rather than a monomial Horner for the
-/// usual reason: converting a degree-11 Chebyshev series to monomials gives alternating growing
-/// coefficients whose sum discards most of what the fit bought.
+/// `t = 8s` maps the interval to `[−1, 1]` and is **exact** — a power of two — where the earlier
+/// asymmetric interval needed `16s + 1` and one rounding. Clenshaw rather than a monomial Horner
+/// for the usual reason: converting a degree-15 Chebyshev series to monomials gives alternating
+/// growing coefficients whose sum discards most of what the fit bought.
 pub(crate) fn zeta_near_origin<T: HostReal>(s: T) -> T {
-    let t = s.mul_add(T::from_f64(16.0), T::ONE);
+    let t = s * T::from_f64(8.0);
     let twice = t + t;
     let mut second = T::ZERO;
     let mut first = T::ZERO;

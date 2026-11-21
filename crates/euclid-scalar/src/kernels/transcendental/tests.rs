@@ -183,11 +183,14 @@ fn zeta_routes_include_the_pole_and_the_reflection_boundary() {
         ((-one).next_down(), Reflection),
         (-0.5, Reflection),
         ((-0.01_f64), NearOrigin),
-        // The positive side of what `eta` used to own is unchanged, and so is the exact zero.
-        (0.01_f64, Eta),
-        (0.5_f64, Eta),
-        (f64::MIN_POSITIVE, Eta),
+        // The fit owns `|s| < 1/8` on both sides, so `eta` keeps only `[1/8, 1)`.
+        (0.01_f64, NearOrigin),
+        (f64::MIN_POSITIVE, NearOrigin),
         (-f64::MIN_POSITIVE, NearOrigin),
+        (super::ZETA_FIT_MAX, Eta),
+        (super::ZETA_FIT_MAX.next_down(), NearOrigin),
+        (0.5_f64, Eta),
+        (0.99_f64, Eta),
         (-2.0, Value(0.0)),
         (-4.0, Value(0.0)),
         (-6.0, Value(0.0)),
