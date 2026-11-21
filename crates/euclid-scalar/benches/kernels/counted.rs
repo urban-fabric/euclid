@@ -22,6 +22,48 @@ use super::*;
 /// benchmark sees only the public surface. Each replay is marked with the constant it mirrors, so
 /// a change to one without the other shows up as a disagreement between this table and the
 /// kernel's own documented depth.
+/// Replay of `beta_cf`'s stopping rule, counting steps to convergence.
+///
+/// Carries the rule rather than importing it, for the reason this module's header gives: the
+/// kernel is `pub(crate)` and a benchmark sees only the public surface. Mirrors
+/// `kernels::beta`'s `MAX_ITER` and `EPS`, and returns the cap when it does not converge —
+/// which the kernel treats as a failure and falls back from.
+fn beta_fraction_steps(a: f64, b: f64, x: f64) -> u32 {
+    const TINY: f64 = 1e-300;
+    const EPS: f64 = 1e-15;
+    let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
+    let mut c = 1.0_f64;
+    let mut pivot = 1.0 - qab * x / qap;
+    if pivot.abs() < TINY {
+        pivot = TINY;
+    }
+    let mut d = pivot.recip();
+    for m in 1..=4000_u32 {
+        let fm = f64::from(m);
+        let m2 = 2.0 * fm;
+        for aa in [
+            fm * (b - fm) * x / ((qam + m2) * (a + m2)),
+            -(a + fm) * (qab + fm) * x / ((a + m2) * (qap + m2)),
+        ] {
+            let mut next_d = 1.0 + aa * d;
+            if next_d.abs() < TINY {
+                next_d = TINY;
+            }
+            d = next_d.recip();
+            let mut next_c = 1.0 + aa / c;
+            if next_c.abs() < TINY {
+                next_c = TINY;
+            }
+            c = next_c;
+            let del = d * c;
+            if aa < 0.0 && (del - 1.0).abs() < EPS {
+                return m;
+            }
+        }
+    }
+    4000
+}
+
 pub(super) fn iteration_depths() {
     println!("\n\ncounted loop depth vs cap (exact; identical on every machine)\n");
     println!(
@@ -83,6 +125,40 @@ pub(super) fn iteration_depths() {
     }
     depth_row("gamma lower series terms", worst_series, 100_000);
     depth_row("gamma upper fraction steps", worst_fraction, 100_000);
+
+    // The incomplete beta's Lentz fraction, which had a `MAX_ITER` of 4000 and no number beside
+    // it — the only capped loop in the crate without one, and under the dearest row in the table
+    // above. Replays `converged(del, 0, EPS)`, mirroring `beta::MAX_ITER` and `beta::EPS`.
+    //
+    // The fraction converges slowest where the mass is, so the sweep walks `x` across the mode
+    // rather than over a fixed grid: at `x = a/(a+b)` it is doing the most work it ever does.
+    let mut worst_beta = 0;
+    for e in -2..=6 {
+        for m in [1.0, 3.0] {
+            let a = m * 10f64.powi(e);
+            for ratio in [0.01, 0.1, 1.0, 10.0, 100.0] {
+                let b = a * ratio;
+                if a.min(b) >= 1e7 {
+                    continue; // Edgeworth takes over
+                }
+                let mode = a / (a + b);
+                for shift in [-0.4, -0.1, 0.0, 0.1, 0.4] {
+                    let x = (mode + shift * mode).clamp(1e-9, 1.0 - 1e-9);
+                    // **In the orientation the kernel would choose.** Replaying the lower form
+                    // unconditionally reports 4000 — the cap — for every `b << a` with `x` above
+                    // the split, because that is precisely the half the reflection exists to
+                    // avoid. The number would be real and the loop would never run.
+                    let steps = if x < (a + 1.0) / (a + b + 2.0) {
+                        beta_fraction_steps(a, b, x)
+                    } else {
+                        beta_fraction_steps(b, a, 1.0 - x)
+                    };
+                    worst_beta = worst_beta.max(steps);
+                }
+            }
+        }
+    }
+    depth_row("beta lentz fraction steps", worst_beta, 4000);
 
     println!(
         "\nThe two `fixed` rows have no exit test: their depth is the cap, by design, because a\n\
