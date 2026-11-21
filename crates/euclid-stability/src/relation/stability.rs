@@ -103,6 +103,91 @@ pub fn forward_stable_margin(
     (bound > 0.0).then(|| relative / bound)
 }
 
+/// `f` is forward stable at `x` against a reference that is **itself a cancelling sum**.
+///
+/// [`forward_stable`] bounds the disagreement by `safety · κ(f) · u`, which is what the *left*
+/// side is entitled to. That is the whole bound only when the reference is more accurate than
+/// `f` — a wider type, a closed form, an independent implementation. It is not the whole bound
+/// when the reference is an expression assembled from terms that cancel, and then the shortfall
+/// is reported against the kernel.
+///
+/// # Two ways that went wrong, which is why this exists
+///
+/// A recurrence is the usual source. `ψ(x+1) = ψ(x) + 1/x` makes the reference a difference of
+/// two `1/x`-sized terms: at `x = 0.5` it is `−1.9635 + 2 = 0.0365`, a 54-fold cancellation, and
+/// `κ(ψ(·+1))` is `12.8` and knows nothing about it. The property exceeded its budget by `1.5×`
+/// on an error that was the reference's, and
+/// [`forward_stable`]'s message said "the condition number is small, so the problem is benign and
+/// the error is the implementation's own" — a correct inference from a premise that did not hold.
+///
+/// The same shape, worse, with a finite difference: there the reference's floor is `ε^{2/3}`,
+/// about `4e-11`, which `κ·u` cannot express at any safety factor worth having.
+///
+/// # What it measures instead
+///
+/// The caller hands over the reference's **terms** rather than its value. Their sum is the
+/// reference; the ratio `Σ|tᵢ| / |Σtᵢ|` is how much relative accuracy forming it threw away.
+/// So each side declares what it may contribute and the bound is the sum of the two
+/// entitlements:
+///
+/// ```text
+/// admissible = safety · (κ(f) + Σ|tᵢ|/|Σtᵢ|) · u
+/// ```
+///
+/// At `ψ`'s cancelling orientation that is `12.8 + 54`, which passes; at the benign orientation
+/// the second term is `1.02` and the bound is essentially [`forward_stable`]'s, so moving a
+/// property onto this relation does not quietly loosen it where there is nothing to forgive.
+///
+/// **Reorienting beats forgiving where it is available.** `ψ(x) = ψ(x+1) − 1/x` has no
+/// cancellation at all and is the better property; this relation is for the references that have
+/// no good orientation, like a difference of two values of the same function.
+pub fn forward_stable_sum(
+    name: &str,
+    x: f64,
+    f: impl Fn(f64) -> f64,
+    terms: &[f64],
+    safety: f64,
+) -> Outcome {
+    let reference: f64 = terms.iter().sum();
+    let magnitude: f64 = terms.iter().map(|t| t.abs()).sum();
+    let computed = f(x);
+    if reference == 0.0 || !reference.is_finite() || !computed.is_finite() {
+        return Ok(());
+    }
+    let cancellation = magnitude / reference.abs();
+    let Some(condition) = crate::numeric::condition_at(&f, x) else {
+        return Ok(());
+    };
+    let admissible = safety * (condition + cancellation) * crate::numeric::UNIT_ROUNDOFF;
+    let relative = ((computed - reference) / reference).abs();
+    if relative <= admissible || admissible == 0.0 {
+        return Ok(());
+    }
+    Err(Failure::new(
+        format!(
+            "{name}: not forward stable at x = {x:e}\n    \
+             computed:   {computed:e}\n    \
+             reference:  {reference:e}  (sum of {} terms)\n    \
+             relative:   {relative:e}\n    \
+             admissible: {admissible:e} (safety {safety} x [condition {condition:e} + \
+             cancellation {cancellation:e}] x unit roundoff)\n    \
+             over by:    {:.2}x\n    \
+             {}",
+            terms.len(),
+            relative / admissible,
+            if cancellation > 4.0 * condition.max(1.0) {
+                "The reference's own cancellation dominates the bound, so this is a statement \
+                 about the comparison rather than about the kernel. Check whether the identity \
+                 has an orientation that computes the larger side instead."
+            } else {
+                "The cancellation is not what is binding here, so the error is the \
+                 implementation's own."
+            }
+        ),
+        "a stability relation",
+    ))
+}
+
 /// A narrow-precision implementation agrees with its wide-precision counterpart, to narrow
 /// precision.
 ///

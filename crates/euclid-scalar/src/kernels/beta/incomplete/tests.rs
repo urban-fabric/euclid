@@ -152,9 +152,25 @@ fn the_centred_prefactor_is_reached_across_the_band_its_threshold_claims() {
 /// of ulp. What it catches is a prefactor wrong by a *factor* or a sign, which is the failure a
 /// rearrangement actually produces.
 #[test]
-fn the_prefactor_recurrence_holds_across_the_band_the_centring_governs() {
+fn the_prefactor_recurrence_holds_across_the_band_the_centring_governs() -> euclid_stability::Outcome
+{
     use crate::Real;
-    let mut worst = (0.0_f64, 0.0, 0.0, 0.0);
+    use euclid_stability::relation::forward_stable_sum;
+
+    /// Safety factor, measured by raising it until the grid passes.
+    ///
+    /// `170` is what the worst point needs — `x = 0.97444`, where `κ(front) + cancellation` is
+    /// `278` and the observed disagreement `5.2e-12`. Two points bind in turn as it rises
+    /// (`0.99322` at `64`, then `0.97444`), so the margin is not uniform across the grid and
+    /// there is no single dominating term: `κ` is `180` and the cancellation `341` at the first,
+    /// comparable at the second.
+    ///
+    /// `512` is that with three times' margin. Larger than the `16`–`64` the one-argument
+    /// properties settle at, and that is the honest cost of this relation: it bounds a comparison
+    /// whose two sides both pass through `beta_reg`, so the kernel's own tens of ulp are inside
+    /// the number. It still fails by **three orders** when a `μ` term's sign is flipped, which is
+    /// the failure a prefactor rearrangement actually produces.
+    const RECURRENCE_SAFETY: f64 = 512.0;
     for &small in &[1.5_f64, 3.0, 7.68, 15.6] {
         for &large in &[50.0_f64, 400.0, 881.7] {
             for (a, b) in [(small, large), (large, small)] {
@@ -166,35 +182,26 @@ fn the_prefactor_recurrence_holds_across_the_band_the_centring_governs() {
                         continue;
                     }
                     let lower = Real::beta_reg(x, a, b);
-                    let difference = lower - Real::beta_reg(x, a + 1.0, b);
-                    let front = (a * x.ln() + b * (-x).ln_1p() - Real::ln_beta(a, b)).exp() / a;
+                    let upper = Real::beta_reg(x, a + 1.0, b);
                     // Skip where the subtraction has thrown the answer away entirely; past
                     // this the relation carries no information to assert on.
-                    if difference <= 0.0 || difference < 1e-10 * lower {
+                    if lower - upper <= 0.0 || lower - upper < 1e-10 * lower {
                         continue;
                     }
-                    // Scaled by how much the subtraction cost, so what is left is the
-                    // prefactor's own disagreement rather than the cancellation's.
-                    let amplification = lower / difference;
-                    let relative = ((difference - front) / front).abs() / amplification;
-                    if relative > worst.0 {
-                        worst = (relative, a, b, x);
-                    }
+                    // The closed form is `f`, whose conditioning in `x` is well defined; the
+                    // *terms* are the cancelling side. `forward_stable_sum` adds the two
+                    // entitlements — `κ(front) + Σ|tᵢ|/|Σtᵢ|` — so the bound carries the
+                    // subtraction's cost without a hand-rolled division by it.
+                    forward_stable_sum(
+                        "I_x(a,b) - I_x(a+1,b) = x^a(1-x)^b/(a B(a,b))",
+                        x,
+                        |v| (a * v.ln() + b * (-v).ln_1p() - Real::ln_beta(a, b)).exp() / a,
+                        &[lower, -upper],
+                        RECURRENCE_SAFETY,
+                    )?;
                 }
             }
         }
     }
-    assert!(
-        worst.0 <= 6e-13,
-        "the prefactor recurrence is off by {:e} per unit of cancellation at a={}, b={}, \
-         x={} — measured 6.1e-14 over this grid, so the front factor or ln_beta has moved",
-        worst.0,
-        worst.1,
-        worst.2,
-        worst.3
-    );
-    assert!(
-        worst.0 > 0.0,
-        "the two sides were bit-identical, so this compared nothing"
-    );
+    Ok(())
 }
