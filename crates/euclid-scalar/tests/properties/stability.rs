@@ -5,6 +5,8 @@
 //!
 //! - [`conditioned`] — error budgets set by `κ(x)·u` rather than by a literal, against closed
 //!   forms and cross-family identities; and the six relations this suite had never used.
+//! - [`recurrences`] — shift identities as metamorphic references: the same kernel at another
+//!   argument, combined exactly, so no oracle and no invented tolerance.
 //! - [`seams`] — no kernel may jump at an algorithm crossover. Forty-five kernels, each at the
 //!   generic threshold list plus the constants its own source names.
 //! - [`wiggle`] — ulp-level monotonicity: which kernels have none, and measured budgets for the
@@ -280,6 +282,8 @@ mod narrow_models;
 mod oscillatory;
 #[path = "stability/range.rs"]
 mod range;
+#[path = "stability/recurrences.rs"]
+mod recurrences;
 #[path = "stability/scaled_siblings.rs"]
 mod scaled_siblings;
 #[path = "stability/seams.rs"]
