@@ -19,16 +19,26 @@
 //! `x·Γ(x)` is a product, so it carries `Γ`'s relative error plus one rounding, and
 //! `ψ(x) + 1/x` is a sum whose terms diverge as `x → 0` — at `x = 1e-8` the `1/x` is `1e8` and
 //! `ψ(x)` is `−1e8`, so the sum keeps almost nothing. That is the problem's conditioning rather
-//! than the kernel's error, and [`forward_stable`] is the relation that can tell those apart;
-//! where it cannot — where the reference side itself cancels — the property says so and stops,
-//! rather than widening a tolerance until it passes.
+//! than the kernel's error, and [`forward_stable`] is the relation that can tell those apart.
+//!
+//! What it cannot tell apart is a reference that cancels: it measures `κ` of the *left* side, so
+//! a reference formed by subtracting two large terms reports its own shortfall against the
+//! kernel. Both digamma recurrences below are therefore oriented to compute the **larger** of
+//! the two sides, which is the same rule the complement pairs use and is what makes a
+//! conditioning budget meaningful rather than something to widen.
 
 use euclid_scalar::Real;
 use euclid_stability::relation::{Relative, agree, forward_stable};
 use euclid_stability::{Config, generate, property};
 
-/// Safety factor on `κ·u`, matching [`super::conditioned`].
-const SAFETY: f64 = 64.0;
+/// Safety factor on `κ·u`, measured rather than inherited.
+///
+/// `64` came from the round-trip property; these pass at `8` and the digamma recurrence fails at
+/// `4`, so `8` is where the budget binds. It is `8` rather than the `16`
+/// [`super::conditioned`] settles at because both digamma recurrences are oriented to compute
+/// the larger side — the reverse orientation cancels in the *reference*, which cost a factor of
+/// two and read as the kernel's fault.
+const SAFETY: f64 = 8.0;
 
 /// Relative floor of a central difference at a near-optimal step, measured.
 ///
@@ -88,21 +98,29 @@ mod gamma_family {
     property! {
         #![config(Config::default().cases(500))]
 
-        /// `ψ(x+1) = ψ(x) + 1/x`, away from where the right side cancels.
+        /// `ψ(x) = ψ(x+1) − 1/x`, which is the orientation that does not cancel.
         ///
-        /// `ψ(x) ~ −1/x` as `x → 0`, so `ψ(x) + 1/x` is a difference of two `1/x`-sized terms
-        /// leaving an `O(1)` result: at `x = 1e-8` both are `1e8` and the sum keeps eight digits
-        /// of sixteen. The reference, not the kernel, is what fails there — the same trap the
-        /// shape-2 incomplete gamma reference fell into — so the range starts at `0.5`, where
-        /// `1/x` is `2` and the cancellation is a factor of a few.
+        /// # The identity is symmetric and the test is not
+        ///
+        /// Written the other way — `ψ(x+1) = ψ(x) + 1/x` — the reference is a *difference* of two
+        /// `1/x`-sized terms: at `x = 0.5` it is `−1.9635 + 2 = 0.0365`, a 54-fold cancellation,
+        /// and towards zero it is total because `ψ(x) ~ −1/x`. That version exceeded its budget
+        /// by `1.5×` and the error was the reference's, not `digamma`'s — `forward_stable`
+        /// measures `κ` of the left side, so it cannot see a reference that cancels and reports
+        /// the shortfall against the kernel.
+        ///
+        /// Read in this direction the same identity is benign: `ψ(1.5) − 2 = −1.9635`, where the
+        /// result is *larger* than either term and nothing is lost. So the fix is to compute the
+        /// bigger of the two sides, which is the same rule the complement pairs below follow,
+        /// and it needs no change to the relation and no widened tolerance.
         fn digamma_satisfies_its_recurrence_stably(
             x in generate::float::in_range(0.5, 1e4)
         ) {
             forward_stable(
-                "digamma(x+1) = digamma(x) + 1/x",
+                "digamma(x) = digamma(x+1) - 1/x",
                 x,
-                |v| Real::digamma(v + 1.0),
-                |v| Real::digamma(v) + v.recip(),
+                Real::digamma,
+                |v| Real::digamma(v + 1.0) - v.recip(),
                 SAFETY,
             )?;
         }
@@ -111,20 +129,24 @@ mod gamma_family {
     property! {
         #![config(Config::default().cases(500))]
 
-        /// `ψ′(x+1) = ψ′(x) − 1/x²`, which is a *subtraction* and so the tighter of the pair.
+        /// `ψ′(x) = ψ′(x+1) + 1/x²`, oriented the same way and for the same reason.
         ///
-        /// `ψ′(x) ~ 1/x²` towards zero, so the right side cancels there even harder than
-        /// digamma's — `1/x²` is `1e16` at `x = 1e-8`. Above `1` the two terms are `O(1)` and
-        /// this constrains the asymptotic series directly, which is the arm that was found short
-        /// of its recorded floor earlier this quarter.
+        /// Here both terms of the reference are *positive* — `ψ′` and `1/x²` are both positive on
+        /// the positive axis — so this direction cannot cancel at all, at any argument. The other
+        /// way round, `ψ′(x+1) = ψ′(x) − 1/x²`, is a subtraction that loses a factor of `2.5` at
+        /// `x = 1` and everything as `x → 0`, where `ψ′(x) ~ 1/x²`.
+        ///
+        /// Which makes this the better of the two recurrences to hold `trigamma` to: it
+        /// constrains the asymptotic series directly — the arm found short of its recorded floor
+        /// earlier this quarter — with no cancellation anywhere in the comparison.
         fn trigamma_satisfies_its_recurrence_stably(
             x in generate::float::in_range(1.0, 1e4)
         ) {
             forward_stable(
-                "trigamma(x+1) = trigamma(x) - 1/x^2",
+                "trigamma(x) = trigamma(x+1) + 1/x^2",
                 x,
-                |v| Real::trigamma(v + 1.0),
-                |v| Real::trigamma(v) - (v * v).recip(),
+                Real::trigamma,
+                |v| Real::trigamma(v + 1.0) + (v * v).recip(),
                 SAFETY,
             )?;
         }
