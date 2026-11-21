@@ -1,9 +1,9 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     EnergyJoules, MassKilograms, SpecificHeatCapacityJoulesPerKilogramKelvin, TemperatureKelvin,
 };
 use euclid_units::HeatCapacity;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Heat capacity in joules per kelvin (J/K), the coherent SI unit.
 #[repr(transparent)]

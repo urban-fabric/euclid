@@ -1,6 +1,6 @@
 use crate::Factor;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A **dimensionless** proportion expressed in percent, so 50% is stored as `50.0` and

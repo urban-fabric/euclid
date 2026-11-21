@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     DensityKilogramsPerCubicMeter, ForceNewtons, MassKilograms, SpeedMs, TimeSeconds,
     VolumetricFlowRateCubicMetersPerSecond,
 };
 use euclid_units::MassFlowRate;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Mass flow rate in kilograms per second (kg/s), the coherent SI unit.
 #[repr(transparent)]

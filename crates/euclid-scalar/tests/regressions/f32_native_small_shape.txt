@@ -1,0 +1,7 @@
+# Minimised counterexamples found by euclid-stability.
+# Commit this file: each line is a regression test that cost a random search to find,
+# and the runner replays them before searching for anything new.
+# The text after `::` is the case the tape rendered as, and is checked on load — a
+# mismatch means the generator changed and the tape no longer pins what it used to.
+0000000000000000000000000000000000000000000000000000000000000000 # the_native_f32_small_shape_gamma_tails_are_complementary :: (0.0001, 1e-6)
+3333333333333334111ea0eee15f111f00000000000000008000000000000000 # the_native_f32_small_shape_gamma_tails_are_complementary :: (0.0014307848, 4.0)

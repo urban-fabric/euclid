@@ -11,6 +11,51 @@ pub(crate) fn nonzero_pivot<T: HostReal>(value: T, floor: T) -> T {
 
 /// Advance the forward pivot `c` and reciprocal pivot `d` by one coefficient pair.
 /// Return the multiplier that updates the fraction's accumulated value.
+/// `1/(scale·t)`, by whichever association keeps the product inside the format.
+///
+/// # The product is what overflows
+///
+/// The direct form is one rounding shorter and correct through the normal range, but at
+/// `t > MAX/scale` the product becomes infinite while the *result* is an ordinary subnormal, and
+/// `1/inf` flushes the answer to zero. Measured in `erfcx`, its only caller today:
+/// `erfcx(1e308)` was correct at `5.6419e-309` and everything above `1.0142e308` returned `0`
+/// where the true value is near `5.56e-309` — the boundary sitting exactly on `1/√π` of `MAX`,
+/// which is what identified the product as the culprit.
+///
+/// Guarded rather than reassociated: dividing twice would re-round every value in the normal
+/// range, where the direct form is correct. The fallback runs only where the product has already
+/// left the format, so every value the callers return is unchanged to the bit.
+///
+/// # Mutation testing is what asked for this
+///
+/// Both divisions in the fallback survived the whole suite in both precisions, because nothing
+/// reaches a `t` that large through a kernel: `erfcx`'s own argument has to exceed `1e308` to
+/// produce one. Generic and named, the arm no argument reaches is reachable by passing `t`
+/// directly, and it is tested once for both formats.
+pub(crate) fn reciprocal_of_product<T: HostReal>(scale: T, t: T) -> T {
+    let scaled = scale * t;
+    if HostReal::is_finite(scaled) {
+        T::ONE / scaled
+    } else {
+        (T::ONE / t) / scale
+    }
+}
+
+/// Replace an exactly-zero *complex* intermediate with the floor, the complex analogue of
+/// [`nonzero_pivot`].
+///
+/// Same purpose and same shape: a vanishing partial denominator is what makes Lentz's method
+/// fragile, and nudging it off zero is what makes it robust. The floor is a parameter rather
+/// than a constant here for the reason it is in `nonzero_pivot` — it is per format, and
+/// [`LENTZ_TINY_F64`] and [`LENTZ_TINY_F32`] are the two values.
+pub(crate) fn nudge<T: HostReal>(z: (T, T), floor: T) -> (T, T) {
+    if super::complex::c_norm1(z) == T::ZERO {
+        (floor, T::ZERO)
+    } else {
+        z
+    }
+}
+
 pub(crate) fn lentz_step<T: HostReal>(
     numerator: T,
     denominator: T,
@@ -99,5 +144,50 @@ mod tests {
             -tolerance / 2.0,
             tolerance
         ));
+    }
+
+    /// Both associations of `1/(scale·t)`, including the arm no kernel argument reaches.
+    ///
+    /// This test moved here with the function — it used to live beside the `f64` `erf` kernel,
+    /// where it could only check one format. The fallback is selected above `MAX/scale`, which
+    /// `erfcx` reaches only past `t = 1e308`, so passing `t` directly is the only way in.
+    #[test]
+    fn the_reciprocal_guards_the_product_rather_than_reassociating() {
+        let root_pi = core::f64::consts::PI.sqrt();
+        // Where the product fits, that is the form: `1/√π = 0.5641895835477563` at `t = 1`.
+        assert_eq!(reciprocal_of_product(root_pi, 1.0), 1.0 / root_pi);
+        for t in [1.0_f64, 2.5, 1e100, 1e300] {
+            let divided = (1.0 / t) / root_pi;
+            assert!(
+                (reciprocal_of_product(root_pi, t) - divided).abs() <= 2.0 * f64::EPSILON * divided
+            );
+        }
+
+        // Past `f64::MAX/√π = 1.0142e308` the product is gone and the divided arm is the answer —
+        // an ordinary subnormal where the direct form would have returned zero.
+        let beyond = 1.1e308_f64;
+        assert!(!(root_pi * beyond).is_finite());
+        assert_eq!(
+            reciprocal_of_product(root_pi, beyond),
+            (1.0 / beyond) / root_pi
+        );
+        assert!(reciprocal_of_product(root_pi, beyond) > 0.0);
+        assert!(root_pi * beyond > f64::MAX);
+
+        // The same two arms in `f32`, whose product leaves the format at `f32::MAX/√π = 1.92e38`.
+        let root_pi = core::f32::consts::PI.sqrt();
+        assert_eq!(reciprocal_of_product(root_pi, 1.0_f32), 1.0 / root_pi);
+        let beyond = 2.0e38_f32;
+        assert!(!(root_pi * beyond).is_finite());
+        assert_eq!(
+            reciprocal_of_product(root_pi, beyond),
+            (1.0 / beyond) / root_pi
+        );
+        assert!(reciprocal_of_product(root_pi, beyond) > 0.0);
+
+        // A unit scale makes it a plain reciprocal, which pins both divisions independently of
+        // the constant the callers happen to pass.
+        assert_eq!(reciprocal_of_product(1.0_f64, 4.0), 0.25);
+        assert_eq!(reciprocal_of_product(2.0_f64, 4.0), 0.125);
     }
 }

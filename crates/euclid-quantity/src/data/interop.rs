@@ -31,7 +31,8 @@ impl TimeSeconds {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LengthMeters, Measure, SpeedKph, TimeSeconds};
+    use crate::{LengthMeters, SpeedKph, TimeSeconds};
+    use euclid_units::Measure;
 
     #[test]
     fn travel_time_at_helper_uses_canonical_operand_order() {

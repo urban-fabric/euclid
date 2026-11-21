@@ -1,7 +1,7 @@
 use super::MPS2_PER_CMPS2;
 use crate::AccelerationMetersPerSecondSquared;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// An acceleration in **centimetres per second squared** (the galileo). Exactly 0.01 m/s².

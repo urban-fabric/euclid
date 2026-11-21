@@ -37,18 +37,159 @@ use crate::math::continued_fraction::{LENTZ_TINY_F64, converged, lentz_step, non
 /// that ratio without ever forming the two logs apart, by an exact product for small integer
 /// `b` and an integrated-digamma asymptotic for large `a`. The larger argument is passed as
 /// the base so the increment is the short one.
+/// # The `1e8` gate is too high, measured
+///
+/// Below it this falls to `lnΓ(min) − lnRF(max, min)`, and `ln_rising_factorial` is
+/// `lnΓ(base+inc) − lnΓ(base)` — a subtraction of two `O(z ln z)` quantities. It therefore
+/// inherits their *absolute* error whatever the result's size. Measured against MPFR at 400
+/// bits, worst relative error over 120 random `(a, b)` per band:
+///
+/// ```text
+/// band        a,b in [1e-3,1]  [1,50]  [50,1e4]  [1e4,1e7]
+/// ulp                    56.2    22.5      65.5      584.0
+/// ```
+///
+/// At `a = 1.07e4, b = 9.44e6` the three terms are `9.5e4`, `1.4e8` and `1.4e8`, leaving
+/// `8.4e4` — so `1.4e8·ε = 1.4e-8` of absolute error lands on a result of `8.4e4`, which is the
+/// `1.3e-13` measured. The arithmetic is accounted for exactly.
+///
+/// The branch below already avoids it, by the standard regrouping
+/// `(a−½)ln(a/(a+b)) + (b−½)ln(b/(a+b)) − ½ln(a+b) + ½ln 2π`, in which no two large terms
+/// subtract. It is gated at `1e8` because it carries **no Stirling remainder**: `μ(a) + μ(b) −
+/// μ(a+b)` is dropped, and that is only below rounding once the arguments are enormous.
+///
+/// # Fixed by carrying the three `μ` terms, which let the gate come down to `20`
+///
+/// The branch above the gate is *exactly* the leading Stirling form — expanding
+/// `(a−½)ln(a/s) + (b−½)ln(b/s) − ½ln s + ½ln 2π` gives back the expression it computes, term
+/// for term — so the only thing it was missing is `μ(a) + μ(b) − μ(a+b)`. With those carried the
+/// constraint becomes the remainder series' own range rather than the size of what it omits, and
+/// [`STIRLING_MIN`] can be `20` instead of `1e8`.
+///
+/// Measured on a **fixed** grid of `(a, b)`, so both revisions see identical inputs:
+///
+/// ```text
+/// band        [1, 50]   [50, 1e4]   [1e4, 1e7]   [1e7, 1e12]
+/// was             6.9         4.8          8.0           5.0
+/// now             6.9         1.0          0.9           1.0
+/// ```
+///
+/// Five to nine times better wherever the gate now reaches, and about one ulp throughout.
+///
+/// `[1, 50]` is unchanged because most of its pairs have `min(a, b) < 20` and still take the
+/// path below. I first recorded that band's `6.9` ulp as "a separate matter"; measured, it is
+/// not a matter at all. The direct route inherits the cancellation
+/// `max|lnΓ term| / |ln B|`, which reaches `10.6` over that grid, and `lnΓ` is itself `1.5` to
+/// `3.6` ulp — so the floor this route can be held to is about `38` ulp and it is delivering
+/// `6.9`. The worst point, `a = 1.70, b = 3.40`, has a cancellation ratio of only `1.43`, so the
+/// residual is not tracking cancellation either: it is ordinary rounding across three `lnΓ`
+/// evaluations and a subtraction.
+///
+/// So `ln_beta` is at its floor across the whole surface now, and the way to lower it further is
+/// to lower `ln_gamma`'s — not to do anything here.
+///
+/// A caution on how this was measured, because it nearly went the other way: an earlier sweep
+/// over *randomly* drawn pairs reported no improvement at all, and the reason was that the two
+/// runs were not drawing the same pairs. Spot checks then showed `0.8` ulp where the sweep
+/// claimed `586`. A before/after on a numerical change has to hold the inputs fixed, which is
+/// obvious in retrospect and was not obvious while the random sweep was saying the fix did
+/// nothing.
 pub(crate) fn ln_beta(a: f64, b: f64) -> f64 {
     let (base, increment) = if a >= b { (a, b) } else { (b, a) };
-    if increment >= 1e8 && base.is_finite() {
+    if increment >= STIRLING_MIN && base.is_finite() {
         // Combine Stirling's formulas before forming the large terms. Both
         // leading contributions have the same sign, and base + increment can
         // exceed the format even when ln B is finite.
         let ratio = increment / base;
         let log_sum_ratio = ratio.ln_1p();
+        // The three Stirling remainders. Dropping them is what the old `1e8` gate was paying
+        // for; carrying them is what lets the gate come down to where the cancellation below
+        // actually starts to hurt. `μ(a+b)` is formed from the reciprocal rather than from the
+        // sum, so an `a + b` past the format's top contributes `0` — which is its limit.
+        let correction = stirling_remainder(increment) + stirling_remainder(base)
+            - stirling_remainder_of_sum(base, increment);
         return increment * (ratio.ln() - log_sum_ratio) - base * log_sum_ratio
-            + (0.5 * (log_sum_ratio - increment.ln()) + crate::constants::f64::HALF_LN_TAU);
+            + (0.5 * (log_sum_ratio - increment.ln()) + crate::constants::f64::HALF_LN_TAU)
+            + correction;
     }
     ln_gamma(increment) - ln_rising_factorial(base, increment)
+}
+
+/// At or above this smaller parameter, `ln_beta` takes the Stirling-combined form.
+///
+/// **`20`, lowered from `1e8`.** The gate was that high because the branch dropped the three
+/// Stirling remainders, which are only below rounding once the arguments are enormous. With
+/// [`stirling_remainder`] carried the constraint becomes the remainder series' own range
+/// instead: its first omitted term is `691/(360360 z¹¹)`, which at `z = 20` is `9.4e-18` against
+/// a `μ(20)` of `4.2e-3`, and it is added to a result of magnitude `O(z ln z)`. The smallest of
+/// `a`, `b` and `a+b` is the binding one and that is always `increment`.
+const STIRLING_MIN: f64 = 20.0;
+
+/// `μ(z) = lnΓ(z) − (z−½)ln z + z − ½ln 2π`, from its asymptotic series.
+///
+/// The same expansion the `I` family uses, and valid here for the same reason — every argument
+/// reaching it is at least [`STIRLING_MIN`]. Formed from `1/z` so that an infinite argument
+/// gives `0`, which is `μ`'s limit rather than a special case.
+fn stirling_remainder(z: f64) -> f64 {
+    let inv = 1.0 / z;
+    let inv2 = inv * inv;
+    inv * (1.0 / 12.0
+        + inv2 * (-1.0 / 360.0 + inv2 * (1.0 / 1260.0 + inv2 * (-1.0 / 1680.0 + inv2 / 1188.0))))
+}
+
+/// `μ(z)` for `z ≥ 1`, lifting the argument into [`stirling_remainder`]'s range when it is below.
+///
+/// The series above is asymptotic and says nothing at small `z` — its first omitted term is
+/// `691/(360360 z¹¹)`, `9.4e-18` at `z = 20` and `1.9e-3` at `z = 1`. That, and nothing else, is
+/// why the centred prefactor was gated on `min(a, b) ≥ 20`.
+///
+/// [`stirling_remainder_step`](crate::math::gamma::stirling_remainder_step) is the exact identity
+/// `μ(z) − μ(z+1)`, so repeating it costs one step per unit and loses nothing at any of them.
+/// Verified against `lnΓ` at 400 bits: `μ(1)` through `μ(19.5)` reconstruct to `2e-16` absolute.
+///
+/// **It delegates to the copy above rather than to `math::gamma`'s.** The two series are the same
+/// expansion written twice and are *not* bit-identical — this one ends `inv2 / 1188.0` where that
+/// one ends `inv2 * (1.0/1188.0)`, and `1/1188` is not representable. Taking the other would move
+/// every `a, b ≥ 20` result by a last bit of `μ` for no reason.
+fn stirling_remainder_from_one(z: f64) -> f64 {
+    debug_assert!(z >= 1.0, "the climb is one step per unit; see CENTRED_MIN");
+    let mut climbed = 0.0;
+    let mut lifted = z;
+    for _ in 0..climb_steps(z) {
+        climbed += crate::math::gamma::stirling_remainder_step(lifted);
+        lifted += 1.0;
+    }
+    climbed + stirling_remainder(lifted)
+}
+
+/// How many unit steps the climb takes before `z` reaches the series' range.
+///
+/// Lifted out of [`stirling_remainder_from_one`]'s loop because the loop's own condition could
+/// not be tested there. `while lifted < STIRLING_MIN` mutated to `<=` runs one extra step, and
+/// `μ(20) = step(20) + μ(21)` identically — so the *value* is unchanged and only the arithmetic
+/// path differs. No assertion on `μ` can see it.
+///
+/// As a count it is a value, and `climb_steps(20) == 0` says exactly what the comparison means:
+/// a `z` already in range climbs nothing. That is the whole content of the boundary.
+fn climb_steps(z: f64) -> u32 {
+    let mut lifted = z;
+    let mut steps = 0;
+    while lifted < STIRLING_MIN {
+        lifted += 1.0;
+        steps += 1;
+    }
+    steps
+}
+
+/// `μ(base + increment)` without forming the sum, which can leave the format while `ln B` does
+/// not — the case the branch's own comment flags.
+fn stirling_remainder_of_sum(base: f64, increment: f64) -> f64 {
+    let sum = base + increment;
+    if sum.is_finite() {
+        stirling_remainder(sum)
+    } else {
+        0.0
+    }
 }
 
 /// The beta function `B(a, b)`.
@@ -56,327 +197,95 @@ pub(crate) fn beta(a: f64, b: f64) -> f64 {
     ln_beta(a, b).exp()
 }
 
-/// The regularized incomplete beta `Iₓ(a, b)`, `x ∈ [0, 1]`, `a, b > 0`.
-pub(crate) fn beta_reg(a: f64, b: f64, x: f64) -> f64 {
-    if !a.is_finite() || !b.is_finite() || a <= 0.0 || b <= 0.0 {
-        return f64::NAN;
-    }
-    if x <= 0.0 {
-        return 0.0;
-    }
-    if x >= 1.0 {
-        return 1.0;
-    }
-    if a.max(b) <= 1e-22 && !x.is_nan() {
-        // The endpoint masses are b/(a+b) at zero and a/(a+b) at one.
-        // Throughout the representable interior, the relative correction is
-        // O(max(a,b) * max(|ln x|, |ln(1-x)|)), below 1e-19 here.
-        return b / (a + b);
-    }
-    // Integrating the density gives exact forms that also avoid the continued
-    // fraction's large intermediates when one shape is much larger than the other.
-    if a == 1.0 {
-        return -(b * (-x).ln_1p()).exp_m1();
-    }
-    if b == 1.0 {
-        return x.powf(a);
-    }
-    if let Some(rate) = beta_gamma_rate(a, b) {
-        return super::gamma::gamma_lr(a, -rate * (-x).ln_1p());
-    }
-    if let Some(rate) = beta_gamma_rate(b, a) {
-        // Reflection in log coordinates preserves the small tail.
-        return super::gamma::gamma_ur(b, -rate * x.ln());
-    }
-    if a.min(b) >= BETA_EDGEWORTH_MIN {
-        return beta_edgeworth(a, b, x);
-    }
-    beta_fraction_cdf(a, b, x)
-        .unwrap_or_else(|| beta_edgeworth(a, b, x))
-        .clamp(0.0, 1.0)
-}
+pub(crate) mod incomplete;
 
-/// Common factor `x^a(1-x)^b/B(a,b)` for the direct and reflected fractions.
-/// `ln1p(-x)` preserves the logarithm's relative accuracy at small `x`.
-fn beta_fraction_prefactor(a: f64, b: f64, x: f64) -> f64 {
-    (a * x.ln() + b * (-x).ln_1p() - ln_beta(a, b)).exp()
-}
-
-/// Select the faster-converging orientation around the beta mean.
-fn use_lower_beta_fraction(a: f64, b: f64, x: f64) -> bool {
-    x < (a + 1.0) / (a + b + 2.0)
-}
-
-/// Evaluate the fraction in the chosen orientation. An unconverged fraction
-/// leaves the decision to use an approximation with the caller.
-fn beta_fraction_cdf(a: f64, b: f64, x: f64) -> Option<f64> {
-    let front = beta_fraction_prefactor(a, b, x);
-    if use_lower_beta_fraction(a, b, x) {
-        beta_cf(a, b, x).map(|h| front * h / a)
-    } else {
-        beta_cf(b, a, 1.0 - x).map(|h| 1.0 - front * h / b)
-    }
-}
-
-/// Rate for the gamma approximation to `T = -ln(1-X)`, with `X ~ Beta(a,b)`.
-///
-/// `(1-e^-t)^(a-1) = t^(a-1) e^(-(a-1)t/2) (sinh(t/2)/(t/2))^(a-1)`.
-/// Moving the first exponential into the rate leaves a log-density correction
-/// of order `(a-1)t²/24`. Near the mass, `t` is about `a/b`, so the switch
-/// bounds this correction at the floating-point scale.
-fn beta_gamma_rate(a: f64, b: f64) -> Option<f64> {
-    // Once gamma itself would use Edgeworth, standardize directly in beta
-    // coordinates. Rounding the transformed argument can erase its distance
-    // from the gamma mean, even when the distance is many standard deviations.
-    if a >= GAMMA_EDGEWORTH_MIN {
-        return None;
-    }
-    let shift = a + 1.0;
-    (b / shift / shift.sqrt() >= 5e7).then_some(b + 0.5 * (a - 1.0))
-}
-
-/// Iteration cap for the continued fraction.
-///
-/// The requirement grows with the parameters, because the fraction converges slowest exactly at
-/// `x ≈ a/(a+b)` — the median, where the branch switch below gives no help. Measured iterations
-/// to converge at `a = b`, `x = ½`:
-///
-/// | `a` | 1e2 | 1e3 | 1e4 | 1e5 | 1e6 | 1e7 | 1e8 |
-/// |-----|-----|-----|-----|-----|-----|-----|-----|
-/// | iterations | 25 | 54 | 115 | 243 | 526 | 1091 | 2282 |
-///
-/// This used to be `300`, which silently truncated from about `a = 1e4` on and left
-/// `I_{1/2}(1e8, 1e8)` returning `0.687` where the true value is exactly `½`. `4000` carries the
-/// fraction past [`BETA_EDGEWORTH_MIN`], where it hands over anyway, with room to spare.
-const MAX_ITER: usize = 4000;
-const EPS: f64 = 1e-15;
-
-/// At or above this `min(a, b)` the Edgeworth-corrected normal replaces the continued fraction.
-///
-/// # Why `min(a, b)` and not `a + b`
-///
-/// `Beta(a,b)` approaches a normal only as **both** shape parameters grow; its skewness is
-/// `≈ 2/√min(a,b)`, so the expansion parameter is the smaller one alone. Gating on the sum
-/// instead admits `Beta(1, 1e8)` — an exponential-shaped density with skewness 2, nothing like
-/// a normal — and the approximation is then wrong in the first digit. That mistake was made
-/// here first and caught by the `tests::identities::beta_range` suite, which checks the exact
-/// `I_x(1, b) = 1 − (1−x)^b`.
-///
-/// Measured worst `|Edgeworth − converged fraction|` over `z ∈ [−4, 4]`, which confirms the
-/// error depends on `min` and essentially not on the ratio `b/a`:
-///
-/// | `min(a,b)` | ratio 1 | ratio 10 | ratio 1e2 | ratio 1e4 |
-/// |---|---|---|---|---|
-/// | 1e5 | `6.1e-7` | `4.3e-7` | `6.1e-7` | `6.3e-7` |
-/// | 1e6 | `6.0e-8` | `4.3e-8` | `6.1e-8` | `6.3e-8` |
-///
-/// # Where the crossover falls
-///
-/// Two independent error sources meet, and neither is fixable by iterating harder:
-///
-/// - **The fraction's prefactor cancels.** `front` is `exp(a ln x + b ln(1−x) − ln B(a,b))`,
-///   three terms of magnitude `≈ 1.386n` for `n = a + b` summing to an `O(1)` exponent. The
-///   exponent's absolute error is `≈ 1.386nε`, which `exp` hands back as *relative* error —
-///   `3.1e-9` at `n = 1e7`, `3.1e-8` at `n = 1e8`. That is the subtraction, not the truncation.
-/// - **The Edgeworth form improves as `≈ 0.0605/min(a,b)`**, from the table above.
-///
-/// Setting those equal at the worst case `a = b` (so `n = 2min`) gives `min ≈ 1e7`, where both
-/// carry about `6e-9`. Below it the fraction is better; above it the approximation is.
-///
-/// # What it buys
-///
-/// The symmetric case — the one that was catastrophically wrong — becomes **exact** rather than
-/// merely better: `Beta(a,a)` has zero skewness, so the correction vanishes identically and
-/// `I_{1/2}(a,a)` is `Φ(0) = ½` to the last bit, at every `a`. Measured against that closed
-/// form, `a = 1e7` went from `9.5e-3` to `0`, and `a = 1e8` from `0.187` to `0`.
-pub(crate) const BETA_EDGEWORTH_MIN: f64 = 1e7;
-
-/// The signed distance from the mean in units of `1/(a+b)`.
-fn beta_mean_residual(a: f64, n: f64, n_error: f64, x: f64) -> f64 {
-    // Near the mean, product − a is exact by Sterbenz's lemma. Rounding
-    // a/n first can move x by many standard deviations at large shapes.
-    let (product, product_error) = x.two_product(n);
-    let (offset, offset_error) = (product - a).two_sum(product_error);
-    x.mul_add(n_error, offset) + offset_error
-}
-
-/// `Iₓ(a, b)` from the Edgeworth-corrected normal approximation; see [`BETA_EDGEWORTH_MIN`].
-///
-/// The peer of [`super::gamma::gamma_lr`]'s `gamma_edgeworth`, and the same expansion: a normal
-/// with the distribution's own mean and variance, plus the first skewness correction
-/// `−φ(z)·γ₁(z²−1)/6`. For `Beta(a,b)`,
-///
-/// ```text
-/// μ = a/n,   σ² = ab/(n²(n+1)),   γ₁ = 2(b−a)√(n+1)/((n+2)√(ab)),   n = a + b
-/// ```
-///
-/// `Φ` is formed as `½erfc(−z/√2)` so a small lower tail keeps its relative accuracy instead of
-/// being lost to a complement. The `erfc` call reaches into [`super::erf`], which is built on
-/// `gamma_lr` — but that recursion terminates at once, since `erfc` asks for shape `½`, far
-/// below any threshold that returns here.
-fn beta_edgeworth(a: f64, b: f64, x: f64) -> f64 {
-    let (n, n_error) = a.two_sum(b);
-    if !n.is_finite() {
-        // Even the smaller shape is at least 2^970 here. Near the mean,
-        // the lowest bits of the binary64 products in x(a+b) − a are
-        // hundreds of bits above the transition width √(ab/(a+b+1)).
-        // Halving keeps the sum finite and preserves the residual's sign.
-        let half_a = 0.5 * a;
-        let (half_n, half_error) = half_a.two_sum(0.5 * b);
-        return match beta_mean_residual(half_a, half_n, half_error, x).partial_cmp(&0.0) {
-            Some(Ordering::Less) => 0.0,
-            Some(Ordering::Equal) => 0.5,
-            Some(Ordering::Greater) => 1.0,
-            None => f64::NAN,
-        };
-    }
-
-    // z = (x·n − a)√(n+1)/√(ab). Taking the roots separately keeps the
-    // factors in range even when a·b overflows or σ² underflows.
-    let inverse_width = (n + 1.0).sqrt() / a.sqrt() / b.sqrt();
-    let z = beta_mean_residual(a, n, n_error, x) * inverse_width;
-    // Past `|z| = 40` the standard normal tail has left the format in both directions: `erfc`
-    // has saturated to `0` or `2`, and `e^{−z²/2}` underflowed at `|z| ≈ 38.6`. The answer is
-    // a certainty, so returning it directly changes no value the expression below could
-    // produce — while keeping `z·z` out of an overflow that would make the correction `NaN`.
-    if z.abs() > 40.0 {
-        return f64::from(u8::from(z > 0.0));
-    }
-    let skew = 2.0 * ((b - a) / (n + 2.0)) * inverse_width;
-    let density = (-0.5 * z * z).exp() / SQRT_TAU;
-    let correction = density * skew * (z * z - 1.0) / 6.0;
-    let lower = 0.5 * super::erf::erfc(-z * core::f64::consts::FRAC_1_SQRT_2) - correction;
-    lower.clamp(0.0, 1.0)
-}
-
-/// Lentz continued fraction for the incomplete beta (`betacf` in Numerical Recipes).
-///
-/// Returns `None` when it exhausts [`MAX_ITER`] without converging, rather than handing back a
-/// truncated partial sum. Returning the partial sum is what made the large-parameter defect
-/// *silent*: the loop exited by either route and the caller could not tell which.
-fn beta_cf(a: f64, b: f64, x: f64) -> Option<f64> {
-    let qab = a + b;
-    let qap = a + 1.0;
-    let qam = a - 1.0;
-    let mut c = 1.0;
-    let mut d = nonzero_pivot(1.0 - qab * x / qap, LENTZ_TINY_F64).recip();
-    let mut h = d;
-    // `1..=MAX_ITER`, not `1..MAX_ITER`: the exclusive form ran one step short of the cap, so
-    // the constant did not mean what its name said.
-    for m in 1..=MAX_ITER {
-        let m = m as f64;
-        let m2 = 2.0 * m;
-        let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
-        h *= lentz_step(aa, 1.0, &mut c, &mut d, LENTZ_TINY_F64);
-        let aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
-        let del = lentz_step(aa, 1.0, &mut c, &mut d, LENTZ_TINY_F64);
-        h *= del;
-        if converged(del, 0.0, EPS) {
-            return Some(h);
-        }
-    }
-    None
-}
+pub(crate) use incomplete::beta_reg;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
-mod tests {
+mod stirling_tests {
     use super::*;
 
-    fn close(a: f64, b: f64, tol: f64) {
-        assert!((a - b).abs() <= tol * b.abs().max(1.0), "{a} vs {b}");
-    }
+    /// A grid of `(a, b)` straddling [`STIRLING_MIN`] in `min(a, b)`, so both arms are covered
+    /// and the handover sits inside the sweep rather than beside it.
+    const SHAPES: &[f64] = &[0.5, 2.0, 7.0, 15.0, 19.0, 21.0, 50.0, 500.0, 1e5];
 
+    /// `ln B(a, b) = ln B(b, a)`, exactly.
+    ///
+    /// Not approximately: `ln_beta` orders its arguments before doing anything else, so
+    /// symmetry is a property of that ordering and any disagreement means the ordering broke.
+    /// Measured `0` over the whole grid, so the assertion is equality.
     #[test]
-    fn beta_known_values() {
-        close(beta(1.0, 1.0), 1.0, 1e-12);
-        close(beta(2.0, 3.0), 1.0 / 12.0, 1e-10);
-    }
-
-    #[test]
-    fn beta_fraction_agrees_with_the_integrated_polynomial() {
-        // For (2, 3), the CDF is x²(6 − 8x + 3x²) and its prefactor
-        // divided by a is 6x²(1 − x)³.
-        for x in [0.007_812_5_f64, 0.0625, 0.125, 0.25, 0.4] {
-            let expected = (6.0 - 8.0 * x + 3.0 * x * x) / (6.0 * (1.0 - x).powi(3));
-            let Some(actual) = beta_cf(2.0, 3.0, x) else {
-                panic!("fraction failed to converge at {x}");
-            };
-            close(actual, expected, 2e-15);
+    fn ln_beta_is_exactly_symmetric_across_the_stirling_handover() {
+        for &a in SHAPES {
+            for &b in SHAPES {
+                assert_eq!(ln_beta(a, b), ln_beta(b, a), "at a = {a}, b = {b}");
+            }
         }
     }
 
+    /// `ln B(a+1, b) = ln B(a, b) + ln a − ln(a+b)`, with no reference at all.
+    ///
+    /// The property that guards the Stirling arm: it holds for every `(a, b)`, it compares two
+    /// *different* evaluations of the kernel — one of which may take the other arm — and it
+    /// needs nothing but `ln`. A handover that lands in the wrong place shows up as a step.
+    ///
+    /// **Absolute, not relative.** `ln B` passes near zero for small shapes, and a relative
+    /// figure there measures the conditioning of that crossing rather than the kernel: the
+    /// worst relative residual is `2.2e-14` at `a = 2, b = 0.5`, where `ln B` is `0.288`, and
+    /// the same point is unremarkable in absolute terms. For a logarithm the absolute error is
+    /// what the exponential downstream will see.
+    ///
+    /// One caveat on the bound, since it is easy to read as stronger than it is: the worst
+    /// absolute residual is `5.8e-11` at `a = b = 1e5`, where `ln B` is `−138629` — a relative
+    /// `4.2e-16`. So a single absolute bound is set by the largest `|ln B|` in the grid and is
+    /// correspondingly loose for the small shapes. It catches a gross regression in either arm,
+    /// which is what it is for; it is not a tight statement about small `(a, b)`.
     #[test]
-    fn fraction_orientation_switches_at_the_exact_dyadic_boundary() {
-        let x = 0.375_f64;
-        assert!(use_lower_beta_fraction(2.0, 4.0, x.next_down()));
-        assert!(!use_lower_beta_fraction(2.0, 4.0, x));
-        assert!(!use_lower_beta_fraction(2.0, 4.0, x.next_up()));
-        assert!(use_lower_beta_fraction(4.0, 2.0, x));
-    }
-
-    #[test]
-    fn fraction_prefactor_matches_integer_shape_polynomial() {
-        for x in [2.0_f64.powi(-50), 0.125, 0.25, 0.75, 1.0_f64.next_down()] {
-            let expected = 12.0 * x.powi(2) * (1.0 - x).powi(3);
-            let actual = beta_fraction_prefactor(2.0, 3.0, x);
-            assert!(
-                (actual / expected - 1.0).abs() <= 3e-14,
-                "x={x}, actual={actual}"
-            );
+    fn ln_beta_satisfies_its_recurrence_across_the_stirling_handover() {
+        let mut worst = 0.0_f64;
+        let mut worst_at = (0.0, 0.0);
+        for &a in SHAPES {
+            for &b in SHAPES {
+                let want = ln_beta(a, b) + a.ln() - (a + b).ln();
+                let residual = (ln_beta(a + 1.0, b) - want).abs();
+                if residual > worst {
+                    worst = residual;
+                    worst_at = (a, b);
+                }
+            }
         }
+        assert!(
+            worst < 1.2e-09,
+            "the recurrence drifts to {worst:e} at a = {}, b = {}; it measured 5.821e-11 \
+             when the Stirling arm was given its remainder terms",
+            worst_at.0,
+            worst_at.1
+        );
     }
 
+    /// The climb's loop bound, as a count.
+    ///
+    /// `while lifted < STIRLING_MIN` mutated to `<=` runs one extra step, and
+    /// `μ(20) = step(20) + μ(21)` identically — so no assertion on `μ` can see it. As a count the
+    /// boundary is a value: a `z` already in range climbs nothing.
     #[test]
-    fn both_fraction_orientations_match_the_integrated_cdf() {
-        for x in [0.0625, 0.25, 0.375, 0.5, 0.875] {
-            // Integral of 20x(1-x)^3, since B(2,4) = 1/20.
-            let expected = x * x * (10.0 + x * (-20.0 + x * (15.0 - 4.0 * x)));
-            let Some(actual) = beta_fraction_cdf(2.0, 4.0, x) else {
-                panic!("integer-shape fraction failed to converge at x={x}");
-            };
-            close(actual, expected, 4e-15);
-        }
-    }
-
-    #[test]
-    fn beta_reg_endpoints_and_symmetry() {
-        assert_eq!(beta_reg(2.0, 3.0, 0.0), 0.0);
-        assert_eq!(beta_reg(2.0, 3.0, 1.0), 1.0);
-        for &(a, b, x) in &[(2.0, 3.0, 0.4), (0.5, 0.5, 0.3), (5.0, 2.0, 0.7)] {
-            close(beta_reg(a, b, x), 1.0 - beta_reg(b, a, 1.0 - x), 1e-10);
-        }
-        close(beta_reg(1.0, 1.0, 0.37), 0.37, 1e-12);
-    }
-
-    #[test]
-    fn gamma_approximation_uses_the_shifted_rate_after_the_crossover() {
-        assert_eq!(beta_gamma_rate(2.0, 1e8), None);
-        assert_eq!(beta_gamma_rate(2.0, 2e8), None);
-        assert_eq!(beta_gamma_rate(2.0, 1e9), Some(1e9 + 0.5));
-        assert_eq!(beta_gamma_rate(0.5, 1e9), Some(1e9 - 0.25));
-        assert!(beta_gamma_rate(GAMMA_EDGEWORTH_MIN.next_down(), 1e30).is_some());
-        assert_eq!(beta_gamma_rate(GAMMA_EDGEWORTH_MIN, 1e30), None);
-    }
-
-    #[test]
-    fn edgeworth_at_the_mean_uses_the_beta_skewness() {
-        let (a, b) = (1e7_f64, 3e7_f64);
-        let n = a + b;
-        // At the mean, z = 0. The unscaled formula fits at these moderate shapes.
-        let skewness = 2.0 * (b - a) * (n + 1.0).sqrt() / ((n + 2.0) * (a * b).sqrt());
-        let expected = 0.5 + skewness / (6.0 * (2.0 * core::f64::consts::PI).sqrt());
-        close(beta_edgeworth(a, b, 0.25), expected, f64::EPSILON);
-    }
-
-    #[test]
-    fn beta_mean_residual_retains_the_low_bits_of_the_offset() {
-        let a = f64::from_bits(0x3ff0_0000_0000_0006);
-        let b = f64::from_bits(0x3fdb_bc37_cd1d_a36d);
-        let x = f64::from_bits(0x3fe6_533b_1ba2_862f);
-        let (n, n_error) = a.two_sum(b);
-        // Rounded once from the exact binary rationals x(a+b) − a.
-        let expected = f64::from_bits(0xbcaa_a02f_14b3_5725);
-        assert_eq!(beta_mean_residual(a, n, n_error, x), expected);
+    fn the_climb_takes_no_step_once_the_series_range_is_reached() {
+        assert_eq!(climb_steps(STIRLING_MIN), 0, "already in range");
+        assert_eq!(climb_steps(STIRLING_MIN + 5.0), 0, "past it");
+        assert_eq!(
+            climb_steps(STIRLING_MIN.next_down()),
+            1,
+            "one ulp short, one step"
+        );
+        assert_eq!(climb_steps(STIRLING_MIN - 1.0), 1);
+        assert_eq!(
+            climb_steps(1.0),
+            19,
+            "the longest climb a caller can ask for"
+        );
+        // And the climb is what makes `μ` reachable below the series: the reconstruction has to
+        // agree with the series' own value at the point where the two meet.
+        let direct = stirling_remainder(STIRLING_MIN);
+        assert_eq!(stirling_remainder_from_one(STIRLING_MIN), direct);
     }
 }

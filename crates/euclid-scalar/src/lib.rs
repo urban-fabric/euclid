@@ -149,7 +149,6 @@ mod math;
 mod tests;
 mod traits;
 
-/// Concrete numerical algorithms used by the primitive implementations.
 pub(crate) mod kernels;
 
 pub use host::{HostComplex, HostReal};

@@ -1,7 +1,7 @@
 use super::KG_PER_GRAM;
-use crate::conversion::dim;
 use crate::{MassKilograms, MassMilligrams};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A mass in **grams**. Exactly 1/1000 kg.

@@ -131,7 +131,7 @@ impl euclid_units::Instant for UnixMillis {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Dimension, Measure};
+    use euclid_units::{Dimension, Measure};
 
     #[test]
     fn unix_seconds_is_an_affine_instant() {

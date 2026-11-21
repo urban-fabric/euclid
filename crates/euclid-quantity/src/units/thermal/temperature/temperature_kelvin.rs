@@ -1,7 +1,7 @@
 use super::{KELVIN_OFFSET_CELSIUS, KELVIN_OFFSET_FAHRENHEIT, KELVIN_PER_FAHRENHEIT_DEGREE};
-use crate::conversion::dim;
 use crate::{TemperatureCelsius, TemperatureFahrenheit};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A temperature in **kelvin**, the SI base unit and the anchor for the temperature

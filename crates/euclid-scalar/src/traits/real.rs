@@ -500,6 +500,24 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// error `O(1/a)`. That is `3e-8` at the crossover and shrinks from there, reaching exact
     /// in the limit; it is the more accurate of the two routes at every shape above it.
     ///
+    /// **Below** that crossover the same front factor is already costing digits, and this is the
+    /// one part of the surface where accuracy degrades with the shape rather than holding.
+    /// Measured against MPFR at 256 bits, worst relative error over `x = a + z√a` for
+    /// `z ∈ {−2, −1, 0, 1, 2}`:
+    ///
+    /// | `shape` | 1e3 | 1e4 | 1e5 | 1e6 | 1e7 | 3e7 |
+    /// |---------|-----|-----|-----|-----|-----|-----|
+    /// | series (used below `3e7`) | `4.2e-13` | `8.5e-12` | `1.4e-10` | `4.2e-10` | `2.9e-8` | `5.6e-8` |
+    /// | Edgeworth (used above) | `1.3e-3` | `1.2e-4` | `1.2e-5` | `1.2e-6` | `1.2e-7` | `4.0e-8` |
+    ///
+    /// The two cross within a factor of `1.4` of `3e7`, so the threshold above is where it should
+    /// be — that is a measurement rather than a restatement of the choice. What the table also
+    /// shows is that **`5.6e-8` at the handover is the weakest point of this surface**, reached
+    /// from both sides: the series has lost `ε·a·ln a` by then and the Edgeworth correction is
+    /// still `O(1/a)`. A uniform asymptotic in the Temme form would be accurate across the whole
+    /// band and `O(1)` in cost, where the series spends up to 32,200 terms; nothing here needs it
+    /// yet, and this is the measurement that would justify it.
+    ///
     /// `P` and `Q` are probabilities at every shape: both lie in `[0, 1]`, sum to `1`, and are
     /// monotone in `self`.
     fn gamma_lr(self, shape: Self) -> Self;
@@ -563,7 +581,35 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// route to `ln I₀(x) = ln I₀ᵉ(x) + |x|` and `I₁/I₀ = I₁ᵉ/I₀ᵉ`.
     ///
     /// # Precision
-    /// Machine precision (measured worst case 1.7e-14), from a peak-factored power series.
+    /// Machine precision, from a peak-factored power series. Measured against MPFR at 256 bits,
+    /// worst relative error over 40 points per decade:
+    ///
+    /// | `x` | `[1,5]` | `[5,11]` | `[11,17]` | `[17,100]` | `[100,700]` |
+    /// |-----|---------|----------|-----------|------------|-------------|
+    /// | `I₀` | `4.4e-16` | `6.6e-16` | `7.1e-16` | `6.3e-16` | `5.2e-16` |
+    /// | `I₁` | `6.5e-16` | `6.7e-16` | `9.4e-16` | `4.1e-16` | `2.8e-16` |
+    ///
+    /// **One to four ulp, uniformly, from `1` to the overflow edge.** It reached `5.9e-14` and
+    /// was documented at `1.7e-14`; three separate things were costing it digits.
+    ///
+    /// **The unscaling**, above `x ≈ 100`: the value was recovered as `exp(ln I₀ + x)`, whose
+    /// exponent is an `f64` of magnitude `x` and so carries `ulp(x)/2` of absolute rounding that
+    /// `exp` turns into relative error. `5.7e-14` predicted at `x = 688`, `5.56e-14` measured.
+    /// Now `I₀ᵉ(x)·e^{x}` — two separately-rounded factors, costing two or three ulp and nothing
+    /// that grows with `x`.
+    ///
+    /// **The crossover**, over `[17, 20)`: the asymptotic expansion is better than the series
+    /// from `x = 16` and was not used until `20`, leaving three units at 78, 79 and 25 ulp
+    /// beside a band at 5.
+    ///
+    /// **The Stirling remainder**, over the whole series band: `μ(k)` was formed as
+    /// `lnΓ(k+1) − (k ln k − k + ½ln(2πk))`, a subtraction that discards 4 to 10 bits over the
+    /// integer `k ∈ {1, …, 8}` the peak index can take. It is a table of correctly-rounded
+    /// values now, which took `[13,14)` from 71 ulp to 5 — and is *faster*, since it replaced an
+    /// `ln_gamma` call.
+    ///
+    /// Each of the three was found by sampling against MPFR at 256 bits; none was visible to a
+    /// test in this tree, and the third had been written down in one as a fact of life.
     /// Every term of that series is positive, so there is no cancellation at any argument, and
     /// the scale is carried in the log domain so nothing overflows.
     fn bessel_i0e(self) -> Self;
@@ -624,6 +670,68 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     // for their carrier rather than inheriting a generic stability policy.
 
     /// `Γ(x)`.
+    ///
+    /// # Precision
+    ///
+    /// Unlike its neighbours this degrades with the argument, and the surface had no figure for
+    /// it. Measured against MPFR at 256 bits, worst relative error over 80 points per band:
+    ///
+    /// | `x` | `[1,5]` | `[5,20]` | `[20,60]` | `[60,120]` | `[120,171]` |
+    /// |-----|---------|----------|-----------|------------|-------------|
+    /// | `Γ` was | `11.5` | `21.4` | `139.9` | `351.4` | `458.1` ulp |
+    /// | `Γ` now | `11.5` | `21.4` | **`2.4`** | **`3.6`** | **`2.3`** |
+    /// | `lnΓ` | * | `3.6` | `1.5` | `2.9` | `1.7` |
+    ///
+    /// \* `lnΓ` has zeros at `x = 1` and `x = 2`, so a *relative* figure there measures the
+    /// conditioning of the zero rather than the kernel; it is `6.4e-14` and means nothing.
+    ///
+    /// **Prefer [`ln_gamma`](Self::ln_gamma) wherever the logarithm will do.** It is one to four
+    /// ulp across the whole range where `Γ` reaches four hundred and fifty — a factor of three
+    /// hundred — and anything that multiplies or divides gammas is better off doing it in the
+    /// log domain and exponentiating once at the end, if at all.
+    ///
+    /// # The cause is the approximation, not its arithmetic
+    ///
+    /// Found by measuring each piece of the Lanczos product separately, after two wrong
+    /// explanations. Every piece is sub-ulp at `x = 170.5`:
+    ///
+    /// | piece | `base^{p/2}` | `e^{−base/2}` | their product | coefficient sum |
+    /// |-------|--------------|---------------|---------------|-----------------|
+    /// | error | `0.2` ulp | `0.3` ulp | `1.0` ulp | `0.6` ulp |
+    ///
+    /// A product of sub-ulp factors cannot be `456` ulp out, so the arithmetic is not where the
+    /// digits go. Evaluating **the same formula with the same coefficients at 60 digits** and
+    /// comparing against true `Γ`:
+    ///
+    /// | `x` | 20.5 | 60.5 | 120.5 | 170.5 |
+    /// |-----|------|------|-------|-------|
+    /// | formula evaluated exactly | `5.2` | `144.4` | `353.7` | `458.8` ulp |
+    /// | this kernel | `1.6` | `145.1` | `354.9` | `456.5` ulp |
+    ///
+    /// They agree. **The error is the truncation of the `g = 7`, nine-coefficient Lanczos
+    /// approximation**, which this kernel is reproducing faithfully to within an ulp or two. No
+    /// amount of care in the arithmetic touches it, and neither would a double-double anything.
+    ///
+    /// Two earlier notes here proposed mechanisms that matched the measurement to one
+    /// significant figure and were both wrong — `powf`'s conditioning, then the rounding of
+    /// `base`. Each was eliminated by measuring the piece it blamed. That is the whole reason
+    /// this entry now reports a cause rather than a plausible story.
+    ///
+    /// **Fixed above `x = 20` by handing those arguments to a Stirling series**, which is a
+    /// change to the approximation rather than to its arithmetic — the only kind that could
+    /// have worked. See `math::gamma::stirling_gamma`, and `stirling_half_power` for why the
+    /// base has to be `x` rather than the `x/e` the formula is usually written with.
+    ///
+    /// Below `20` the Lanczos route remains, at `11.5` and `21.4` ulp, and that is **also its
+    /// truncation** rather than its arithmetic. The same test settles it — evaluating the
+    /// formula and its coefficients at 60 digits against true `Γ` gives `1.5`, `4.0`, `7.7`,
+    /// `9.3`, `9.2` and `6.4` ulp at `x = 1.5, 3.5, 7.5, 11.5, 15.5, 19.5`, against a kernel
+    /// that measures `2.5`, `0.0`, `6.8`, `14.2`, `1.6` and `3.6`. The approximation is the
+    /// floor over most of it.
+    ///
+    /// So lowering this band needs better coefficients — a larger `g`, or more of them — not a
+    /// better evaluation. That is a fitted table rather than a reformulation, and it is unbuilt. `ln_gamma` is unaffected throughout and is still the better route
+    /// for anything that can take a logarithm.
     fn gamma(self) -> Self;
 
     /// `ln B(a, b) = ln Γ(a) + ln Γ(b) − ln Γ(a + b)`, with `self = a`.
@@ -891,11 +999,23 @@ pub trait Real: NormedDivisionAlgebra<RealPart = Self> + Compare {
     /// The Bessel function of the first kind `J₀(x)`, even in `x`.
     ///
     /// # Precision
-    /// Machine precision in absolute terms at every argument (measured below `1e-15`). Below
-    /// `|x| = 18` this comes from an *aliased trapezoidal rule* — `J₀`'s integral
+    /// Machine precision in absolute terms at every argument, and it *improves* with `|x|`
+    /// because the envelope decays. Measured against MPFR at 256 bits, worst of 80 log-uniform
+    /// points per decade:
+    ///
+    /// | `x` | 1e0 | 1e2 | 1e4 | 1e6 | 1e9 | 1e11 | 1e13 |
+    /// |-----|-----|-----|-----|-----|-----|------|------|
+    /// | absolute error | `2.8e-16` | `2.1e-17` | `1.7e-18` | `1.6e-19` | `3.4e-21` | `4.2e-22` | `5.3e-23` |
+    ///
+    /// Below `|x| = 18` this comes from an *aliased trapezoidal rule* — `J₀`'s integral
     /// representation is periodic and entire, so an equally-spaced rule is exact except for
     /// the Fourier modes it aliases, and those are `J_N(x)` for `N` above `x`, already below
     /// rounding. Above `18`, from the Hankel expansion. See the note above regarding the zeros.
+    ///
+    /// The table used to read `1.2e-15` at `1e2` and `4.1e-10` at `1e13` — breaking this
+    /// function's own promise from `x = 100` upward — because the Hankel phase `ω = x − π/4` was
+    /// formed as a single `f64` and so carried `ulp(x)/2` radians. It is now applied through the
+    /// angle-subtraction identities, which is what makes the row above fall rather than rise.
     fn bessel_j0(self) -> Self;
 
     /// The Bessel function of the first kind `J₁(x)`, odd in `x`.

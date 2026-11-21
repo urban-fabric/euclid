@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{ChargeCoulombs, ForceNewtons, LengthMeters, VoltageVolts};
 use euclid_units::ElectricField;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Electric field strength in volts per meter (V/m), the coherent SI unit.
 #[repr(transparent)]

@@ -7,9 +7,10 @@ mod linear;
 use euclid_units::conformance::{self as laws, ConformanceSample};
 
 use crate::{
-    Factor, LengthFeet, LengthMeters, Measure, SpeedMs, TemperatureCelsius, TemperatureFahrenheit,
+    Factor, LengthFeet, LengthMeters, SpeedMs, TemperatureCelsius, TemperatureFahrenheit,
     TemperatureKelvin,
 };
+use euclid_units::Measure;
 
 /// A tolerance small enough that `approx_eq` reflexivity is not trivially satisfied by a
 /// permissive bound.

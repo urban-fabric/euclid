@@ -1,7 +1,7 @@
 use super::{KELVIN_OFFSET_FAHRENHEIT, KELVIN_PER_FAHRENHEIT_DEGREE};
-use crate::conversion::dim;
 use crate::{TemperatureCelsius, TemperatureKelvin};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A temperature in **degrees Fahrenheit** — affine, like

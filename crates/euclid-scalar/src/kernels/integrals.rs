@@ -47,6 +47,7 @@
 
 use crate::constants::f64::EULER_GAMMA;
 use crate::math::arithmetic::{term_is_negligible, two_sum};
+use crate::math::complex::{c_mul, c_recip};
 use crate::math::continued_fraction::{LENTZ_TINY_F64, converged};
 
 /// Below this argument `Si`/`Ci` use the power series; at or above it, the continued fraction.
@@ -58,9 +59,6 @@ use crate::math::continued_fraction::{LENTZ_TINY_F64, converged};
 /// settles to `~1e-16` from `x = 3` on. At `x = 4` both are `~1e-16`, so the join costs
 /// nothing from either side.
 const TRIG_SERIES_MAX: f64 = 4.0;
-
-/// Below this argument `E₁` uses the power series; at or above it, the continued fraction.
-const E1_SERIES_MAX: f64 = 1.0;
 
 /// Above this argument `Ei` switches from its series to its asymptotic expansion. Every term
 /// of the series is positive for `x > 0`, so it suffers no cancellation at all and is
@@ -108,41 +106,9 @@ fn compensated_series(mut next: impl FnMut(u32) -> Option<f64>) -> f64 {
 // `euclid-scalar` carries a `Complex` *trait* but no concrete complex scalar, and the
 // continued fraction needs only these few operations, so they are local to this module.
 
-/// `(a + bi)(c + di)`.
-fn c_mul((a, b): (f64, f64), (c, d): (f64, f64)) -> (f64, f64) {
-    (a * c - b * d, a * d + b * c)
-}
-
-/// `1/(a + bi)`, by Smith's method.
-///
-/// The textbook `(a − bi)/(a² + b²)` squares both parts, which overflows or underflows for
-/// perfectly representable inputs; dividing through by the larger component first keeps every
-/// intermediate within range.
-fn c_recip((a, b): (f64, f64)) -> (f64, f64) {
-    if a.abs() >= b.abs() {
-        let r = b / a;
-        let d = a + b * r;
-        (1.0 / d, -r / d)
-    } else {
-        let r = a / b;
-        let d = a * r + b;
-        (r / d, -1.0 / d)
-    }
-}
-
-/// The 1-norm `|re| + |im|` for Lentz's zero test.
-fn c_norm1((a, b): (f64, f64)) -> f64 {
-    a.abs() + b.abs()
-}
-
-/// Replace an exactly-zero intermediate with [`LENTZ_TINY_F64`], which is what makes Lentz's
-/// method robust against a vanishing partial denominator.
-fn nudge(z: (f64, f64)) -> (f64, f64) {
-    if c_norm1(z) == 0.0 {
-        (LENTZ_TINY_F64, 0.0)
-    } else {
-        z
-    }
+/// The complex Lentz nudge at this format's floor; see [`crate::math::continued_fraction::nudge`].
+fn nudge_at(z: (f64, f64)) -> (f64, f64) {
+    crate::math::continued_fraction::nudge(z, LENTZ_TINY_F64)
 }
 
 /// `E₁(z)` for `Re z ≥ 0`, `z ≠ 0`, by Lentz's modified continued fraction.
@@ -153,7 +119,7 @@ fn nudge(z: (f64, f64)) -> (f64, f64) {
 fn e1_continued_fraction(z: (f64, f64), exp_neg_z: (f64, f64)) -> (f64, f64) {
     // Evaluate f = b₀ + a₁/(b₁ + a₂/(b₂ + ⋯)) with b_k = z + 2k + 1 and a_k = −k², so that
     // E₁(z) = e^{−z}/f.
-    let mut f = nudge((z.0 + 1.0, z.1));
+    let mut f = nudge_at((z.0 + 1.0, z.1));
     let mut c = f;
     let mut d = (0.0, 0.0);
 
@@ -163,9 +129,9 @@ fn e1_continued_fraction(z: (f64, f64), exp_neg_z: (f64, f64)) -> (f64, f64) {
         let b = (z.0 + 2.0 * kf + 1.0, z.1);
 
         // D ← 1/(b + a·D)
-        d = c_recip(nudge((b.0 + a * d.0, b.1 + a * d.1)));
+        d = c_recip(nudge_at((b.0 + a * d.0, b.1 + a * d.1)));
         // C ← b + a/C
-        let inv_c = c_recip(nudge(c));
+        let inv_c = c_recip(nudge_at(c));
         c = (b.0 + a * inv_c.0, b.1 + a * inv_c.1);
 
         let delta = c_mul(c, d);
@@ -177,181 +143,13 @@ fn e1_continued_fraction(z: (f64, f64), exp_neg_z: (f64, f64)) -> (f64, f64) {
     c_mul(exp_neg_z, c_recip(f))
 }
 
-/// `E₁(x) = ∫ₓ^∞ e^{−t}/t dt`, for `x > 0`.
-///
-/// Series below `x = 1`, continued fraction above it. The fraction is the stable route in the
-/// tail, where `E₁` decays like `e^{−x}/x` and the series would have to cancel `ln x` against
-/// a growing sum.
-pub(crate) fn exp_int_e1(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    if x < 0.0 {
-        return f64::NAN; // the real E1 is defined for positive argument
-    }
-    if x == 0.0 {
-        return f64::INFINITY;
-    }
-    if x.is_infinite() {
-        return 0.0;
-    }
-    if x <= E1_SERIES_MAX {
-        // E1(x) = -gamma - ln x + sum_{k>=1} (-1)^{k+1} x^k / (k k!)
-        let mut power_over_factorial = 1.0f64; // x^k/k!, carried across terms
-        let series = compensated_series(|k| {
-            let k1 = f64::from(k) + 1.0;
-            power_over_factorial *= x / k1;
-            let term = power_over_factorial / k1; // x^k/(k k!)
-            Some(if k.is_multiple_of(2) { term } else { -term })
-        });
-        return -EULER_GAMMA - x.ln() + series;
-    }
-    // On the real axis the imaginary part is exactly zero throughout, so nothing is lost by
-    // sharing the complex routine.
-    e1_continued_fraction((x, 0.0), ((-x).exp(), 0.0)).0
-}
+mod exponential;
+pub(super) mod trigonometric;
 
-/// `Ei(x) = −PV ∫_{−x}^∞ e^{−t}/t dt`, the exponential integral.
-///
-/// For positive argument every term of the series is positive, so there is no cancellation and
-/// the series is preferred as far as it converges cheaply; the asymptotic expansion takes over
-/// where it is comfortably accurate.
-pub(crate) fn exp_int_ei(x: f64) -> f64 {
-    match ei_route(x) {
-        EiRoute::Value(value) => value,
-        EiRoute::Reflection => -exp_int_e1(-x),
-        EiRoute::Series => ei_series(x),
-        EiRoute::Asymptotic => ei_asymptotic(x),
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum EiRoute {
-    Value(f64),
-    Reflection,
-    Series,
-    Asymptotic,
-}
-
-fn ei_route(x: f64) -> EiRoute {
-    use core::cmp::Ordering;
-
-    match x.partial_cmp(&0.0) {
-        None => EiRoute::Value(f64::NAN),
-        Some(Ordering::Equal) => EiRoute::Value(f64::NEG_INFINITY),
-        Some(Ordering::Less) => EiRoute::Reflection,
-        Some(Ordering::Greater) if x.is_infinite() => EiRoute::Value(f64::INFINITY),
-        Some(Ordering::Greater) if x < EI_ASYMPTOTIC_MIN => EiRoute::Series,
-        Some(Ordering::Greater) => EiRoute::Asymptotic,
-    }
-}
-
-/// `Ei(x) = gamma + ln x + sum_{k≥1} x^k / (k k!)` for small positive x.
-fn ei_series(x: f64) -> f64 {
-    let mut power_over_factorial = 1.0f64;
-    let series = compensated_series(|k| {
-        let k1 = f64::from(k) + 1.0;
-        power_over_factorial *= x / k1;
-        Some(power_over_factorial / k1)
-    });
-    EULER_GAMMA + x.ln() + series
-}
-
-fn ei_asymptotic(x: f64) -> f64 {
-    // Split e^x into two factors so an intermediate exponential cannot overflow
-    // while the final value is still representable.
-    let exp_half = (0.5 * x).exp();
-    exp_half * ((exp_half / x) * ei_asymptotic_sum(x))
-}
-
-fn use_trig_series(x: f64) -> bool {
-    x < TRIG_SERIES_MAX
-}
-
-/// Sum `k!/x^k` through the least term for the asymptotic expansion of `Ei(x)`.
-fn ei_asymptotic_sum(x: f64) -> f64 {
-    let mut term = 1.0f64;
-    let mut total = 1.0f64;
-    for k in 1..MAX_TERMS {
-        let prev = term;
-        term *= f64::from(k) / x;
-        if term > prev {
-            break; // past the minimum term; the asymptotic series diverges beyond it
-        }
-        total += term;
-        if term_is_negligible(term, total, 1e-18) {
-            break;
-        }
-    }
-    total
-}
-
-/// `(Ci(x), Si(x))` for `x > 0`, from a single evaluation.
-///
-/// The two are the real and imaginary parts of one exponential integral, so taking them
-/// together is both cheaper than two passes and guarantees they remain mutually consistent.
-fn trig_integrals(x: f64) -> (f64, f64) {
-    debug_assert!(x > 0.0 && x.is_finite());
-    if use_trig_series(x) {
-        // Ci(x) = gamma + ln x + sum_{k>=1} (-1)^k x^{2k} / ((2k)(2k)!)
-        let mut power_over_factorial = 1.0f64; // x^{2k}/(2k)!
-        let ci = EULER_GAMMA
-            + x.ln()
-            + compensated_series(|k| {
-                let m = 2.0 * (f64::from(k) + 1.0);
-                power_over_factorial *= x * x / ((m - 1.0) * m);
-                let term = power_over_factorial / m;
-                Some(if k.is_multiple_of(2) { -term } else { term })
-            });
-        // Si(x) = sum_{k>=0} (-1)^k x^{2k+1} / ((2k+1)(2k+1)!)
-        let mut power_over_factorial = x; // x^{2k+1}/(2k+1)!
-        let si = compensated_series(|k| {
-            if k > 0 {
-                let m = 2.0 * f64::from(k);
-                power_over_factorial *= x * x / (m * (m + 1.0));
-            }
-            let term = power_over_factorial / (2.0 * f64::from(k) + 1.0);
-            Some(if k.is_multiple_of(2) { term } else { -term })
-        });
-        return (ci, si);
-    }
-    // E1(ix) = -Ci(x) + i (Si(x) - pi/2), with e^{-ix} = cos x - i sin x.
-    let (re, im) = e1_continued_fraction((0.0, x), (x.cos(), -x.sin()));
-    (-re, core::f64::consts::FRAC_PI_2 + im)
-}
-
-/// `Si(x) = ∫₀ˣ sin(t)/t dt`, the sine integral. Odd in `x`.
-pub(crate) fn sin_int(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    let ax = x.abs();
-    if ax == 0.0 {
-        return x; // preserves the sign of zero
-    }
-    if ax.is_infinite() {
-        return core::f64::consts::FRAC_PI_2.copysign(x);
-    }
-    let si = trig_integrals(ax).1;
-    if x.is_sign_negative() { -si } else { si }
-}
-
-/// `Ci(x) = γ + ln x + ∫₀ˣ (cos t − 1)/t dt`, the cosine integral, for `x > 0`.
-pub(crate) fn cos_int(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    if x < 0.0 {
-        return f64::NAN; // the real Ci is defined for positive argument
-    }
-    if x == 0.0 {
-        return f64::NEG_INFINITY;
-    }
-    if x.is_infinite() {
-        return 0.0;
-    }
-    trig_integrals(x).0
-}
+// Re-exported so the family keeps one path per function: every caller reached
+// `kernels::integrals::sin_int` before the split and still does.
+pub(crate) use exponential::{exp_int_e1, exp_int_ei};
+pub(crate) use trigonometric::{cos_int, sin_int};
 
 #[cfg(test)]
 mod tests;

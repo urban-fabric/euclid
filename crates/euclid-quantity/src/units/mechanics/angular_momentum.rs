@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AngularVelocityRadiansPerSecond, LengthMeters, MomentOfInertiaKilogramMetersSquared,
     MomentumKilogramMetersPerSecond, TimeSeconds, TorqueNewtonMeters,
 };
 use euclid_units::AngularMomentum;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Angular momentum in kilogram-meters squared per second (kg.m^2/s), the coherent SI unit.
 #[repr(transparent)]

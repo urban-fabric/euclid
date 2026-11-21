@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{ConductanceSiemens, CurrentAmperes, InductanceHenries, TimeSeconds, VoltageVolts};
+use euclid_units::Measure;
 use euclid_units::Resistance;
+use euclid_units::dim;
 
 /// Electrical resistance in ohms (V/A), the coherent SI unit.
 #[repr(transparent)]

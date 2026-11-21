@@ -1,77 +1,17 @@
-//! Unit tests for the Lambert `W` and the Riemann zeta.
+//! Unit tests for the Riemann zeta.
 //!
 //! A child module in its own file, so `use super::*` still reaches the private critical-strip
-//! routine and the iteration constants while keeping each file inside the 400-line budget.
+//! routine and the term counts while keeping each file inside the 400-line budget. The Lambert
+//! `W`'s own tests sit beside it in [`super::lambert`], which is where its routing enums are.
 
 use super::*;
-use crate::constants::f64::{APERY, OMEGA, ZETA_2, ZETA_4};
+use crate::constants::f64::{APERY, ZETA_2, ZETA_4};
 
 fn close(a: f64, b: f64, tol: f64) {
     assert!(
         (a - b).abs() <= tol * b.abs().max(1.0),
         "{a:e} vs {b:e} (tol {tol:e})"
     );
-}
-
-#[test]
-fn lambert_w_satisfies_its_defining_equation() {
-    // w e^w = x, checked across the whole real domain.
-    for i in 0..200 {
-        let x = NEG_INV_E + f64::from(i) * 0.5;
-        let w = lambert_w(x);
-        assert!(w.is_finite(), "W({x}) = {w}");
-        close(w * w.exp(), x, 1e-11);
-    }
-}
-
-#[test]
-fn lambert_w_hits_its_known_values() {
-    assert_eq!(lambert_w(0.0), 0.0);
-    close(lambert_w(1.0), OMEGA, 1e-14);
-    close(lambert_w(core::f64::consts::E), 1.0, 1e-14);
-    close(lambert_w(NEG_INV_E), -1.0, 1e-7);
-    // W(x ln x) = ln x for x >= 1/e.
-    for i in 1..40 {
-        let x = f64::from(i) * 0.5 + 0.5;
-        let l = x.ln();
-        close(lambert_w(l * x), l, 1e-10);
-    }
-}
-
-#[test]
-fn lambert_w_is_accurate_near_the_branch_point_and_far_out() {
-    // The branch point is where Newton-type iteration stalls, so it gets its own series.
-    for &d in &[0.0f64, 1e-12, 1e-9, 1e-6, 1e-3] {
-        let x = NEG_INV_E + d;
-        let w = lambert_w(x);
-        assert!(w >= -1.0 - 1e-6, "W({x}) = {w} must be >= -1");
-        close(w * w.exp(), x, 1e-6);
-    }
-    // And for very large arguments, where the start is ln x - ln ln x.
-    for &x in &[1e3f64, 1e10, 1e100, 1e300] {
-        let w = lambert_w(x);
-        assert!(w.is_finite() && w > 0.0, "W({x}) = {w}");
-        // w + ln w = ln x
-        close(w + w.ln(), x.ln(), 1e-12);
-    }
-}
-
-#[test]
-fn lambert_w_is_monotone_and_rejects_its_domain_edge() {
-    let mut prev = f64::NEG_INFINITY;
-    for i in 0..500 {
-        let x = NEG_INV_E + f64::from(i) * 0.1;
-        let w = lambert_w(x);
-        assert!(w >= prev - 1e-9, "W must increase: {prev} then {w}");
-        prev = w;
-    }
-    assert!(
-        lambert_w(NEG_INV_E - 1e-6).is_nan(),
-        "below the branch point"
-    );
-    assert!(lambert_w(-1.0).is_nan());
-    assert!(lambert_w(f64::NAN).is_nan());
-    assert!(lambert_w(f64::INFINITY).is_infinite());
 }
 
 #[test]
@@ -204,27 +144,53 @@ fn cvz_steps_match_their_exact_coefficients() {
     assert_eq!(super::cvz_normalizer(3), 99);
     assert_eq!(super::cvz_normalizer(24), 1_180_872_205_318_713_601);
     assert_eq!(super::cvz_normalizer(25), 6_882_627_592_338_442_563);
-    assert_eq!(super::next_cvz_coefficient(0.0, 3.0, -1.0), 18.0);
-    assert_eq!(super::next_cvz_coefficient(1.0, 3.0, 18.0), -48.0);
-    assert_eq!(super::next_cvz_coefficient(2.0, 3.0, -48.0), 32.0);
+    assert_eq!(
+        crate::math::zeta::next_cvz_coefficient(0.0, 3.0, -1.0),
+        18.0
+    );
+    assert_eq!(
+        crate::math::zeta::next_cvz_coefficient(1.0, 3.0, 18.0),
+        -48.0
+    );
+    assert_eq!(
+        crate::math::zeta::next_cvz_coefficient(2.0, 3.0, -48.0),
+        32.0
+    );
 
     let below = 1.0_f64.next_down();
     let linear = -(1.0 - below) * core::f64::consts::LN_2;
-    assert_eq!(super::eta_divisor(below), linear);
-    assert_eq!(super::eta_divisor(0.0), -1.0);
+    assert_eq!(crate::math::zeta::eta_divisor(below), linear);
+    assert_eq!(crate::math::zeta::eta_divisor(0.0), -1.0);
 }
 
 #[test]
 fn zeta_routes_include_the_pole_and_the_reflection_boundary() {
-    use super::ZetaRoute::{Eta, Hurwitz, Reflection, Value};
+    use super::ZetaRoute::{Eta, Hurwitz, NearOrigin, Reflection, Value};
     let one = 1.0_f64;
     for (s, route) in [
         (one.next_down(), Eta),
         (one, Value(f64::INFINITY)),
         (one.next_up(), Hurwitz),
-        ((-one).next_up(), Eta),
+        // The eta route no longer reaches `−1`: it stops at `ZETA_ETA_MIN = −1/8`, because the
+        // reflection is eight to twenty times more accurate from there down. Both sides of the
+        // new boundary, and the old one, which is now well inside the reflection.
+        (super::ZETA_ETA_MIN, Reflection),
+        // Just inside the fit's interval, not the eta arm: the band `(-1/8, 0)` is where
+        // `eta`'s series is divergent and the Chebyshev fit took over.
+        (super::ZETA_ETA_MIN.next_up(), NearOrigin),
+        ((-one).next_up(), Reflection),
         (-one, Reflection),
         ((-one).next_down(), Reflection),
+        (-0.5, Reflection),
+        ((-0.01_f64), NearOrigin),
+        // The fit owns `|s| < 1/8` on both sides, so `eta` keeps only `[1/8, 1)`.
+        (0.01_f64, NearOrigin),
+        (f64::MIN_POSITIVE, NearOrigin),
+        (-f64::MIN_POSITIVE, NearOrigin),
+        (super::ZETA_FIT_MAX, Eta),
+        (super::ZETA_FIT_MAX.next_down(), NearOrigin),
+        (0.5_f64, Eta),
+        (0.99_f64, Eta),
         (-2.0, Value(0.0)),
         (-4.0, Value(0.0)),
         (-6.0, Value(0.0)),
@@ -253,5 +219,101 @@ fn zeta_resolves_signed_neighbours_of_trivial_zeros() {
     ] {
         let got = super::zeta(s);
         assert!((got / expected - 1.0).abs() < 4e-13, "s={s}, got={got}");
+    }
+}
+
+/// The two reflection forms agree where both are valid.
+///
+/// Reference-free, and the comparison that makes the boundary meaningful: the forms are
+/// algebraically the same product, so where both are sound their disagreement bounds the error of
+/// each. Asserted at the *same* `s` through both branches rather than across the threshold —
+/// stepping over it would compare two different arguments, and `ζ` moves fast enough on the
+/// negative axis that the step alone would dominate.
+///
+/// # The range is bounded by the log form, not by the product
+///
+/// This comparison is only as tight as the *worse* route, and the log form's error grows with
+/// `|lnΓ(1−s)|` — `49` ulp by `s = −11`, `959` by `s = −92`. Run to the bottom of the product's
+/// range it would be measuring the log form's known degradation and calling it a disagreement.
+/// So it stops at `−13`, while both are within tens of ulp of each other and a real defect in
+/// either still shows.
+///
+/// Measured worst over the arguments below: `58` ulp. A bar of `120` catches a form that has
+/// stopped being the same product — a mis-signed factor, a dropped `2^s` — without flagging the
+/// difference that is the whole reason the boundary exists.
+#[test]
+fn the_two_reflection_forms_agree_where_both_are_valid() {
+    fn log_domain(s: f64) -> f64 {
+        let one_minus_s = 1.0 - s;
+        let sin_term = crate::math::gamma::reflection_sine(0.5 * s);
+        let ln_magnitude = s * core::f64::consts::LN_2
+            + (s - 1.0) * core::f64::consts::PI.ln()
+            + sin_term.abs().ln()
+            + super::ln_gamma(one_minus_s);
+        (ln_magnitude.exp() * super::hurwitz_zeta(one_minus_s, 1.0)).copysign(sin_term)
+    }
+
+    let mut worst = (0.0_f64, 0.0_f64);
+    let mut checked = 0usize;
+    for step in 0..=60 {
+        // Odd half-integers would land on the trivial zeros, where a relative comparison is
+        // meaningless; the offset keeps every sample away from them.
+        let s = -4.3 - f64::from(step) * 0.15;
+
+        let product = super::zeta(s);
+        let logged = log_domain(s);
+        let ulps = (product - logged).abs() / crate::Real::ulp(product);
+        if ulps > worst.0 {
+            worst = (ulps, s);
+        }
+        assert!(
+            ulps <= 120.0,
+            "at s = {s} the product gives {product} and the log form {logged}, {ulps} ulp apart"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 50,
+        "only {checked} arguments reached the assertion"
+    );
+    assert!(
+        worst.0 > 0.0,
+        "the two forms were bit-identical everywhere, so this compared nothing"
+    );
+}
+
+/// The reflection's form boundary, and the overflow boundary beyond it.
+#[test]
+fn the_reflection_picks_its_form_at_the_measured_boundary() {
+    use super::ReflectionForm::{LogDomain, Product};
+    use super::ZETA_PRODUCT_MAX;
+    assert_eq!(super::ReflectionForm::for_argument(-1.0), LogDomain);
+    assert_eq!(super::ReflectionForm::for_argument(-3.0), LogDomain);
+    assert_eq!(
+        super::ReflectionForm::for_argument(ZETA_PRODUCT_MAX.next_up()),
+        LogDomain
+    );
+    assert_eq!(
+        super::ReflectionForm::for_argument(super::ZETA_PRODUCT_MAX),
+        Product
+    );
+    assert_eq!(super::ReflectionForm::for_argument(-50.0), Product);
+    // `Γ(1−s)` leaves the format past 171, so the product cannot be formed at all.
+    assert_eq!(
+        super::ReflectionForm::for_argument(1.0 - super::GAMMA_PRODUCT_MAX),
+        Product
+    );
+    assert_eq!(
+        super::ReflectionForm::for_argument((1.0 - super::GAMMA_PRODUCT_MAX).next_down()),
+        LogDomain
+    );
+    // The pinned closed forms are both on the log side, which is why the boundary is not at the
+    // measured crossover of −5/2. A `const` block, so moving it past `ζ(−3)` fails to compile
+    // rather than failing the identity suite in another crate.
+    const {
+        assert!(
+            ZETA_PRODUCT_MAX < -3.0,
+            "ZETA_PRODUCT_MAX must stay below ζ(−3), whose closed form is pinned to zero ulp"
+        );
     }
 }

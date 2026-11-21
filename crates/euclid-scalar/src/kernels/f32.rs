@@ -4,7 +4,7 @@
 //! those parts of the `f32` [`Real`](crate::Real) surface never round-trip through `f64`. The
 //! continued-fraction tolerances are loosened to the `f32` noise floor (~`1e-6`), and the
 //! module follows [`super`]'s layout one module per function family. The one place it does not
-//! mirror [`super`] exactly is [`bessel::ordinary`](crate::kernels::f32::bessel::ordinary):
+//! mirror [`super`] exactly is [`bessel::ordinary`]:
 //! `J` and `Y` get a file each there, but
 //! share one here, because both merely narrow the `f64` march and neither carries an algorithm
 //! of its own to separate.
@@ -13,33 +13,47 @@
 //! rounding versus two), typically within an ULP; the per-module tests cross-check against
 //! the `f64` reference to bound that gap and guard against the two paths drifting apart.
 //!
-//! # The exception: the classical special functions
+//! # There is no longer an exception, and the list is worth keeping as a record
 //!
-//! [`bessel::ordinary`](crate::kernels::f32::bessel::ordinary) (`J`, `Y`),
-//! [`bessel::modified_second`](crate::kernels::f32::bessel::modified_second) (`K`),
-//! [`integrals`](crate::kernels::f32::integrals) (`Si`, `Ci`, `E₁`, `Ei`) and
-//! [`transcendental`](crate::kernels::f32::transcendental) (`W`, `ζ`) **do** evaluate in `f64` and
-//! narrow. This is a deliberate departure from the rule above, for two reasons:
+//! This module header used to carry one: [`bessel::ordinary`] (`J`, `Y`),
+//! [`bessel::modified_second`] (`K`), [`integrals`] (`Si`, `Ci`, `E₁`, `Ei`),
+//! [`transcendental`] (`W`, `ζ`) and [`airy`] evaluated in `f64` and narrowed, on the grounds
+//! that each reaches its values through "a cancelling series, a divergent asymptotic expansion,
+//! or an outward march", every one of which has an error floor set by the *working* precision —
+//! so a native `f32` port would be less accurate rather than more.
 //!
-//! - **It is more accurate, not less.** The usual "one rounding versus two" argument assumes
-//!   the native path is otherwise exact. It is not here: every one of these functions is
-//!   reached through a cancelling series, a divergent asymptotic expansion, or an outward
-//!   march, and each of those mechanisms has an error floor set by the working precision. In
-//!   `f32` those floors are around `1e-7` *relative to the largest intermediate*, which for
-//!   `Si(45)` means no correct digits at all. Computing in `f64` and rounding once gives a
-//!   correctly-rounded `f32` instead.
-//! - **It halves the surface where such a bug can hide.** A native `f32` port would need its
-//!   own crossover thresholds, node counts and truncation points, all retuned and all
-//!   separately verifiable. That is a second full implementation of the hardest numerics in
-//!   the crate, carrying no benefit per the point above.
+//! Every one of those five has since been measured, and every one has come off the list. The
+//! reasons differ, and the differences are the useful part:
 //!
-//! The rule still holds for everything else, and for a reason worth keeping: those functions
-//! are cheap, well-conditioned in `f32`, and a native path leaves the surface usable on a
-//! carrier with no `f64` at all.
+//! - **`integrals`** and **`beta_reg`** (which carried the same argument in its own words): the
+//!   cited catastrophe is real and sits on a branch the function does not take at those
+//!   arguments. `Si`'s series does reach `4e20` intermediates — below `x = 4`, where it is not
+//!   used; `beta_reg`'s prefactor does lose everything — above `min(a,b) = 1e3`, where a retuned
+//!   handover does not send it.
+//! - **`transcendental`**: no precision-dependent floor at all. `W` is a Halley iteration on a
+//!   well-conditioned equation and `ζ` is a geometric series, an Euler–Maclaurin sum and a
+//!   reflection.
+//! - **`K`** and **`J`**: the floor is a *tunable*. Both reach their middle range by quadrature,
+//!   whose cost is set by the accuracy asked of it, so retuning to this format's target made them
+//!   cheaper — `K`'s node count fell by about three.
+//! - **`Y`**: the floor is real and irreducible — a march accumulates `ε` per step — but the step
+//!   count is bounded by where the *neighbouring* routes hand over, not by the march. Moving
+//!   `J`'s Hankel handover shortened `Y`'s march with it.
+//! - **`airy`**: all three mechanisms at once, and the strongest claim of the five. Its series
+//!   really does leave `Ai(6)` with no correct digits in `f32` — measured at `2.4e1` relative.
+//!   `AI_SERIES_MAX` is `1`, so `Ai(6)` comes from the `K` quadrature instead.
+//!
+//! The pattern across all five: **a mechanism's error floor and a function's error floor are
+//! different things**, and only the second one decides. Measuring a series at an argument the
+//! series is not used at produces a true statement and the wrong conclusion. What survived the
+//! exercise is one genuine irreducible floor — the Airy phase `ζ = ⅔|x|^{3/2}`, which `f32` can
+//! hold only to `ulp(ζ)` and which therefore degrades like `|x|^{3/2}ε` — and it is documented
+//! where it lives rather than used to excuse a whole family.
 
 pub(crate) mod airy;
 pub(crate) mod bessel;
 pub(crate) mod beta;
+pub(crate) mod erf;
 pub(crate) mod gamma;
 pub(crate) mod integrals;
 pub(crate) mod normal;
@@ -47,13 +61,3 @@ pub(crate) mod polygamma;
 pub(crate) mod quantile;
 pub(crate) mod repr;
 pub(crate) mod transcendental;
-
-/// The single-precision `erf` family, which lives beside its `f64` peer in
-/// [`crate::kernels::erf`] rather than in this tree.
-///
-/// Re-exported under the name it would have had here, so `kernels::f32::erf::erfc` resolves
-/// whichever directory the file sits in and the call sites in [`crate::impls`] stay uniform
-/// across all twelve families. As more of them are folded this list shrinks and the
-/// re-exports below grow; when the last one moves, this module becomes re-exports only and
-/// can go away.
-pub(crate) use super::erf::f32 as erf;

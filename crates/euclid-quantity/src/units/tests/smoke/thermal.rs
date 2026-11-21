@@ -1,7 +1,6 @@
 mod temperature_tests {
-    use crate::{
-        Measure, ScalarQuantity, TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin,
-    };
+    use crate::{TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin};
+    use euclid_units::{Measure, ScalarQuantity};
 
     #[test]
     fn celsius_and_kelvin_round_trip() {
@@ -26,7 +25,10 @@ mod temperature_tests {
 
     #[test]
     fn temperature_quantity_impls() {
-        assert_eq!(TemperatureKelvin::DIMENSION, crate::Dimension::Temperature);
+        assert_eq!(
+            TemperatureKelvin::DIMENSION,
+            euclid_units::Dimension::Temperature
+        );
         assert_eq!(TemperatureKelvin::UNIT_NAME, "K");
         assert_eq!(TemperatureCelsius::UNIT_NAME, "°C");
         assert_eq!(TemperatureFahrenheit::UNIT_NAME, "°F");

@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AreaSquareMeters, CurrentAmperes, InductanceHenries, MagneticFluxDensityTeslas, TimeSeconds,
     VoltageVolts,
 };
 use euclid_units::MagneticFlux;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Magnetic flux in webers (Wb = V.s), the coherent SI unit.
 #[repr(transparent)]

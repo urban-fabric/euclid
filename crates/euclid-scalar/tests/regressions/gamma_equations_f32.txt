@@ -1,0 +1,6 @@
+# Minimised counterexamples found by euclid-stability.
+# Commit this file: each line is a regression test that cost a random search to find,
+# and the runner replays them before searching for anything new.
+# The text after `::` is the case the tape rendered as, and is checked on load — a
+# mismatch means the generator changed and the tape no longer pins what it used to.
+33333333333333340008befff74100090000000000000000 # the_functional_equations_hold_at_f32 :: (1.3365477, 0)

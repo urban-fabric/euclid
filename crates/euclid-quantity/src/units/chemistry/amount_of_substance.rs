@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     CatalyticActivityKatals, ConcentrationMolesPerCubicMeter, MassKilograms,
     MolalityMolesPerKilogram, MolarMassKilogramsPerMole, TimeSeconds, VolumeCubicMeters,
 };
 use euclid_units::AmountOfSubstance;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Amount of substance in moles (mol), the SI base unit.
 #[repr(transparent)]

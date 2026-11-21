@@ -6,7 +6,7 @@ use super::*;
 
 property! {
     #![config(
-        settings("compensated_sum")
+        measured("compensated_sum")
             .require("ill conditioned", 5.0)
             .require("naive loses 6+ digits", 2.0)
     )]
@@ -53,7 +53,7 @@ property! {
     // block-level config applies its requirements to every property in the block, which fails
     // confusingly when two properties classify differently — the first draft of this file hit
     // exactly that, and the coverage report said so.
-    #![config(settings("compensated_dot").require("naive loses 4+ digits", 2.0))]
+    #![config(measured("compensated_dot").require("naive loses 4+ digits", 2.0))]
 
     /// The compensated dot product must be exact for inputs whose cancellation is known by
     /// construction, where the naive form accumulates the loss term by term.

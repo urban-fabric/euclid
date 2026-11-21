@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{PressurePascals, TimeSeconds};
 use euclid_units::DynamicViscosity;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Dynamic viscosity in pascal-seconds (Pa.s), the coherent SI unit.
 #[repr(transparent)]

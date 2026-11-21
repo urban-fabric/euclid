@@ -1,6 +1,7 @@
 //! Numerical checks for the relation module.
 
 use super::*;
+use crate::relation::forward_stable_sum;
 
 /// An accurate kernel is forward stable; a deliberately perturbed one is not.
 #[test]
@@ -234,4 +235,67 @@ fn a_degenerate_safety_factor_abstains_rather_than_scoring_nan() {
     // describe.
     forward_stable("zero-safety", 1.5, f64::exp, f64::exp, 0.0)
         .expect("a zero safety factor must abstain, not fail");
+}
+
+/// [`forward_stable_sum`]'s bound is `safety·(κ + Σ|tᵢ|/|Σtᵢ|)·u`, each piece pinned.
+///
+/// Mutation testing asked for this: eleven mutants inside the function survived, every one of
+/// them in the bound's own arithmetic or its guard. A relation that decides whether other
+/// properties pass has to be tested at least as carefully as they are, and nothing here was.
+#[test]
+fn forward_stable_sum_charges_for_the_reference_cancellation() {
+    // A reference assembled with no cancellation: the terms sum to their own magnitude, so the
+    // ratio is 1 and the bound is `forward_stable`'s. An `exp` that agrees passes.
+    forward_stable_sum("exact", 1.5, f64::exp, &[f64::exp(1.5)], 8.0)
+        .expect("a single-term reference cannot cancel");
+
+    // The cancellation term is what admits this. `1e5 - 99999.0` leaves `1.0` from terms of
+    // `1e5`, a ratio of about `2e5`, so a kernel off by `1e-12` relative is inside the bound —
+    // and would be far outside `forward_stable`'s, since `κ(|_| 1.0)` is zero.
+    // The terms sum to **2**, not 1, and that matters: with a reference of exactly `1.0` the
+    // relative error `(computed - reference) / reference` is indistinguishable from
+    // `* reference`, so a `/` mutated to `*` survives every assertion below. A reference of `2`
+    // separates them by a factor of four.
+    let terms = [1e5, -99_998.0];
+    forward_stable_sum("cancelling", 1.0, |_| 2.0 * (1.0 + 1e-12), &terms, 1.0)
+        .expect("the reference's own cancellation is charged for");
+
+    // But it is not a blank cheque: ten thousand times further out still fails, and the message
+    // says which term is binding rather than blaming the kernel.
+    let failure = forward_stable_sum("cancelling", 1.0, |_| 2.0 * (1.0 + 1e-8), &terms, 1.0)
+        .expect_err("an error far past the cancellation is still the kernel's");
+    assert!(
+        failure.message.contains("cancellation"),
+        "the bound should report the cancellation term: {}",
+        failure.message
+    );
+    assert!(
+        failure.message.contains("orientation"),
+        "a cancellation-dominated failure should suggest reorienting: {}",
+        failure.message
+    );
+    // The "over by" figure is `relative / admissible`, and it is the number a reader acts on —
+    // whether this is 1.2x over or 12,000x decides whether to widen a bound or open the kernel.
+    // Asserting the words alone left two `/`s mutable, so the ratio is pinned too: `1e-8`
+    // against a bound of `1e5 · u` is about `900x`, and either mutation of the relative error's
+    // own division lands far outside that window.
+    let ratio: f64 = failure
+        .message
+        .split("over by:")
+        .nth(1)
+        .and_then(|tail| tail.split('x').next())
+        .map(str::trim)
+        .and_then(|n| n.parse().ok())
+        .expect("the failure reports an 'over by' ratio");
+    assert!(
+        (850.0..950.0).contains(&ratio),
+        "the reported ratio should be relative/admissible, about 900x, not {ratio}"
+    );
+
+    // Guards abstain rather than fail: a reference summing to zero has no relative error, and a
+    // non-finite computed value is not a disagreement to measure.
+    forward_stable_sum("zero sum", 1.0, |_| 1.0, &[1.0, -1.0], 1.0).expect("abstains at zero");
+    forward_stable_sum("nan", 1.0, |_| f64::NAN, &[1.0], 1.0).expect("abstains on non-finite");
+    forward_stable_sum("inf term", 1.0, |_| 1.0, &[f64::INFINITY], 1.0)
+        .expect("abstains on a non-finite reference");
 }

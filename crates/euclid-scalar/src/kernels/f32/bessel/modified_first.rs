@@ -4,8 +4,6 @@
 //! The term cutoff is loosened to the `f32` noise floor, which shortens the outward walk.
 
 use crate::constants::f32::SQRT_TAU;
-use crate::kernels::f32::gamma::ln_gamma;
-use core::f32::consts::TAU;
 
 /// Cap on the outward walk in either direction from the peak. The significant terms span
 /// `O(√x)` indices, so this covers arguments past `1e8` before it binds.
@@ -58,21 +56,56 @@ fn i0_rel_sum(h: f32, k_peak: f32) -> f32 {
 /// the first omitted term, `1/(1260k⁵)`, is already `2.4e-8` at `k = 8`.
 const STIRLING_ASYMPTOTIC_MIN: f32 = 8.0;
 
+/// `μ(k)` below [`STIRLING_ASYMPTOTIC_MIN`], correctly rounded from 256-bit MPFR.
+///
+/// The `f64` peer explains the defect this replaces; here is what it cost in this format. The
+/// difference form `lnΓ(k+1) − (k ln k − k + ½ln(2πk))` subtracts two `O(k ln k)` quantities to
+/// leave an `O(1/12k)` one, and measured in `f32`:
+///
+/// ```text
+/// k                1       2       3       4       5       6       7
+/// relative error  1.9e-7  3.1e-7  1.2e-6  4.6e-6  1.3e-5  1.2e-5  1.1e-4
+/// ```
+///
+/// `1.1e-4` at `k = 7` against a format resolution of `1.19e-7` — **nine hundred times**. `μ` is
+/// doubled and added to an exponent that `exp` consumes, so `2·1.1e-4·μ(7) = 2.6e-6` lands
+/// straight in `I₀ᵉ` as relative error. Measured over `x ∈ [10, 40]`, which is where
+/// `k = round(x/2)` takes the values 5 to 7: **`2.7e-6`**. The prediction and the measurement
+/// agree to one significant figure, which is what identifies this as the whole of it.
+const STIRLING_REMAINDER: [f32; 7] = [
+    0.081_061_47,  // k = 1
+    0.041_340_698, // k = 2
+    0.027_677_925, // k = 3
+    0.020_790_672, // k = 4
+    0.016_644_692, // k = 5
+    0.013_876_129, // k = 6
+    0.011_896_71,  // k = 7
+];
+
 /// The Stirling remainder `μ(k) = lnΓ(k+1) − (k ln k − k + ½ln(2πk))`.
 ///
 /// Needed in its own right rather than as a difference — see
 /// [the `f64` peer](crate::kernels::bessel::modified_first) for the argument; it applies with
 /// more force here, since `f32` has only seven digits to lose.
+///
+/// Two regimes, and the split is [`STIRLING_ASYMPTOTIC_MIN`]. Above it the asymptotic series is
+/// exact to this format's rounding: the first omitted term `−1/(1680k⁷)` is `2.8e-10` at `k = 8`,
+/// which is `2.7e-8` of `μ(8)` and so under a quarter-ulp. Below it the series has not converged
+/// and the *difference* cannot be formed in this format at all, so the nine reachable indices
+/// come from a table. `k` is `round(|x|/2)` and therefore always an integer.
 fn stirling_remainder(k: f32) -> f32 {
     if k >= STIRLING_ASYMPTOTIC_MIN {
         let inv = 1.0 / k;
         let inv2 = inv * inv;
-        inv * (1.0 / 12.0 + inv2 * (-1.0 / 360.0 + inv2 / 1260.0))
-    } else {
-        // Small k: the defining difference is between O(1) quantities, so it is safe, and the
-        // asymptotic series would not yet have converged.
-        ln_gamma(k + 1.0) - (k * k.ln() - k + 0.5 * (TAU * k).ln())
+        return inv * (1.0 / 12.0 + inv2 * (-1.0 / 360.0 + inv2 / 1260.0));
     }
+    debug_assert!(
+        (1.0..STIRLING_ASYMPTOTIC_MIN).contains(&k) && k.fract() == 0.0,
+        "the Stirling table covers integer k in 1..8; k = {k} is outside it"
+    );
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let index = (k as usize).clamp(1, STIRLING_REMAINDER.len()) - 1;
+    STIRLING_REMAINDER[index]
 }
 
 /// `2k·ln h − 2·lnΓ(k+1) − 2h`, the shared log-domain core of both scaled peak terms.
@@ -90,7 +123,63 @@ fn stirling_remainder(k: f32) -> f32 {
 /// invisible to a mixed absolute/relative test because `I₀ᵉ` is itself small.
 fn ln_peak_core_scaled(h: f32, k: f32) -> f32 {
     debug_assert!(k >= 1.0);
-    2.0 * k * ((h - k) / k).ln_1p() + 2.0 * (k - h) - (TAU * k).ln() - 2.0 * stirling_remainder(k)
+    2.0 * k * ((h - k) / k).ln_1p() + 2.0 * (k - h)
+        - crate::math::log_domain::ln_tau_times(k)
+        - 2.0 * stirling_remainder(k)
+}
+
+/// Which of the three forms of the `I` series a magnitude selects.
+///
+/// Named rather than left as a chain of comparisons because the choice *is* the numerics, and
+/// because the same split was being re-tested in five functions — `ln_i0_minus_x`, [`i0e`],
+/// [`i1`], [`i1e`] and [`i1_over_i0`] — against two constants, with each site spelling out only
+/// the arms it happened to need. The three forms are algebraically equal and fail in different
+/// places, so which one runs is the whole content of [`I1_NO_LOG_MAX`] and [`I_ASYMPTOTIC_MIN`].
+///
+/// The two boundaries are one split rather than two unrelated ones, which is not obvious from
+/// the constants: `ln_i0_minus_x` used to test `k_peak < 1.0` separately, and since
+/// `k_peak = round(|x|/2)`, that is below one exactly when `|x| < 1` — which is
+/// [`I1_NO_LOG_MAX`] itself. The `I₀` small-argument case and the `I₁` no-logarithm case are
+/// therefore the same regime, reached by two different routes through the old code.
+///
+/// Not every caller has all three arms, and the asymmetry is real rather than an oversight: see
+/// [`i1`] for why the unscaled `I₁` has no asymptotic arm, and [`i1_over_i0`] for why the ratio
+/// needs no no-logarithm arm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IForm {
+    /// `|x| < I1_NO_LOG_MAX`, where the peak is the `k = 0` term and no logarithm is needed.
+    ///
+    /// For `I₀` the peak term is exactly `1`, so `ln t_peak` is exactly `0`; for `I₁` it is
+    /// exactly `x/2`. Both are perfectly conditioned limits that a `ln`/`exp` round trip would
+    /// spoil, and the general expression is worse than unnecessary here — `2k·ln h` is
+    /// `0 × −∞ = NaN` once `h = x/2` underflows, which it does at the smallest `f32` subnormal.
+    NoLog,
+    /// `I1_NO_LOG_MAX <= |x| < I_ASYMPTOTIC_MIN`: the power series summed relative to its peak
+    /// term, with the large factors cancelled symbolically in the log domain.
+    PeakFactored,
+    /// `|x| >= I_ASYMPTOTIC_MIN`: the divergent asymptotic expansion, truncated at its minimum
+    /// term. Closes the hole where the series' outward walk gets long enough to drift or to be
+    /// cut short by `MAX_TERMS`.
+    Asymptotic,
+}
+
+impl IForm {
+    /// The regime `ax` falls in, for a non-negative magnitude.
+    ///
+    /// The boundaries are closed from above and open from below in the same direction as the
+    /// constants' names: `NoLog` strictly below [`I1_NO_LOG_MAX`], `Asymptotic` at or above
+    /// [`I_ASYMPTOTIC_MIN`]. `|x| = 1` is therefore [`Self::PeakFactored`], which is what
+    /// `k_peak = round(0.5) = 1` already made it.
+    fn for_magnitude(ax: f32) -> Self {
+        debug_assert!(ax >= 0.0);
+        if ax < I1_NO_LOG_MAX {
+            Self::NoLog
+        } else if ax >= I_ASYMPTOTIC_MIN {
+            Self::Asymptotic
+        } else {
+            Self::PeakFactored
+        }
+    }
 }
 
 /// `ln I₀(|x|) − |x|`, the scaled log from which every `I₀` form is derived.
@@ -99,20 +188,19 @@ fn ln_i0_minus_x(ax: f32) -> f32 {
     if ax == 0.0 {
         return 0.0; // I0(0) = 1
     }
-    if ax >= I_ASYMPTOTIC_MIN {
-        return i_scaled_asymptotic(0.0, ax).ln();
+    match IForm::for_magnitude(ax) {
+        IForm::Asymptotic => i_scaled_asymptotic(0.0, ax).ln(),
+        // `k_peak` is provably `0` across this whole arm, so it is written as the literal it is
+        // rather than recomputed: the peak is the `k = 0` term, which is exactly 1, so
+        // `ln t_peak` is exactly 0. See [`IForm::NoLog`] for why the general expression must not
+        // be allowed to produce that instead.
+        IForm::NoLog => i0_rel_sum(ax * 0.5, 0.0).ln() - ax,
+        IForm::PeakFactored => {
+            let h = ax * 0.5;
+            let k_peak = h.round().max(0.0);
+            ln_peak_core_scaled(h, k_peak) + i0_rel_sum(h, k_peak).ln()
+        }
     }
-    let h = ax * 0.5;
-    let k_peak = h.round().max(0.0);
-    if k_peak < 1.0 {
-        // The peak is the k = 0 term, which is exactly 1, so `ln t_peak` is exactly 0.
-        //
-        // Spelling that out rather than letting the general expression produce it, because
-        // `2k·ln h` is `0 × −∞ = NaN` once `h = x/2` underflows — which it does at the
-        // smallest `f32` subnormal, taking `I₀`, `I₀ᵉ` and `ln I₀` to `NaN` with it.
-        return i0_rel_sum(h, k_peak).ln() - ax;
-    }
-    ln_peak_core_scaled(h, k_peak) + i0_rel_sum(h, k_peak).ln()
 }
 
 /// `ln I₀(|x|)`.
@@ -177,208 +265,14 @@ fn ln_i1_minus_x(ax: f32) -> f32 {
     h.ln() - (k_peak + 1.0).ln() + ln_peak_core_scaled(h, k_peak) + i1_rel_sum(h, k_peak).ln()
 }
 
-/// `ln I₁(|x|)`.
-fn ln_i1_sum(ax: f32) -> f32 {
-    ln_i1_minus_x(ax) + ax
-}
+mod scaled;
 
-/// At or above this argument the scaled `I` functions use their asymptotic expansion rather
-/// than the peak-factored series.
-///
-/// This closes a hole rather than saving time. The series walks `O(√x)` terms outward from the
-/// peak, and two things go wrong as that count grows: the naive accumulation drifts like
-/// `√n·ε`, and past `MAX_TERMS` the walk is simply cut short. Measured against the asymptotic
-/// form, `I₀ᵉ` carried
-///
-/// ```text
-/// x = 1e8   4.9e-14        x = 1e10   4.5e-2
-/// x = 1e9   2.5e-10        x = 1e12   8.4e-1
-/// ```
-///
-/// — the last two being truncation, not rounding, and silently finite.
-///
-/// `1e4` is where the expansion becomes the better of the two: its first omitted term is
-/// `|a₄|/x⁴ ≈ 1.1e-17`, below half an ulp, while the series still has only ~200 terms there and
-/// so has drifted by less than `1e-15`. Below the threshold the series is never long enough to
-/// be a problem; above it, it is never used.
-const I_ASYMPTOTIC_MIN: f32 = 1e2;
-
-/// `Iνᵉ(x) = e^{−x}Iν(x)` from its asymptotic expansion, for large `x`.
-///
-/// ```text
-/// Iνᵉ(x) ~ (2πx)^{−1/2} Σ (−1)^k a_k(ν)/x^k,   a_k(ν) = a_{k−1}·(4ν² − (2k−1)²)/(8k)
-/// ```
-///
-/// The same coefficients the `K` expansion uses, with the signs alternating — so nothing is
-/// transcribed here either. Divergent, and truncated at its minimum term; continuing past it
-/// makes the result worse, which the growth check watches for.
-fn i_scaled_asymptotic(nu: f32, x: f32) -> f32 {
-    debug_assert!(x > 0.0);
-    let four_nu_sq = 4.0 * nu * nu;
-    let mut a = 1.0;
-    let mut inv_power = 1.0;
-    let mut total = 0.0;
-    let mut previous = f32::INFINITY;
-    for m in 0..ASYMPTOTIC_TERMS {
-        if m > 0 {
-            let mf = m as f32;
-            let odd = 2.0 * mf - 1.0;
-            a *= (four_nu_sq - odd * odd) / (8.0 * mf);
-            inv_power /= x;
-        }
-        let magnitude = (a * inv_power).abs();
-        if magnitude >= previous {
-            break; // past the minimum term of a divergent expansion
-        }
-        previous = magnitude;
-        total += if m % 2 == 1 {
-            -a * inv_power
-        } else {
-            a * inv_power
-        };
-        if magnitude < ASYMPTOTIC_EPS {
-            break;
-        }
-    }
-    // `√(2πx)` as `√(2π)·√x`, not `√(2πx)`: the product `2πx` overflows while the *result*
-    // is still an entirely ordinary number. In `f32` that cost `I₀ᵉ(1e38)` its value
-    // outright — `2π·1e38` is past `f32::MAX`, so the square root was infinite and the
-    // quotient zero, where the true `4e-20` is perfectly representable. `f64` had the same
-    // latent failure above `x = 2.9e307`. Splitting the root keeps every intermediate in
-    // range and is exact to the same rounding.
-    total / (SQRT_TAU * x.sqrt())
-}
-
-/// Term cap for [`i_scaled_asymptotic`]; the minimum-term check normally stops it far sooner.
-const ASYMPTOTIC_TERMS: u32 = 200;
-
-/// Relative size at which an asymptotic term stops contributing.
-const ASYMPTOTIC_EPS: f32 = 1e-12;
-
-/// The modified Bessel function `I₀(x)` (even in `x`).
-///
-/// Overflows for `|x| ≳ 710`, as the true value does; use [`i0e`] or [`ln_i0`] there.
-pub(crate) fn i0(x: f32) -> f32 {
-    if x.is_nan() {
-        return f32::NAN;
-    }
-    ln_i0_sum(x.abs()).exp()
-}
-
-/// Below this argument the `k = 0` term is the peak, and `I₁` is formed without a logarithm.
-///
-/// `k_peak = round(x/2)` is zero exactly when `x < 1`, and there `t₀ = x/2` precisely — so
-/// `I₁ = (x/2)·Σ` needs no `exp(ln t₀ + ⋯)` round trip at all.
-///
-/// Worth its own path because that round trip is lossy for small `x`: `ln(x/2)` is `−691` at
-/// `x = 1e-300`, carrying `ε·691 ≈ 1.5e-13` of *absolute* error, which the final `exp` converts
-/// into the same amount of *relative* error. Measured 3.5e-14 at `x = 1e-300` before this
-/// existed — worse than the 1.7e-14 the surface documents — while `I₁(x) ~ x/2` is a perfectly
-/// conditioned limit that ought to come back exact.
-const I1_NO_LOG_MAX: f32 = 1.0;
-
-/// `I₁(|x|)` for `|x| < I1_NO_LOG_MAX`, straight from the series with no logarithm.
-fn i1_no_log(h: f32) -> f32 {
-    h * i1_rel_sum(h, 0.0)
-}
-
-/// The modified Bessel function `I₁(x)` (odd in `x`).
-pub(crate) fn i1(x: f32) -> f32 {
-    if x.is_nan() {
-        return f32::NAN;
-    }
-    let ax = x.abs();
-    let magnitude = if ax < I1_NO_LOG_MAX {
-        i1_no_log(ax * 0.5)
-    } else {
-        ln_i1_sum(ax).exp()
-    };
-    if x < 0.0 { -magnitude } else { magnitude }
-}
-
-/// The exponentially-scaled `I₀ᵉ(x) = e^{−|x|} I₀(x)`, finite for every argument.
-pub(crate) fn i0e(x: f32) -> f32 {
-    if x.is_nan() {
-        return f32::NAN;
-    }
-    let ax = x.abs();
-    if ax.is_infinite() {
-        return 0.0;
-    }
-    if ax >= I_ASYMPTOTIC_MIN {
-        return i_scaled_asymptotic(0.0, ax);
-    }
-    ln_i0_minus_x(ax).exp()
-}
-
-/// The exponentially-scaled `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
-pub(crate) fn i1e(x: f32) -> f32 {
-    if x.is_nan() {
-        return f32::NAN;
-    }
-    let ax = x.abs();
-    if ax.is_infinite() {
-        return 0.0;
-    }
-    let magnitude = if ax < I1_NO_LOG_MAX {
-        i1_no_log(ax * 0.5) * (-ax).exp()
-    } else if ax >= I_ASYMPTOTIC_MIN {
-        i_scaled_asymptotic(1.0, ax)
-    } else {
-        ln_i1_minus_x(ax).exp()
-    };
-    if x < 0.0 { -magnitude } else { magnitude }
-}
-
-/// `I₁(x) / I₀(x)`, in `(−1, 1)`.
-///
-/// Both series peak at the same index `k`, and at that index the two peak terms differ by
-/// exactly `ln h − ln(k+1)`. So the ratio is
-///
-/// ```text
-/// I₁/I₀ = h/(k+1) · sum₁/sum₀
-/// ```
-///
-/// where both sums are the peak-relative ones. Every quantity here is `O(1)`: the large
-/// factors cancel *symbolically* rather than by subtracting two big logarithms. That matters
-/// because those logarithms are `O(x)` — at `x = 400` they are around 400 while their
-/// difference is around 0.0025, so even a relative error of `1e-7` in each would swamp the
-/// answer. This form has no such cancellation at any argument or precision.
-pub(crate) fn i1_over_i0(x: f32) -> f32 {
-    if x.is_nan() {
-        return f32::NAN;
-    }
-    let ax = x.abs();
-    if ax == 0.0 {
-        return 0.0;
-    }
-    if ax.is_infinite() {
-        return if x < 0.0 { -1.0 } else { 1.0 };
-    }
-    if ax >= I_ASYMPTOTIC_MIN {
-        let ratio = i_scaled_asymptotic(1.0, ax) / i_scaled_asymptotic(0.0, ax);
-        return if x < 0.0 { -ratio } else { ratio };
-    }
-    let h = ax * 0.5;
-    let k_peak = h.round().max(0.0);
-    let ratio = (h / (k_peak + 1.0)) * (i1_rel_sum(h, k_peak) / i0_rel_sum(h, k_peak));
-    if x < 0.0 { -ratio } else { ratio }
-}
-
-/// `ln I₀(x)`, the overflow-free log of `I₀`.
-///
-/// Taken straight from the peak-factored sum, so it needs no `e^{|x|}` round trip and stays
-/// accurate for every argument.
-pub(crate) fn ln_i0(x: f32) -> f32 {
-    if x.is_nan() {
-        return f32::NAN;
-    }
-    let ax = x.abs();
-    if ax.is_infinite() {
-        return f32::INFINITY;
-    }
-    ln_i0_sum(ax)
-}
+// Re-exported so the family keeps one path per function: every caller reached
+// `kernels::f32::bessel::modified_first::i0` before the split and still does.
+pub(in crate::kernels::f32) use scaled::i_scaled_asymptotic;
+pub(crate) use scaled::{i0, i0e, i1, i1_over_i0, i1e, ln_i0};
+// `IForm` lives here but its two thresholds are documented beside the forms they select.
+use scaled::{I_ASYMPTOTIC_MIN, I1_NO_LOG_MAX};
 
 #[cfg(test)]
 mod tests;

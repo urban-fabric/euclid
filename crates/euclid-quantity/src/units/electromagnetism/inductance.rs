@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{CurrentAmperes, MagneticFluxWebers, ResistanceOhms, TimeSeconds};
 use euclid_units::Inductance;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Inductance in henries (H = Wb/A), the coherent SI unit.
 #[repr(transparent)]

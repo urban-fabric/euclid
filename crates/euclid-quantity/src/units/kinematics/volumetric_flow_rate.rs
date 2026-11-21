@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AreaSquareMeters, SpeedMs, TimeSeconds, VolumeCubicMeters};
+use euclid_units::Measure;
 use euclid_units::VolumetricFlowRate;
+use euclid_units::dim;
 
 /// Volumetric flow rate in cubic meters per second (m^3/s), the coherent SI unit.
 #[repr(transparent)]

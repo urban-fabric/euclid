@@ -1,5 +1,6 @@
 mod mass_tests {
-    use crate::{MassGrams, MassKilograms, MassMilligrams, Measure};
+    use crate::{MassGrams, MassKilograms, MassMilligrams};
+    use euclid_units::Measure;
 
     #[test]
     fn mass_round_trips() {
@@ -21,7 +22,7 @@ mod mass_tests {
 
     #[test]
     fn mass_quantity_impls() {
-        assert_eq!(MassKilograms::DIMENSION, crate::Dimension::Mass);
+        assert_eq!(MassKilograms::DIMENSION, euclid_units::Dimension::Mass);
         assert_eq!(MassKilograms::UNIT_NAME, "kg");
         assert_eq!(MassGrams::UNIT_NAME, "g");
         assert_eq!(MassMilligrams::UNIT_NAME, "mg");

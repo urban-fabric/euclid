@@ -1,6 +1,6 @@
 //! Numerical steps shared by the two host gamma kernels.
 
-use crate::HostReal;
+use crate::{HostReal, Real};
 
 use super::arithmetic::term_is_negligible;
 use super::continued_fraction::{converged, lentz_step};
@@ -15,16 +15,176 @@ fn lanczos_parts<T: HostReal>(x: T, g: T, &[leading, ref rest @ ..]: &[T; 9]) ->
     (shifted + T::HALF, shifted + g + T::HALF, sum)
 }
 
-pub(crate) fn lanczos_log_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) -> T {
-    let (power, base, sum) = lanczos_parts(x, g, coefficients);
-    T::HALF * (T::TWO * T::PI).ln() + power * base.ln() - base + sum.ln()
+/// `½·ln(2π)`, the prefactor both forms of the Lanczos log share.
+///
+/// Named rather than spelled twice because as a *term* it is untestable. On the folded path the
+/// sum it joins is `~1e38` in `f32` and `~1e308` in `f64`, which puts `0.9189` some thirty-one
+/// orders below the result's last bit: no assertion on `lnΓ` can see this expression change, in
+/// either format, at any argument that reaches that path. Called directly it is the whole answer.
+fn log_sqrt_tau<T: HostReal>() -> T {
+    T::HALF * (T::TWO * T::PI).ln()
 }
 
+/// Which form of `power·ln(base) − base` keeps every intermediate inside the format.
+///
+/// # `power·ln(base)` is formed only when it fits
+///
+/// The literal form overflows while `lnΓ` itself does not. `− base` is smaller than that product
+/// by a factor of `ln(base)`, so there is a band roughly `1/ln(base)` wide — `1.2%`, measured as
+/// `x ∈ (4.0371e36, 4.0850e36)` in `f32` — where the answer is an ordinary number reached through
+/// an infinite intermediate, and `lnΓ` returned `+∞` for all of it.
+///
+/// # Mutation testing is what asked for this
+///
+/// Every operator on the folded line survived the suite, so this follows the `IForm` treatment in
+/// the modified-`I` kernel. Two reasons, and the split addresses both. The sweep that
+/// reaches the band at all — `f32_exhaustive` — compares *classification*, so a sign flip on the
+/// dominant term reads as finite either way; and it uses the `f64` kernel as its reference, so the
+/// `f64` arm validates itself. Naming the two forms makes the arithmetic reachable at ordinary
+/// arguments, where every term of it is the same order as the answer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LanczosLogForm {
+    /// The product fits: `power·ln(base) − base`, one rounding shorter, and what every ordinary
+    /// argument should get.
+    Direct,
+    /// The product alone has left the format: `power·(ln(base) − base/power)` folds the
+    /// subtraction inside it. `base/power` is an extra division and `ln(base) − base/power` a
+    /// well-conditioned difference of `O(ln x)` against `O(1)`, so this is the overflow path's
+    /// form alone.
+    Folded,
+}
+
+impl LanczosLogForm {
+    /// The product is formed once by the caller, and its range *is* the branch.
+    fn for_scaled_power<T: HostReal>(scaled: T) -> Self {
+        if HostReal::is_finite(scaled) {
+            Self::Direct
+        } else {
+            Self::Folded
+        }
+    }
+}
+
+/// `½ln(2π) + power·ln(base) − base + ln(sum)`, the product already formed by the caller.
+fn lanczos_log_direct<T: HostReal>(scaled: T, base: T, sum: T) -> T {
+    log_sqrt_tau::<T>() + scaled - base + sum.ln()
+}
+
+/// The same sum with the subtraction folded inside the product; see [`LanczosLogForm::Folded`].
+fn lanczos_log_folded<T: HostReal>(power: T, log_base: T, base: T, sum: T) -> T {
+    log_sqrt_tau::<T>() + power * (log_base - base / power) + sum.ln()
+}
+
+/// The Lanczos approximation to `lnΓ`, in whichever form the product's range allows.
+///
+/// Both arms are arithmetically the same quantity; see [`LanczosLogForm`] for which applies where
+/// and why the choice is named rather than inlined.
+pub(crate) fn lanczos_log_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) -> T {
+    let (power, base, sum) = lanczos_parts(x, g, coefficients);
+    let log_base = base.ln();
+    let scaled = power * log_base;
+    match LanczosLogForm::for_scaled_power(scaled) {
+        LanczosLogForm::Direct => lanczos_log_direct(scaled, base, sum),
+        LanczosLogForm::Folded => lanczos_log_folded(power, log_base, base, sum),
+    }
+}
+
+/// # The approximation runs out above about `x = 50`, and a Stirling route fixes it
+///
+/// `Γ`'s error at large argument is this approximation's **truncation**, not its arithmetic —
+/// every piece below is sub-ulp, and evaluating the same formula with the same coefficients at
+/// 60 digits reproduces the error exactly. See the precision note on `Real::gamma`.
+///
+/// A Stirling series is the repair, and the formulation matters. `Γ(x) = √(2π/x)·(x/e)^x·e^{μ(x)}`
+/// with `μ` the same `1/(12x) − 1/(360x³) + ⋯` the `I` family uses, which is exact to rounding
+/// from about `x = 20`. Measured against true `Γ`:
+///
+/// ```text
+/// x                20.5   40.5    60.5   80.5   120.5   170.5
+/// (x/e)^x            6.0    9.0    11.5   37.6    43.2    60.8   ulp
+/// x^x·e^{−x}         1.5    0.4     1.8    0.9     0.1     0.2
+/// this Lanczos       1.6    0.0   145.1      —   354.9   456.5
+/// ```
+///
+/// **The base must be `x`, not `x/e`.** `x/e` is not representable, and its half-ulp of rounding
+/// is amplified by the exponent — `x·ε/4` is `42` ulp at `x = 170`, which is the `60.8` row.
+/// Splitting the exponential out instead keeps the base exact, and is the same trick
+/// [`lanczos_half_power`] uses for range, applied here for accuracy.
+///
+/// So the repair is a `Stirling` arm above a threshold near `50`, built from three pieces —
+/// the `μ` series, `x^{x/2}·e^{−x/2}` squared, and the `√(2π/x)` prefactor. `ln_gamma` needs
+/// none of this and is unaffected.
 pub(crate) fn lanczos_gamma<T: HostReal>(x: T, g: T, coefficients: &[T; 9]) -> T {
     let (power, base, sum) = lanczos_parts(x, g, coefficients);
     let half = lanczos_half_power(power, base);
     (T::TWO * T::PI).sqrt() * half * half * sum
 }
+
+/// `μ(x) = lnΓ(x) − (x−½)ln x + x − ½ln 2π`, from its asymptotic series.
+///
+/// The same expansion the modified-Bessel family uses, and valid here for the same reason:
+/// every argument reaching it is above [`STIRLING_MIN`], where the first omitted term
+/// `−691/(360360 x¹¹)` is far below rounding.
+pub(crate) fn stirling_remainder<T: HostReal>(x: T) -> T {
+    let inv = T::ONE / x;
+    let inv2 = inv * inv;
+    inv * (T::from_f64(1.0 / 12.0)
+        + inv2
+            * (T::from_f64(-1.0 / 360.0)
+                + inv2
+                    * (T::from_f64(1.0 / 1260.0)
+                        + inv2 * (T::from_f64(-1.0 / 1680.0) + inv2 * T::from_f64(1.0 / 1188.0)))))
+}
+
+/// `μ(z) − μ(z+1) = (z+½)·ln(1+1/z) − 1`, exactly, and without the subtraction.
+///
+/// From `lnΓ(z+1) = lnΓ(z) + ln z` substituted into `μ`'s definition, so it is an identity and
+/// holds at every `z > 0`. With `u = 1/z` it rearranges to `[ln(1+u) − u]/u + ½ln(1+u)`, which
+/// has no `− 1` to cancel against and reaches [`ln_1p_minus_linear`] for the hard part. The
+/// direct spelling loses three digits by `z = 7` and five by `z = 20`, and the result is added
+/// into an exponent, so its absolute error is what matters.
+pub(crate) fn stirling_remainder_step<T: HostReal>(z: T) -> T {
+    let u = z.recip();
+    z * ln_1p_minus_linear(u) + T::HALF * u.ln_1p()
+}
+
+/// `x^{x/2}·e^{−x/2}`, the half of `x^x e^{−x}` that stays in range.
+///
+/// **The base is `x`, not `x/e`**, and that is the whole accuracy of this route. `x/e` is not
+/// representable, so its half-ulp of rounding is amplified by the exponent — `x·ε/4`, which is
+/// `42` ulp at `x = 170`. Splitting the exponential out instead leaves the base exact. Measured
+/// against true `Γ` through [`stirling_gamma`]:
+///
+/// ```text
+/// x             20.5   40.5   60.5   80.5   120.5   170.5
+/// (x/e)^x        6.0    9.0   11.5   37.6    43.2    60.8   ulp
+/// x^x·e^{−x}     1.5    0.4    1.8    0.9     0.1     0.2
+/// ```
+///
+/// `(x/e)^x` is how Stirling's formula is usually written, which is why this note exists.
+fn stirling_half_power<T: HostReal>(x: T) -> T {
+    let half = x * T::HALF;
+    x.powf(half) * (-half).exp()
+}
+
+/// `Γ(x) = √(2π/x)·x^x·e^{−x}·e^{μ(x)}`, for large `x`.
+///
+/// Three pieces: the remainder series, the half power, and the prefactor. Used above
+/// [`STIRLING_MIN`] because the Lanczos approximation's own *truncation* — not its arithmetic —
+/// reaches `456` ulp by `x = 170`, while this is `0.1` to `1.8` across the same range.
+pub(crate) fn stirling_gamma<T: HostReal>(x: T) -> T {
+    let half = stirling_half_power(x);
+    let tau_over_x = (T::TWO * T::PI) / x;
+    tau_over_x.sqrt() * half * half * stirling_remainder(x).exp()
+}
+
+/// At or above this argument `Γ` leaves the Lanczos product for [`stirling_gamma`].
+///
+/// **`50`, between the two measured points that bracket the handover.** The Lanczos truncation
+/// is `0.0` ulp at `x = 40.5` and `145.1` at `60.5`, so it goes between them; Stirling is `0.4`
+/// and `1.8` at the same two, so either side is safe for it. `50` also clears the `μ` series'
+/// own requirement of about `20` by a wide margin.
+pub(crate) const STIRLING_MIN: f64 = 20.0;
 
 /// Splitting the power and exponential keeps the intermediates in range.
 fn lanczos_half_power<T: HostReal>(power: T, base: T) -> T {
@@ -33,20 +193,23 @@ fn lanczos_half_power<T: HostReal>(power: T, base: T) -> T {
 
 /// Reflect through the Lanczos factors before squaring the half power, so a
 /// subnormal value is rounded only by the final division.
-pub(crate) fn lanczos_reflected_gamma(
-    sin: f64,
-    reflected: f64,
-    g: f64,
-    coefficients: &[f64; 9],
-) -> f64 {
-    // At a reflected argument of 200, the integral over [199, 200] alone
-    // gives Γ(a) >= exp(-200) * 199^199. The smallest nonzero distance of
-    // these binary64 inputs to an integer is at least 2^-46. Even with that
-    // sine factor, the reflected result rounds to signed zero from here on.
-    let (power, base, sum) = lanczos_parts(reflected.min(200.0), g, coefficients);
+///
+/// `clamp` is the reflected argument past which the result has certainly rounded to signed zero,
+/// and it is **per format** rather than shared: it depends both on how fast `Γ` outruns the
+/// format's range and on the spacing of that format's inputs near an integer, since the sine
+/// factor can only be as small as the nearest representable distance to a pole. Each caller
+/// derives its own; see the two call sites.
+pub(crate) fn lanczos_reflected_gamma<T: HostReal>(
+    sin: T,
+    reflected: T,
+    g: T,
+    clamp: T,
+    coefficients: &[T; 9],
+) -> T {
+    let (power, base, sum) = lanczos_parts(Real::min(reflected, clamp), g, coefficients);
     let half = lanczos_half_power(power, base);
-    let prefactor = crate::constants::f64::SQRT_TAU * sum * sin;
-    ((core::f64::consts::PI / prefactor) / half) / half
+    let prefactor = T::from_f64(crate::constants::f64::SQRT_TAU) * sum * sin;
+    ((T::PI / prefactor) / half) / half
 }
 
 /// Reflection applies below its fixed point at one half.
@@ -90,6 +253,32 @@ pub(crate) fn valid_incomplete_gamma_inputs<T: HostReal>(a: T, x: T) -> bool {
     HostReal::is_finite(a) && a > T::ZERO && x >= T::ZERO
 }
 
+/// Which of the two incomplete-gamma routes is valid at `(a, x)`.
+///
+/// # The split looks like a performance bug and is not one
+///
+/// The series walks about `7.3·√a` terms — 7,413 at `a = 1e6`, 32,200 at `2e7` — while the
+/// continued fraction converges in **65 steps anywhere it is used**. Moving this boundary down
+/// is therefore the single most tempting optimisation in the crate, and it is wrong.
+///
+/// Measured below the boundary, the fraction *reports convergence in three to twelve steps and
+/// returns a different function*. Agreement with the series, as `P`:
+///
+/// ```text
+/// x/a      0.5        0.9        0.99      1.00      1.01
+/// a=1e5    NaN        5.1e234    1.3e3     2.9e-10   2.2e-10
+/// a=1e6    NaN        NaN        1.8e23    1.4e-9    1.0e-9
+/// a=1e7    NaN        NaN        3.2e220   3.3e-8    3.7e-8
+/// ```
+///
+/// The multiplier comes within tolerance of one while the fraction has not converged at all, so
+/// the exit rule fires early and the cheap step count is an illusion. It only becomes a real
+/// answer from about `x/a = 0.99`, and there it costs 88 to 1,951 steps rather than a dozen.
+///
+/// So the depth of the series at large shape is the price of correctness, not slack. The route
+/// that *does* replace it is the Edgeworth approximation above
+/// [`GAMMA_EDGEWORTH_MIN`](crate::kernels::gamma::GAMMA_EDGEWORTH_MIN), chosen on accuracy
+/// grounds, and that threshold is where this cost stops growing.
 pub(crate) fn use_lower_gamma_series<T: HostReal>(a: T, x: T) -> bool {
     x < a + T::ONE
 }
@@ -114,11 +303,9 @@ pub(crate) fn gamma_lower_series<T: HostReal>(a: T, x: T, tolerance: T, limit: u
     }
     sum
 }
+mod prefactor;
 
-/// The common log prefactor for the lower series and upper continued fraction.
-pub(crate) fn log_scaled_gamma<T: HostReal>(a: T, x: T, log_scale: T) -> T {
-    log_scale - x + a * x.ln() - a.ln_gamma()
-}
+pub(crate) use prefactor::{ln_1p_minus_linear, log_scaled_gamma};
 
 /// Advance the denominator and return the numerator for the next coefficient.
 fn upper_gamma_coefficient<T: HostReal>(a: T, index: T, denominator: &mut T) -> T {
@@ -170,164 +357,4 @@ pub(crate) fn gamma_edgeworth<T: HostReal>(a: T, x: T) -> (T, T) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::math::continued_fraction::{LENTZ_TINY_F32, LENTZ_TINY_F64};
-
-    #[test]
-    fn lanczos_terms_match_rational_coefficients() {
-        let coefficients = [2.0_f64, 4.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-        assert_eq!(lanczos_parts(1.0, 7.0, &coefficients), (0.5, 7.5, 9.0));
-        let coefficients = coefficients.map(|c| c as f32);
-        assert_eq!(lanczos_parts(2.0, 7.0, &coefficients), (1.5, 8.5, 6.0));
-    }
-
-    #[test]
-    fn reflection_sine_tracks_parity_and_the_nearest_pole() {
-        for (x, expected) in [(0.5_f64, 1.0), (-0.5, -1.0), (-1.5, 1.0), (-2.5, -1.0)] {
-            assert_eq!(reflection_sine(x), expected);
-            assert_eq!(reflection_sine(x as f32), expected as f32);
-        }
-        let pole = -2.0_f64;
-        for x in [pole.next_down(), pole.next_up()] {
-            let expected = core::f64::consts::PI * (x - pole);
-            assert_eq!(reflection_sine(x), expected);
-        }
-        let pole = -3.0_f32;
-        for x in [pole.next_down(), pole.next_up()] {
-            let expected = -core::f32::consts::PI * (x - pole);
-            assert!((reflection_sine(x) / expected - 1.0).abs() <= f32::EPSILON);
-        }
-    }
-
-    #[test]
-    fn reflection_switch_excludes_its_own_fixed_point() {
-        let half = 0.5_f32;
-        assert!(use_gamma_reflection(half.next_down()));
-        assert!(!use_gamma_reflection(half));
-        assert!(!use_gamma_reflection(half.next_up()));
-        let half = 0.5_f64;
-        assert!(use_gamma_reflection(half.next_down()));
-        assert!(!use_gamma_reflection(half));
-    }
-
-    #[test]
-    fn gamma_reflection_selects_the_overflow_evaluator_by_range() {
-        let ordinary = gamma_reflection(-0.5_f64, |_, _| 0.0);
-        assert!((ordinary / (-2.0 * core::f64::consts::PI.sqrt()) - 1.0).abs() < 2e-15);
-        let overflow = gamma_reflection(-172.5_f64, |sin, reflected| {
-            assert_eq!(sin, -1.0);
-            assert_eq!(reflected, 173.5);
-            -1.0
-        });
-        assert_eq!(overflow, -1.0);
-    }
-
-    #[test]
-    fn gamma_input_and_series_switch_boundaries() {
-        for (shape, point, valid) in [
-            (0.0_f64, 1.0, false),
-            (-1.0, 1.0, false),
-            (f64::NAN, 1.0, false),
-            (f64::INFINITY, 1.0, false),
-            (1.0, -0.125, false),
-            (1.0, f64::NAN, false),
-            (1.0, -0.0, true),
-            (1.0, f64::INFINITY, true),
-        ] {
-            assert_eq!(valid_incomplete_gamma_inputs(shape, point), valid);
-            assert_eq!(
-                valid_incomplete_gamma_inputs(shape as f32, point as f32),
-                valid
-            );
-        }
-        let x = 4.0_f64;
-        assert!(use_lower_gamma_series(3.0, x.next_down()));
-        assert!(!use_lower_gamma_series(3.0, x));
-        assert!(!use_lower_gamma_series(3.0, x.next_up()));
-        assert!(use_lower_gamma_series(4.0, x));
-    }
-
-    #[test]
-    fn lower_series_step_matches_its_first_terms() {
-        let (mut denominator, mut term) = (1.0_f64, 1.0);
-        advance_lower_series(1.0, &mut denominator, &mut term);
-        assert_eq!((denominator, term), (2.0, 0.5));
-        advance_lower_series(1.0, &mut denominator, &mut term);
-        assert_eq!((denominator, term), (3.0, 1.0 / 6.0));
-        assert_eq!(gamma_lower_series(1.0_f64, 1.0, 0.0, 0), 1.0);
-        assert_eq!(gamma_lower_series(1.0_f64, 1.0, 0.0, 1), 1.5);
-        assert_eq!(gamma_lower_series(1.0_f32, 1.0, 0.5, 8), 1.5);
-    }
-
-    #[test]
-    fn lower_series_agrees_with_the_exponential_closed_forms() {
-        for x in [0.25_f64, 0.5, 1.5] {
-            let e = x.exp_m1();
-            for (shape, expected) in [(1.0, e / x), (2.0, (e - x) / (x * x))] {
-                let actual = gamma_lower_series(shape, x, 1e-15, 100);
-                assert!((actual / expected - 1.0).abs() < 8.0 * f64::EPSILON);
-                let actual = gamma_lower_series(shape as f32, x as f32, 1e-6, 100);
-                assert!((f64::from(actual) / expected - 1.0).abs() < 5e-7);
-            }
-        }
-    }
-
-    #[test]
-    fn upper_fraction_uses_the_exact_coefficient_recurrence_and_budget() {
-        let mut denominator = 2.0_f64;
-        for (k, numerator, next_denominator) in [
-            (1.0, 2.0, 4.0),
-            (2.0, 2.0, 6.0),
-            (3.0, 0.0, 8.0),
-            (4.0, -4.0, 10.0),
-        ] {
-            assert_eq!(upper_gamma_coefficient(3.0, k, &mut denominator), numerator);
-            assert_eq!(denominator, next_denominator);
-        }
-        assert_eq!(gamma_upper_fraction(3.0, 4.0, LENTZ_TINY_F64, 0.0, 1), 0.5);
-        assert_eq!(
-            gamma_upper_fraction(3.0, 4.0, LENTZ_TINY_F64, 0.25, 10),
-            0.4
-        );
-    }
-
-    #[test]
-    fn upper_fraction_agrees_with_integer_shape_closed_forms() {
-        for x in [4.0_f64, 8.0, 18.75, 100.0] {
-            for (a, expected) in [
-                (1.0, 1.0 / x),
-                (2.0, (x + 1.0) / x.powi(2)),
-                (3.0, (x * x + 2.0 * x + 2.0) / x.powi(3)),
-            ] {
-                let actual = gamma_upper_fraction(a, x, LENTZ_TINY_F64, 1e-15, 100);
-                assert!((actual / expected - 1.0).abs() <= 2e-15);
-                let actual = gamma_upper_fraction(a as f32, x as f32, LENTZ_TINY_F32, 1e-6, 100);
-                assert!((f64::from(actual) / expected - 1.0).abs() <= 3e-7);
-            }
-        }
-    }
-
-    #[test]
-    fn edgeworth_correction_matches_standardized_points() {
-        for z in [-2.0_f64, -1.0, 0.0, 1.0, 2.0] {
-            let x = 16.0 + 4.0 * z;
-            let expected = (z * z - 1.0) * (-z * z / 2.0).exp()
-                / ((2.0 * core::f64::consts::PI).sqrt() * 12.0);
-            let (actual_z, correction) = gamma_edgeworth_terms(16.0, x);
-            assert_eq!(actual_z, z);
-            assert!((correction - expected).abs() <= 7e-18);
-        }
-        let (z, correction) = gamma_edgeworth_terms(16.0_f32, f32::MAX);
-        assert!(z.is_finite());
-        assert_eq!(correction, 0.0);
-        assert_eq!(gamma_edgeworth(16.0_f64, f64::MAX), (1.0, 0.0));
-    }
-
-    #[test]
-    fn log_scale_matches_the_prefactor_at_integer_shape() {
-        // Γ(2) = 1 and 1.5 * 4² = 24.
-        let actual = log_scaled_gamma(2.0_f64, 4.0, 1.5_f64.ln());
-        assert!((actual - (24.0_f64.ln() - 4.0)).abs() <= 2e-15);
-    }
-}
+mod tests;

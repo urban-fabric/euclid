@@ -1,8 +1,9 @@
 mod time_tests {
     use crate::{
-        Dimension, Measure, TimeMicros, TimeMicrosDelta, TimeNanos, TimeNanosDelta, TimePicos,
-        TimePicosDelta, TimeSeconds,
+        TimeMicros, TimeMicrosDelta, TimeNanos, TimeNanosDelta, TimePicos, TimePicosDelta,
+        TimeSeconds,
     };
+    use euclid_units::{Dimension, Measure};
 
     #[test]
     fn time_seconds_constants() {
@@ -128,7 +129,8 @@ mod time_tests {
     }
 }
 mod speed_tests {
-    use crate::{Dimension, Measure, SpeedKph, SpeedMph, SpeedMs};
+    use crate::{SpeedKph, SpeedMph, SpeedMs};
+    use euclid_units::{Dimension, Measure};
 
     #[test]
     fn speed_constants_and_dims() {
@@ -166,9 +168,8 @@ mod speed_tests {
     }
 }
 mod acceleration_tests {
-    use crate::{
-        AccelerationCentimetersPerSecondSquared, AccelerationMetersPerSecondSquared, Measure,
-    };
+    use crate::{AccelerationCentimetersPerSecondSquared, AccelerationMetersPerSecondSquared};
+    use euclid_units::Measure;
 
     #[test]
     fn acceleration_round_trips() {
@@ -185,7 +186,7 @@ mod acceleration_tests {
     fn acceleration_quantity_impls() {
         assert_eq!(
             AccelerationMetersPerSecondSquared::DIMENSION,
-            crate::Dimension::Acceleration
+            euclid_units::Dimension::Acceleration
         );
         assert_eq!(AccelerationMetersPerSecondSquared::UNIT_NAME, "m/s^2");
         assert_eq!(AccelerationCentimetersPerSecondSquared::UNIT_NAME, "cm/s^2");

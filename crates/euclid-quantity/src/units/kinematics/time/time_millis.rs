@@ -1,7 +1,7 @@
 use super::MS_PER_S;
 use crate::TimeSeconds;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A duration in **milliseconds**, as a float — so it may be fractional, unlike the

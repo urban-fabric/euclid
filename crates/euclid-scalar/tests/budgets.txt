@@ -1,4 +1,34 @@
 # Worst target() score per property, recorded by euclid-stability.
 # Commit this file: a rise here is an accuracy regression that every other check passes.
 # Re-record deliberately with EUCLID_STABILITY_RECORD=1 after changing a generator.
-the_erf_round_trip_is_forward_stable 5.510272789619652e-1
+compensated_dot_survives_cancellation 1.6e1
+compensated_summation_beats_naive_under_cancellation 2.5030899870323903e1
+cos_m1_survives_the_haversine_cancellation 1.6e1
+exp_m1_survives_where_the_naive_difference_cannot 1.6e1
+ln_1p_survives_where_the_naive_argument_rounds_away 1.6e1
+the_airy_wronskian_is_one_over_pi 5.28592726336836e-1
+the_bessel_jy_wronskian_is_minus_two_over_pi_x 4.2173319344381727e-1
+the_beta_quantile_inverts_its_own_cdf 2.069457569104839e-1
+the_erf_round_trip_is_forward_stable 5.62827643488525e-1
+the_f32_airy_ai_tracks_f64 1.7578125e-1
+the_f32_digamma_tracks_f64 2.5e-1
+the_f32_erf_inv_tracks_f64 2.5e-1
+the_f32_erf_tracks_f64 1.5625e-1
+the_f32_erfc_tracks_f64 3.3274943112741406e-1
+the_f32_erfcx_tracks_f64 1.09375e-1
+the_f32_exp_int_ei_tracks_f64 2.5e-1
+the_f32_gamma_tracks_f64 1.19140625e-1
+the_f32_i0e_tracks_f64 1.796875e-1
+the_f32_i1e_tracks_f64 1.8359375e-1
+the_f32_j0_tracks_f64 2.1875e-1
+the_f32_k0e_tracks_f64 1.171875e-1
+the_f32_lambert_w_tracks_f64 9.375e-2
+the_f32_ln_gamma_tracks_f64 2.5e-1
+the_f32_sin_int_tracks_f64 1.875e-1
+the_f32_trigamma_tracks_f64 1.5625e-1
+the_gamma_quantile_inverts_its_own_cdf 5.811171966835261e-2
+the_lambert_w_is_accurate_beside_its_branch_point 2.1713096022452135e-2
+the_lambert_w_satisfies_its_defining_equation 3.1077002903337394e-2
+the_normal_quantile_inverts_its_own_cdf 2.82416877743883e-1
+the_scaled_airy_wronskian_is_one_over_pi 7.748261490373868e-1
+the_scaled_modified_bessel_wronskian_is_one_over_x 2.8909879880240963e-1

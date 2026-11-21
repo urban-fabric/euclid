@@ -1,6 +1,6 @@
 use crate::AngleRadians;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// An angle in **degrees**.

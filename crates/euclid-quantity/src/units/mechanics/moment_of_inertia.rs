@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AngularAccelerationRadiansPerSecondSquared, AngularMomentumKilogramMetersSquaredPerSecond,
     AngularVelocityRadiansPerSecond, AreaSquareMeters, MassKilograms, TorqueNewtonMeters,
 };
+use euclid_units::Measure;
 use euclid_units::MomentOfInertia;
+use euclid_units::dim;
 
 /// Moment of inertia in kilogram-meters squared (kg.m^2), the coherent SI unit.
 #[repr(transparent)]

@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AreaSquareMeters, CurrentAmperes, EnergyJoules, ForceNewtons, HeatFluxWattsPerSquareMeter,
     SpeedMs, TimeSeconds, VoltageVolts,
 };
+use euclid_units::Measure;
 use euclid_units::Power;
+use euclid_units::dim;
 
 /// Power in watts (W = J/s), the coherent SI unit.
 #[repr(transparent)]

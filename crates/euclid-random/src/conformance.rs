@@ -84,216 +84,14 @@
 //! five seeds including `0` is plenty; the laws run over every pair, and `0` is worth including
 //! because a multiplicative mixing function that forgets to handle it degenerates there.
 
-use euclid_scalar::{Element, Integer, Real};
+//! # The split
+//!
+//! This module passed the crate's 400-line budget, so each surface's laws now sit beside the trait
+//! they check and this file is the index: the carrier-supplied sample, and the re-exports that keep
+//! every public path exactly where it was.
 
-use crate::RandomSampler;
-
-/// The shape every law below draws at: a single scalar.
-///
-/// Scalar backends require `&[]`; array and dataframe backends interpret a non-empty shape in
-/// their own way. The key contract is independent of shape, so the suites use the one shape
-/// every backend must support.
-const SCALAR: &[usize] = &[];
-
-/// A carrier's own curated sample, declared once.
-///
-/// euclid's answer to proptest's `Arbitrary`, with the generator replaced by a fixed list. A
-/// carrier says which values stress *it*, and every suite in this module then draws from the
-/// same place rather than each call site inventing a sample and getting it slightly wrong.
-///
-/// Fixed rather than generated on purpose: a generator buys input breadth at the cost of
-/// reproducibility, turning a failure into a seed to recover rather than a value in the source.
-/// Keep samples small — the multi-operand laws run over every pair or triple, so `n` values
-/// cost `n²` or `n³` cases per law.
-pub trait ConformanceSample {
-    /// The seeds to derive keys from. Include `0` — a multiplicative mixing function that
-    /// forgets to handle it degenerates there.
-    fn seeds() -> Vec<u64>;
-}
-
-/// [`key_laws`] over a backend's own [`ConformanceSample`].
-pub fn key_laws_for<R>(what: &str)
-where
-    R: RandomSampler + ConformanceSample,
-    R::Real: PartialEq + core::fmt::Debug,
-{
-    key_laws::<R>(&R::seeds(), what);
-}
-
-/// The derivation laws: reproducibility, and that `split`/`fold_in` produce independent children
-/// deterministically.
-///
-/// Nine laws, all observed through draws:
-///
-/// 1. the same seed draws the same value, twice over — the headline promise
-/// 2. drawing does not disturb the key (it is a value, not a stream)
-/// 3. distinct seeds draw distinct values
-/// 4. `split` is a pure function of its key
-/// 5. `split(k, n)` returns exactly `n` children
-/// 6. `split(k, 0)` is empty
-/// 7. children are pairwise independent, and none reproduces its parent
-/// 8. `fold_in` is deterministic and depends on its data
-/// 9. `split` and `fold_in` are different derivations
-///
-/// Laws 3 and 7 are *inequality* claims, so a correct-but-unlucky backend could in principle
-/// fail them — a collision in the draw space is not a contract violation. In practice a
-/// mixing function that decorrelates at all will not collide on a handful of seeds, and a
-/// failure here is far more likely to be a missing domain separator than bad luck. If you hit
-/// one, change the seeds and see whether it persists.
-pub fn key_laws<R>(seeds: &[u64], what: &str)
-where
-    R: RandomSampler,
-    R::Real: PartialEq + core::fmt::Debug,
-{
-    let draw = |k: &R::Key| R::uniform(k, SCALAR, R::Real::zero(), R::Real::one());
-
-    for &s in seeds {
-        // 1. same seed, same draw
-        let k = R::key(s);
-        assert!(
-            draw(&k) == draw(&R::key(s)),
-            "{what}: key({s}) must draw the same value every time"
-        );
-
-        // 2. the key is a value, not a consumed stream
-        let first = draw(&k);
-        let second = draw(&k);
-        assert!(
-            first == second,
-            "{what}: drawing from a key must not disturb it"
-        );
-
-        // 4-7. split
-        let children = R::split(&k, 4);
-        assert_eq!(children.len(), 4, "{what}: split(k, 4) must return 4 keys");
-        assert!(
-            R::split(&k, 0).is_empty(),
-            "{what}: split(k, 0) must be empty"
-        );
-        let again = R::split(&k, 4);
-        for (i, (a, b)) in children.iter().zip(again.iter()).enumerate() {
-            assert!(
-                draw(a) == draw(b),
-                "{what}: split must be a pure function of its key (child {i} differs)"
-            );
-        }
-        for (i, c) in children.iter().enumerate() {
-            assert!(
-                draw(c) != first,
-                "{what}: child {i} must not reproduce its parent's draw"
-            );
-            for (j, d) in children.iter().enumerate().skip(i + 1) {
-                assert!(
-                    draw(c) != draw(d),
-                    "{what}: children {i} and {j} must be independent"
-                );
-            }
-        }
-
-        // 8. fold_in
-        let folded = R::fold_in(&k, 11);
-        assert!(
-            draw(&folded) == draw(&R::fold_in(&k, 11)),
-            "{what}: fold_in must be deterministic"
-        );
-        assert!(
-            draw(&folded) != draw(&R::fold_in(&k, 12)),
-            "{what}: fold_in must depend on its data"
-        );
-        assert!(
-            draw(&folded) != first,
-            "{what}: fold_in must not reproduce its parent's draw"
-        );
-
-        // 9. the two derivations are distinct
-        assert!(
-            draw(&R::split(&k, 1)[0]) != draw(&R::fold_in(&k, 0)),
-            "{what}: split and fold_in must be different derivations"
-        );
-    }
-
-    // 3. distinct seeds draw distinctly
-    for (i, &a) in seeds.iter().enumerate() {
-        for &b in seeds.iter().skip(i + 1) {
-            assert!(
-                draw(&R::key(a)) != draw(&R::key(b)),
-                "{what}: seeds {a} and {b} must draw different values"
-            );
-        }
-    }
-}
-
-/// The parameter laws: a draw must respect the distribution parameters it was given.
-///
-/// These are the cases where the answer is forced regardless of the algorithm, so they hold for
-/// any correct backend:
-///
-/// - `uniform(low, high)` lies within `[low, high]`
-/// - `uniform(x, x)` is exactly `x` — a degenerate range has one answer
-/// - `normal(mean, 0)` is exactly `mean` — zero variance has one answer
-/// - `bernoulli(0)` is always false and `bernoulli(1)` always true
-/// - `randint(low, high)` lies within `[low, high)`, and `randint(x, x+1)` is exactly `x`
-///
-/// Requires `PartialOrd` on the draw type, so this suite is for carriers with a host order. A
-/// deferred carrier whose comparisons yield masks should check the same properties through its
-/// own mask surface.
-pub fn sampler_bound_laws<R>(seeds: &[u64], what: &str)
-where
-    R: RandomSampler,
-    R::Real: PartialEq + PartialOrd + core::fmt::Debug,
-    R::Bool: PartialEq + core::fmt::Debug,
-    R::Int: PartialEq + PartialOrd + core::fmt::Debug,
-{
-    let zero = R::Real::zero();
-    let one = R::Real::one();
-    let two = R::Real::scalar(2.0);
-
-    for &s in seeds {
-        let k = R::key(s);
-
-        // uniform stays inside its range, and collapses on a degenerate one
-        let u = R::uniform(&k, SCALAR, zero.clone(), two.clone());
-        assert!(
-            u >= zero && u <= two,
-            "{what}: uniform(0, 2) drew {u:?}, outside [0, 2]"
-        );
-        assert!(
-            R::uniform(&k, SCALAR, one.clone(), one.clone()) == one,
-            "{what}: uniform(x, x) must be exactly x"
-        );
-
-        // zero variance has exactly one answer
-        assert!(
-            R::normal(&k, SCALAR, one.clone(), zero.clone()) == one,
-            "{what}: normal(mean, 0) must be exactly mean"
-        );
-
-        // the Bernoulli boundaries are forced
-        assert!(
-            R::bernoulli(&k, SCALAR, zero.clone()) == R::Bool::zero(),
-            "{what}: bernoulli(0) must be false"
-        );
-        assert!(
-            R::bernoulli(&k, SCALAR, one.clone()) == R::Bool::one(),
-            "{what}: bernoulli(1) must be true"
-        );
-
-        // randint respects its half-open interval
-        let lo = R::Int::zero();
-        let hi = R::Int::from_i64(3);
-        let n = R::randint(&k, SCALAR, lo.clone(), hi.clone());
-        assert!(
-            n >= lo && n < hi,
-            "{what}: randint(0, 3) drew {n:?}, outside [0, 3)"
-        );
-        let single = R::Int::zero();
-        let next = R::Int::one();
-        assert!(
-            R::randint(&k, SCALAR, single.clone(), next) == single,
-            "{what}: randint(x, x+1) must be exactly x"
-        );
-    }
-}
+mod key;
+mod sampler;
 
 /// The same laws over **generated** seeds, for a backend that wants the search rather than the
 /// five-seed sample.
@@ -319,97 +117,35 @@ where
 /// So the generator deduplicates by construction. That is the knowledge this module exists to
 /// ship.
 #[cfg(any(feature = "conformance-generated", test))]
-pub mod generated {
-    use euclid_stability::{Config, Gen, check, classify, generate};
+pub mod generated;
 
-    use super::{key_laws, sampler_bound_laws};
-    use crate::RandomSampler;
+// Re-exported so every public path this module has ever had still resolves: the
+// split is an internal rearrangement and no carrier should have to notice it.
+pub use key::{key_laws, key_laws_for};
+pub use sampler::sampler_bound_laws;
 
-    /// A seed, weighted toward the magnitudes a mixing function gets wrong.
-    ///
-    /// `0` first, because a multiplicative mixer that forgets to handle it degenerates there and
-    /// every derivation law then passes vacuously. The full-range draw is the other half — a
-    /// mixer that only shifts right loses the high bits — and the small values are what make a
-    /// first failure readable.
-    fn seed() -> Gen<u64> {
-        generate::weighted(vec![
-            (2, generate::just(0i64)),
-            (2, generate::just(1i64)),
-            (2, generate::just(-1i64)),
-            (3, generate::int(0, 64)),
-            (3, generate::int(i64::MIN, i64::MAX)),
-        ])
-        .map(|v| v as u64)
-    }
+use crate::RandomSampler;
+use euclid_scalar::{Element, Integer, Real};
 
-    /// Distinct seeds, deduplicated by construction rather than by rejection — see the module
-    /// docs for why that distinction matters here.
-    ///
-    /// Four is the widest worth running: the laws are quadratic in the sample and draw several
-    /// times per pair, so breadth comes from the case count instead.
-    fn seeds() -> Gen<Vec<u64>> {
-        generate::distinct(seed(), 1, 4)
-    }
+/// The shape every law below draws at: a single scalar.
+///
+/// Scalar backends require `&[]`; array and dataframe backends interpret a non-empty shape in
+/// their own way. The key contract is independent of shape, so the suites use the one shape
+/// every backend must support.
+const SCALAR: &[usize] = &[];
 
-    fn settings() -> Config {
-        Config::default()
-            .cases(300)
-            .require("contains zero", 5.0)
-            .require("a high-bit seed", 10.0)
-    }
-
-    /// [`key_laws`] over generated seeds.
-    ///
-    /// The coverage floors are part of the contract being checked, not decoration: a run that
-    /// never drew `0` would pass every derivation law vacuously on a degenerate mixer, and one
-    /// that never drew a high-bit seed would miss a mixer that only decorrelates the low half.
-    pub fn key_laws_generated<R>(what: &str)
-    where
-        R: RandomSampler,
-        R::Real: PartialEq + core::fmt::Debug,
-    {
-        check(what, &settings(), &seeds(), |xs: Vec<u64>| {
-            classify!("contains zero", xs.contains(&0));
-            classify!(
-                "a high-bit seed",
-                xs.iter().any(|s| *s > u64::from(u32::MAX))
-            );
-            key_laws::<R>(&xs, what);
-            Ok(())
-        });
-    }
-
-    /// [`sampler_bound_laws`] over generated seeds.
-    pub fn sampler_bound_laws_generated<R>(what: &str)
-    where
-        R: RandomSampler,
-        R::Real: PartialEq + PartialOrd + core::fmt::Debug,
-        R::Bool: PartialEq + core::fmt::Debug,
-        R::Int: PartialEq + PartialOrd + core::fmt::Debug,
-    {
-        check(what, &settings(), &seeds(), |xs: Vec<u64>| {
-            classify!("contains zero", xs.contains(&0));
-            classify!(
-                "a high-bit seed",
-                xs.iter().any(|s| *s > u64::from(u32::MAX))
-            );
-            sampler_bound_laws::<R>(&xs, what);
-            Ok(())
-        });
-    }
-
-    #[cfg(test)]
-    #[test]
-    fn generated_search_requires_seed_coverage() {
-        let config = settings();
-        assert!(config.cases >= 300);
-        for label in ["contains zero", "a high-bit seed"] {
-            assert!(
-                config
-                    .requirements
-                    .iter()
-                    .any(|(name, floor)| name == label && *floor > 0.0)
-            );
-        }
-    }
+/// A carrier's own curated sample, declared once.
+///
+/// euclid's answer to proptest's `Arbitrary`, with the generator replaced by a fixed list. A
+/// carrier says which values stress *it*, and every suite in this module then draws from the
+/// same place rather than each call site inventing a sample and getting it slightly wrong.
+///
+/// Fixed rather than generated on purpose: a generator buys input breadth at the cost of
+/// reproducibility, turning a failure into a seed to recover rather than a value in the source.
+/// Keep samples small — the multi-operand laws run over every pair or triple, so `n` values
+/// cost `n²` or `n³` cases per law.
+pub trait ConformanceSample {
+    /// The seeds to derive keys from. Include `0` — a multiplicative mixing function that
+    /// forgets to handle it degenerates there.
+    fn seeds() -> Vec<u64>;
 }

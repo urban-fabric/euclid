@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AreaSquareMeters, PowerWatts};
 use euclid_units::HeatFlux;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Heat flux in watts per square meter (W/m^2), the coherent SI unit.
 #[repr(transparent)]

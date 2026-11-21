@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{ChargeCoulombs, ResistanceOhms, TimeSeconds, VoltageVolts};
 use euclid_units::Capacitance;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Capacitance in farads (F = C/V), the coherent SI unit.
 #[repr(transparent)]

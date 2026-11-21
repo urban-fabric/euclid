@@ -1,5 +1,3 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AmountMoles, ChargeCoulombs, ForceNewtons, HeatCapacityJoulesPerKelvin, LengthMeters,
     MassKilograms, MolarEnergyJoulesPerMole, PowerWatts, PressurePascals,
@@ -7,6 +5,8 @@ use crate::{
     VolumeCubicMeters,
 };
 use euclid_units::Energy;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Energy in joules (J = N.m), the coherent SI unit.
 #[repr(transparent)]

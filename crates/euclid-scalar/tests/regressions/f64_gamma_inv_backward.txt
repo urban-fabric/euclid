@@ -1,0 +1,6 @@
+# Minimised counterexamples found by euclid-stability.
+# Commit this file: each line is a regression test that cost a random search to find,
+# and the runner replays them before searching for anything new.
+# The text after `::` is the case the tape rendered as, and is checked on load — a
+# mismatch means the generator changed and the tape no longer pins what it used to.
+00000000000000000000000000000000000000000000000000000000000000000000000000000000 # the_gamma_quantile_inverts_its_own_cdf :: (1e-10, 0.25)

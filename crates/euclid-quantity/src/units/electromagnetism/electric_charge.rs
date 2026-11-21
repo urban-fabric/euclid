@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     CapacitanceFarads, CurrentAmperes, ElectricFieldVoltsPerMeter, EnergyJoules, ForceNewtons,
     TimeSeconds, VoltageVolts,
 };
 use euclid_units::ElectricCharge;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Electric charge in coulombs (C = A.s), the coherent SI unit.
 #[repr(transparent)]

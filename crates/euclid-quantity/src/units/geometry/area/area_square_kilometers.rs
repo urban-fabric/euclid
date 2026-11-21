@@ -1,7 +1,7 @@
 use super::SQUARE_METERS_PER_SQUARE_KILOMETER;
 use crate::AreaSquareMeters;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// An area in **square kilometres**. One km² is 10⁶ m², not 10³ — the factor is squared

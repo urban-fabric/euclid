@@ -1,7 +1,7 @@
 use super::KG_PER_MILLIGRAM;
-use crate::conversion::dim;
 use crate::{MassGrams, MassKilograms};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A mass in **milligrams**. Exactly 1/10⁶ kg.

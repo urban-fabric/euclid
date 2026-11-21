@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AngularVelocityRadiansPerSecond, TimeSeconds};
 use euclid_units::AngularAcceleration;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Angular acceleration in radians per second squared (rad/s^2), the coherent SI unit.
 #[repr(transparent)]

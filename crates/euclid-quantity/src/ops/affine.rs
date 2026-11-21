@@ -39,7 +39,7 @@
 use core::marker::PhantomData;
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 
-use crate::LinearQuantity;
+use euclid_units::LinearQuantity;
 
 /// An absolute position in the affine space whose displacements are `Q`.
 ///

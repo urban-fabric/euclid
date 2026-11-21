@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AmountMoles, EnergyJoules};
+use euclid_units::Measure;
 use euclid_units::MolarEnergy;
+use euclid_units::dim;
 
 /// Molar energy in joules per mole (J/mol), the coherent SI unit.
 #[repr(transparent)]

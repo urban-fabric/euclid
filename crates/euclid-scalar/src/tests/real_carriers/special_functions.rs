@@ -5,7 +5,7 @@
 //!
 //! # Why a cross-precision budget cannot pin `erf_inv`
 //!
-//! `kernels/erf/f32.rs` kept **34** survivors after the cross-precision pass, nearly all of them
+//! `kernels/f32/erf.rs` kept **34** survivors after the cross-precision pass, nearly all of them
 //! in `erf_inv` — every Horner coefficient in both of its tables, and every operator in the
 //! Newton correction that used to follow them.
 //!
@@ -23,7 +23,7 @@
 //! any error the pair share. Measured at `f32` it reports a residual of `5.0e-7` for a function
 //! whose true error was `1.9e-6`, nearly four times larger.
 //!
-//! In [`erf_inv`](crate::kernels::erf::f32), the Newton step was making
+//! In [`erf_inv`](crate::kernels::f32::erf), the Newton step was making
 //! the f32 kernel **eight times less accurate** than its bare seed, because it divided `erf`'s own
 //! f32 error by a vanishing derivative. The thirty-four survivors were not reporting untestable
 //! coefficients behind a correct correction; they were reporting that the correction had destroyed

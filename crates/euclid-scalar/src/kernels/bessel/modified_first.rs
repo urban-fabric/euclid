@@ -34,15 +34,32 @@
 //! than a fixed-length polynomial.
 
 use super::asymptotic;
-use crate::kernels::gamma::ln_gamma;
-use core::f64::consts::TAU;
 
 /// Cap on the outward walk in either direction from the peak. The significant terms span
 /// `O(√x)` indices, so this covers arguments past `1e8` before it binds.
 const MAX_TERMS: u32 = 100_000;
 
-/// Relative size at which an outward term stops contributing.
-const TERM_EPS: f64 = 1e-22;
+/// Relative size at which a term stops contributing.
+///
+/// **`1e-19`, which is deliberately only a little below `f64`'s resolution.** `ε = 2.22e-16`, so
+/// a term at `1e-19` of the sum moves the result by about a thousandth of an ulp, and every term
+/// after it moves it by less. The value was `1e-22`, which asked the peak-relative `I` sums —
+/// which walk `O(√x)` terms — to converge three orders past the point where the format can
+/// represent the difference: iterations bought and then discarded.
+///
+/// Raising it to `1e-19` is **free rather than a trade.** The outputs are bit-identical across a
+/// 306,280-point sweep covering every kernel in this tree at both signs, while cutting `I₁ᵉ`
+/// by **6.8%**.
+///
+/// Timings are the minimum of six interleaved A/B runs of two prebuilt binaries pinned to idle
+/// cores, which cancels drift — this machine is shared, and a naive before/after on it reported
+/// swings of 2x on *identical* code.
+///
+/// `1e-18` was measured too, and is another 1-3% faster, but it is no longer bit-identical: it
+/// differs by up to 3 ulp on `Bi`. So `1e-19` is the last value that costs nothing at all, and
+/// the margin over `ε` is what pays for a series whose tail is amplified by `largest/sum` where
+/// it cancels.
+const TERM_EPS: f64 = 1e-19;
 
 /// The `I₀` series summed **relative to its peak term** at index `k_peak`, so the result is
 /// `O(√x)` and cannot overflow. Shared by `ln_i0_sum` and the ratio.
@@ -81,29 +98,60 @@ fn i0_rel_sum(h: f64, k_peak: f64) -> f64 {
     sum
 }
 
-/// Above this peak index the Stirling remainder is taken from its asymptotic series; below it,
-/// from `ln_gamma` directly. At `k = 20` the first omitted term, `−691/(360360·k¹¹)`, is
-/// `1e-17`.
-const STIRLING_ASYMPTOTIC_MIN: f64 = 20.0;
-
-/// The Stirling remainder `μ(k) = lnΓ(k+1) − (k ln k − k + ½ln(2πk))`.
+/// The Stirling remainder `μ(k) = lnΓ(k+1) − (k ln k − k + ½ln(2πk))`, for integer `k`.
 ///
 /// Needed in its own right rather than as a difference, because `μ(k) ≈ 1/(12k)` is tiny
-/// while the two terms defining it are `O(k ln k)` — forming it by subtraction at `k = 5e5`
-/// would leave nothing. The asymptotic series `1/(12k) − 1/(360k³) + ⋯` has no such problem
-/// and is exact to rounding for any `k` large enough to matter.
+/// while the two terms defining it are `O(k ln k)`.
+///
+/// # A table, because only nine arguments are reachable and both formulas are poor there
+///
+/// This was `lnΓ(k+1) − (k ln k − k + ½ln(2πk))` below `k = 20` and the asymptotic series above,
+/// and the small-`k` arm carried a comment saying "the defining difference is between `O(1)`
+/// quantities, so it is safe". **It is not.** At `k = 7` the two terms are `8.525161` and
+/// `8.513265`, leaving `0.0119` — they are `O(8.5)`, and the subtraction discards:
+///
+/// ```text
+/// k         1     2     3     4     5     6     7     8
+/// bits lost  —   4.1   6.0   7.3   8.2   8.9   9.5  10.0
+/// ```
+///
+/// Those bits land in an exponent that [`ln_peak_core_scaled`] hands to `exp`, so they become
+/// relative error in `I₀ᵉ` and `I₁ᵉ` directly.
+///
+/// The asymptotic series is no help at that end — its first omitted term,
+/// `−691/(360360·k¹¹)`, is `9.7e-13` at `k = 7`, which is *worse* than the cancellation. Both
+/// forms are poor over exactly the range that is reachable, and the reachable range is small and
+/// discrete: `k = round(|x|/2)` with `|x| ∈ [I1_NO_LOG_MAX, I_ASYMPTOTIC_MIN) = [1, 17)`, so
+/// `k ∈ {1, …, 8}`. Nine entries cover it with one to spare.
+///
+/// Each is `μ(k)` evaluated at 256 bits in MPFR and rounded to nearest, so the only error left
+/// is the representation — half an ulp of a number near `0.01`, against the `10` bits the
+/// subtraction was losing. It is also cheaper than the `ln_gamma` call it replaces.
+const STIRLING_REMAINDER: [f64; 9] = [
+    0.081_061_466_795_327_26,  // k = 1
+    0.041_340_695_955_409_3,   // k = 2
+    0.027_677_925_684_998_34,  // k = 3
+    0.020_790_672_103_765_093, // k = 4
+    0.016_644_691_189_821_193, // k = 5
+    0.013_876_128_823_070_748, // k = 6
+    0.011_896_709_945_891_77,  // k = 7
+    0.010_411_265_261_972_096, // k = 8
+    0.009_255_462_182_712_733, // k = 9
+];
+
+/// `μ(k)` from the table, for the integer `k` the peak index always is.
+///
+/// Indexed rather than computed, and asserted rather than clamped: a `k` outside the table means
+/// the reachable range has changed — [`I_ASYMPTOTIC_MIN`] moved, or a new caller appeared — and
+/// that needs a longer table rather than a silent fallback to a formula this documents as unfit.
 fn stirling_remainder(k: f64) -> f64 {
-    if k >= STIRLING_ASYMPTOTIC_MIN {
-        let inv = 1.0 / k;
-        let inv2 = inv * inv;
-        inv * (1.0 / 12.0
-            + inv2
-                * (-1.0 / 360.0 + inv2 * (1.0 / 1260.0 + inv2 * (-1.0 / 1680.0 + inv2 / 1188.0))))
-    } else {
-        // Small k: the defining difference is between O(1) quantities, so it is safe, and the
-        // asymptotic series would not yet have converged.
-        ln_gamma(k + 1.0) - (k * k.ln() - k + 0.5 * (TAU * k).ln())
-    }
+    debug_assert!(
+        (1.0..=9.0).contains(&k) && k.fract() == 0.0,
+        "the Stirling table covers integer k in 1..=9; k = {k} is outside it"
+    );
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    let index = (k as usize).clamp(1, 9) - 1;
+    STIRLING_REMAINDER[index]
 }
 
 /// `2k·ln h − 2·lnΓ(k+1) − 2h`, the shared log-domain core of both scaled peak terms.
@@ -124,7 +172,149 @@ fn stirling_remainder(k: f64) -> f64 {
 /// reason — `h/k` is within half a unit of 1.
 fn ln_peak_core_scaled(h: f64, k: f64) -> f64 {
     debug_assert!(k >= 1.0);
-    2.0 * k * ((h - k) / k).ln_1p() + 2.0 * (k - h) - (TAU * k).ln() - 2.0 * stirling_remainder(k)
+    2.0 * k * ((h - k) / k).ln_1p() + 2.0 * (k - h)
+        - crate::math::log_domain::ln_tau_times(k)
+        - 2.0 * stirling_remainder(k)
+}
+
+/// Below this argument the `k = 0` term is the peak, and `I₁` is formed without a logarithm.
+///
+/// `k_peak = round(x/2)` is zero exactly when `x < 1`, and there `t₀ = x/2` precisely — so
+/// `I₁ = (x/2)·Σ` needs no `exp(ln t₀ + ⋯)` round trip at all.
+///
+/// Worth its own path because that round trip is lossy for small `x`: `ln(x/2)` is `−691` at
+/// `x = 1e-300`, carrying `ε·691 ≈ 1.5e-13` of *absolute* error, which the final `exp` converts
+/// into the same amount of *relative* error. Measured 3.5e-14 at `x = 1e-300` before this
+/// existed — worse than the 1.7e-14 the surface documents — while `I₁(x) ~ x/2` is a perfectly
+/// conditioned limit that ought to come back exact.
+pub(super) const I1_NO_LOG_MAX: f64 = 1.0;
+
+/// At or above this argument the scaled `I` functions use their asymptotic expansion rather
+/// than the peak-factored series.
+///
+/// This closes a hole rather than saving time. The series walks `O(√x)` terms outward from the
+/// peak, and two things go wrong as that count grows: the naive accumulation drifts like
+/// `√n·ε`, and past `MAX_TERMS` the walk is simply cut short. Measured against the asymptotic
+/// form, `I₀ᵉ` carried
+///
+/// ```text
+/// x = 1e8   4.9e-14        x = 1e10   4.5e-2
+/// x = 1e9   2.5e-10        x = 1e12   8.4e-1
+/// ```
+///
+/// — the last two being truncation, not rounding, and silently finite.
+///
+/// # `20`, lowered from `1e4`, because the old figure priced a fixed four-term expansion
+///
+/// The previous justification was that the expansion's "first omitted term is `|a₄|/x⁴ ≈ 1.1e-17`,
+/// below half an ulp" at `1e4`. That is the right calculation for a **four-term** expansion, and
+/// [`asymptotic::i_scaled`] is not one: it walks to the *minimum* term of the divergent series,
+/// capped at `MAX_TERMS = 200` with a `TERM_EPS` of `1e-19` that is far below `ε` and so never
+/// stops it early. The constant was set by a constraint the code had already stopped having.
+///
+/// Measured densely — 20,000 points per window — the expansion's optimal truncation against the
+/// peak-factored series' actual error:
+///
+/// ```text
+/// x            expansion truncation   series route
+/// 12                 27212 ulp            9311 ulp
+/// 15                    60                  53
+/// 16                   8.7                  58
+/// [20,  25]            0.125                 59
+/// [25,  30]            0.125                 62
+/// [30,  40]            0.125                 75
+/// [40, 100]            0.125                 10
+/// ```
+///
+/// Two things follow. The expansion is the better of the two from `x = 18` upward, by up to
+/// **500×**, and the series is at its *worst* exactly where the old threshold kept it — `[20, 40]`
+/// is both the series' worst region and deep inside the expansion's good one.
+///
+/// And the floor is a cliff rather than a slope, which is what sets the constant: `0.125` ulp at
+/// `20`, `8.7` at `16`, `27212` at `12`. That is the signature of a divergent series' optimal
+/// truncation, which falls off super-exponentially. `20` sits on the flat side with the cliff a
+/// fifth of a decade below; going lower buys a region the series already handles adequately and
+/// risks the part that is unusable.
+///
+/// After that change `I₀ᵉ` and `I₁ᵉ` are within **2.11 ulp uniformly from `x = 20` to `1e5`**,
+/// against 57–75 ulp over `[20, 40]` and 4–8 over `[1e3, 1e4]` before.
+///
+/// # `17`, lowered from `20` by a no-regression search against MPFR
+///
+/// The `20` above was argued from the *shape* of the cliff — "`0.125` ulp at `20`, `8.7` at `16`,
+/// `27212` at `12`" — and placed on the flat side of it. That reasoning is right and the figures
+/// were taken from the expansion alone, without the series' own error beside them. Measured
+/// against MPFR at adaptive precision, worst `I₀ᵉ` error over 30 points per unit band, with the
+/// threshold forced down so both routes can be seen over the same arguments:
+///
+/// ```text
+/// x        [11,12) [12,13) [13,14) [14,15) [15,16) [16,17) [17,18) [18,19) [19,20) [20,21)
+/// series        24      27      71      68      56      54      78      79      25       5
+/// expansion 485573   60261    7530     948     120      16       7       6       6       5
+/// ```
+///
+/// The expansion overtakes the series at `16` and is flat from `17` — six or seven ulp, which is
+/// what it holds for the rest of the axis. So `[17, 20)` was being served at 78, 79 and 25 ulp by
+/// a route that is both **less accurate and more expensive** there: the benchmark puts the
+/// peak-shifted sum at `41.8 ns` against the expansion's `30.2 ns`.
+///
+/// `17` rather than `16` for the margin. The expansion's degradation below the crossover is
+/// super-exponential — `120` ulp at `15`, `948` at `14`, half a million at `11` — so a threshold
+/// one unit above where it merely *ties* is too close to that. At `17` it is already at its
+/// asymptotic floor, two units clear.
+///
+/// This does not move the family's worst case, and that is worth saying plainly: `[13, 16)` is
+/// still the series at 56–71 ulp, which is the `1.7e-14` the surface documents. What it fixes is
+/// four units of argument that were three times worse than the band above them for no reason.
+///
+/// Below the threshold the series is short and accurate; above it, it is never used.
+pub(super) const I_ASYMPTOTIC_MIN: f64 = 17.0;
+
+/// Which of the three forms of the `I` series a magnitude selects.
+///
+/// Named rather than left as a chain of comparisons because the choice *is* the numerics, and
+/// because the same split was re-tested in five functions — `ln_i0_minus_x`, [`i0e`], [`i1`],
+/// [`i1e`] and [`i1_over_i0`] — against two constants, each site spelling out only the arms it
+/// happened to need.
+///
+/// # Mutation testing is what asked for this
+///
+/// `replace < with <=` on `i1e`'s `ax < I1_NO_LOG_MAX` survived the entire suite, and it is not
+/// an equivalent mutant: it moves `|x| = 1` from the peak-factored form to the no-logarithm one.
+/// No *value* assertion can catch it, because the crossover is sited exactly where the two forms
+/// agree — that is what makes it a good crossover. The decision is the thing worth pinning, so
+/// it becomes a named function and the sibling test module asserts the routing directly. The `f32`
+/// peer was given this treatment first and killed the same mutant.
+///
+/// The two boundaries are one split rather than two, which the constants do not show:
+/// `ln_i0_minus_x` tested `k_peak < 1.0` separately, and since `k_peak = round(|x|/2)` that is
+/// below one exactly when `|x| < 1` — which is [`I1_NO_LOG_MAX`] itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum IForm {
+    /// `|x| < I1_NO_LOG_MAX`: the peak is the `k = 0` term, so no logarithm is formed.
+    NoLog,
+    /// `I1_NO_LOG_MAX <= |x| < I_ASYMPTOTIC_MIN`: the peak-relative power series.
+    PeakFactored,
+    /// `|x| >= I_ASYMPTOTIC_MIN`: the divergent asymptotic expansion.
+    Asymptotic,
+}
+
+impl IForm {
+    /// The regime `ax` falls in, for a non-negative magnitude.
+    ///
+    /// Open below [`I1_NO_LOG_MAX`] and closed at [`I_ASYMPTOTIC_MIN`], matching the constants'
+    /// names. `|x| = 1` is [`Self::PeakFactored`], which is what `k_peak = round(0.5) = 1`
+    /// already made it.
+    pub(super) fn for_magnitude(ax: f64) -> Self {
+        debug_assert!(ax >= 0.0);
+        if ax < I1_NO_LOG_MAX {
+            Self::NoLog
+        } else if ax >= I_ASYMPTOTIC_MIN {
+            Self::Asymptotic
+        } else {
+            Self::PeakFactored
+        }
+    }
 }
 
 /// `ln I₀(|x|) − |x|`, the scaled log from which every `I₀` form is derived.
@@ -133,12 +323,14 @@ fn ln_i0_minus_x(ax: f64) -> f64 {
     if ax == 0.0 {
         return 0.0; // I0(0) = 1
     }
-    if ax >= I_ASYMPTOTIC_MIN {
-        return asymptotic::i_scaled(0.0, ax).ln();
+    match IForm::for_magnitude(ax) {
+        IForm::Asymptotic => return asymptotic::i_scaled(0.0, ax).ln(),
+        IForm::NoLog | IForm::PeakFactored => {}
     }
     let h = ax * 0.5;
     let k_peak = h.round().max(0.0);
-    if k_peak < 1.0 {
+    // `NoLog` is exactly `k_peak < 1`; see `IForm`.
+    if matches!(IForm::for_magnitude(ax), IForm::NoLog) {
         // The peak is the k = 0 term, which is exactly 1, so `ln t_peak` is exactly 0 and
         // there is nothing to factor out.
         //
@@ -204,7 +396,7 @@ fn i1_rel_sum(h: f64, k_peak: f64) -> f64 {
 ///
 /// Asserted rather than handled, and the assertion replaced a dead branch. `k_peak` is
 /// `round(ax/2)`, which is below 1 exactly when `ax < 1` — and both callers send `ax < 1` to
-/// [`i1_no_log`] instead, precisely because the logarithm round trip is lossy there. So the
+/// `scaled::i1_no_log` instead, precisely because the logarithm round trip is lossy there. So the
 /// `k_peak < 1` arm this function used to open with could not be reached, and a dense sweep of
 /// 20,700 arguments at both precisions, both signs, across all four entry points confirmed it:
 /// a `panic!()` in that arm never fired.
@@ -225,153 +417,9 @@ fn ln_i1_minus_x(ax: f64) -> f64 {
     h.ln() - (k_peak + 1.0).ln() + ln_peak_core_scaled(h, k_peak) + i1_rel_sum(h, k_peak).ln()
 }
 
-/// `ln I₁(|x|)`.
-fn ln_i1_sum(ax: f64) -> f64 {
-    ln_i1_minus_x(ax) + ax
-}
+// Visible across the family rather than private, because the sibling test module asserts
+// `LnI0Form`'s table directly and says so by naming this path.
+pub(in crate::kernels::bessel) mod scaled;
 
-/// At or above this argument the scaled `I` functions use their asymptotic expansion rather
-/// than the peak-factored series.
-///
-/// This closes a hole rather than saving time. The series walks `O(√x)` terms outward from the
-/// peak, and two things go wrong as that count grows: the naive accumulation drifts like
-/// `√n·ε`, and past `MAX_TERMS` the walk is simply cut short. Measured against the asymptotic
-/// form, `I₀ᵉ` carried
-///
-/// ```text
-/// x = 1e8   4.9e-14        x = 1e10   4.5e-2
-/// x = 1e9   2.5e-10        x = 1e12   8.4e-1
-/// ```
-///
-/// — the last two being truncation, not rounding, and silently finite.
-///
-/// `1e4` is where the expansion becomes the better of the two: its first omitted term is
-/// `|a₄|/x⁴ ≈ 1.1e-17`, below half an ulp, while the series still has only ~200 terms there and
-/// so has drifted by less than `1e-15`. Below the threshold the series is never long enough to
-/// be a problem; above it, it is never used.
-pub(super) const I_ASYMPTOTIC_MIN: f64 = 1e4;
-
-/// The modified Bessel function `I₀(x)` (even in `x`).
-///
-/// Overflows for `|x| ≳ 710`, as the true value does; use [`i0e`] or [`ln_i0`] there.
-pub(crate) fn i0(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    ln_i0_sum(x.abs()).exp()
-}
-
-/// Below this argument the `k = 0` term is the peak, and `I₁` is formed without a logarithm.
-///
-/// `k_peak = round(x/2)` is zero exactly when `x < 1`, and there `t₀ = x/2` precisely — so
-/// `I₁ = (x/2)·Σ` needs no `exp(ln t₀ + ⋯)` round trip at all.
-///
-/// Worth its own path because that round trip is lossy for small `x`: `ln(x/2)` is `−691` at
-/// `x = 1e-300`, carrying `ε·691 ≈ 1.5e-13` of *absolute* error, which the final `exp` converts
-/// into the same amount of *relative* error. Measured 3.5e-14 at `x = 1e-300` before this
-/// existed — worse than the 1.7e-14 the surface documents — while `I₁(x) ~ x/2` is a perfectly
-/// conditioned limit that ought to come back exact.
-pub(super) const I1_NO_LOG_MAX: f64 = 1.0;
-
-/// `I₁(|x|)` for `|x| < I1_NO_LOG_MAX`, straight from the series with no logarithm.
-fn i1_no_log(h: f64) -> f64 {
-    h * i1_rel_sum(h, 0.0)
-}
-
-/// The modified Bessel function `I₁(x)` (odd in `x`).
-pub(crate) fn i1(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    let ax = x.abs();
-    let magnitude = if ax < I1_NO_LOG_MAX {
-        i1_no_log(ax * 0.5)
-    } else {
-        ln_i1_sum(ax).exp()
-    };
-    if x < 0.0 { -magnitude } else { magnitude }
-}
-
-/// The exponentially-scaled `I₀ᵉ(x) = e^{−|x|} I₀(x)`, finite for every argument.
-pub(crate) fn i0e(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    let ax = x.abs();
-    if ax.is_infinite() {
-        return 0.0;
-    }
-    if ax >= I_ASYMPTOTIC_MIN {
-        return asymptotic::i_scaled(0.0, ax);
-    }
-    ln_i0_minus_x(ax).exp()
-}
-
-/// The exponentially-scaled `I₁ᵉ(x) = e^{−|x|} I₁(x)`.
-pub(crate) fn i1e(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    let ax = x.abs();
-    if ax.is_infinite() {
-        return 0.0;
-    }
-    let magnitude = if ax < I1_NO_LOG_MAX {
-        i1_no_log(ax * 0.5) * (-ax).exp()
-    } else if ax >= I_ASYMPTOTIC_MIN {
-        asymptotic::i_scaled(1.0, ax)
-    } else {
-        ln_i1_minus_x(ax).exp()
-    };
-    if x < 0.0 { -magnitude } else { magnitude }
-}
-
-/// `I₁(x) / I₀(x)`, in `(−1, 1)`.
-///
-/// Both series peak at the same index `k`, and at that index the two peak terms differ by
-/// exactly `ln h − ln(k+1)`. So the ratio is
-///
-/// ```text
-/// I₁/I₀ = h/(k+1) · sum₁/sum₀
-/// ```
-///
-/// where both sums are the peak-relative ones. Every quantity here is `O(1)`: the large
-/// factors cancel *symbolically* rather than by subtracting two big logarithms. That matters
-/// because those logarithms are `O(x)` — at `x = 400` they are around 400 while their
-/// difference is around 0.0025, so even a relative error of `1e-7` in each would swamp the
-/// answer. This form has no such cancellation at any argument or precision.
-pub(crate) fn i1_over_i0(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    let ax = x.abs();
-    if ax == 0.0 {
-        return 0.0;
-    }
-    if ax.is_infinite() {
-        return if x < 0.0 { -1.0 } else { 1.0 };
-    }
-    if ax >= I_ASYMPTOTIC_MIN {
-        let ratio = asymptotic::i_scaled(1.0, ax) / asymptotic::i_scaled(0.0, ax);
-        return if x < 0.0 { -ratio } else { ratio };
-    }
-    let h = ax * 0.5;
-    let k_peak = h.round().max(0.0);
-    let ratio = (h / (k_peak + 1.0)) * (i1_rel_sum(h, k_peak) / i0_rel_sum(h, k_peak));
-    if x < 0.0 { -ratio } else { ratio }
-}
-
-/// `ln I₀(x)`, the overflow-free log of `I₀`.
-///
-/// Taken straight from the peak-factored sum, so it needs no `e^{|x|}` round trip and stays
-/// accurate for every argument.
-pub(crate) fn ln_i0(x: f64) -> f64 {
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    let ax = x.abs();
-    if ax.is_infinite() {
-        return f64::INFINITY;
-    }
-    ln_i0_sum(ax)
-}
+// The surface is carved out of the sums above, so the parent hands the public functions back out.
+pub(crate) use scaled::{i0, i0e, i1, i1_over_i0, i1e, ln_i0};

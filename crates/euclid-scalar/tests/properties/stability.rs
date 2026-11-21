@@ -1,59 +1,163 @@
-//! Seams, wiggle, and forward stability — the properties a pointwise accuracy test cannot see.
+//! Shared helpers for the stability suites.
 //!
-//! `src/tests/accuracy` checks values at chosen arguments. That cannot detect either of the
-//! defects here, because both are about the *relationship between neighbouring* results rather
-//! than about any single one:
+//! Split by sub-topic, because one file carrying all of it went past this crate's 400-line
+//! budget:
 //!
-//! - a **seam** is a discontinuity at an algorithm crossover, so every value on one side is
-//!   systematically off while each individual value looks plausible;
-//! - **wiggle** is ulp-level non-monotonicity, where every value is within tolerance but the
-//!   sequence goes backwards — which breaks a root-find or a quantile inversion built on top.
+//! - [`conditioned`] — error budgets set by `κ(x)·u` rather than by a literal, against closed
+//!   forms and cross-family identities; and the six relations this suite had never used.
+//! - [`recurrences`] — shift identities as metamorphic references: the same kernel at another
+//!   argument, combined exactly, so no oracle and no invented tolerance.
+//! - [`seams`] — no kernel may jump at an algorithm crossover. Forty-five kernels, each at the
+//!   generic threshold list plus the constants its own source names.
+//! - [`wiggle`] — ulp-level monotonicity: which kernels have none, and measured budgets for the
+//!   ones that do.
+//! - [`range`] — the contract a kernel owes over the *whole format*: no `NaN` where the value is
+//!   real, no infinity where it is representable, and the documented bounds.
+//! - [`log_domain`] — the same contract for the log-domain and logistic family, which `range`
+//!   omitted entirely. These are the kernels that exist *because* the naive composition
+//!   saturates, so "finite at every finite argument" is their specification rather than a
+//!   quality metric, and it is asserted against the `std` forms they replace.
+//! - [`limits`] — every kernel against its exact leading term as the argument approaches zero,
+//!   which is an *analytic* reference and so needs no wider float.
+//! - [`asymptotics`] — the mirror of [`limits`] at the other end of the format. Not the same test
+//!   twice: a kernel's small- and large-argument branches are different code, so `limits`
+//!   exercises the series route and this one the asymptotic route, and neither sees the other.
+//! - [`log_pairs`] — the *two*-argument members of that family, on a `2,476 × 2,476` grid. Their
+//!   failure mode lives in the pair rather than either argument, so a one-argument sweep cannot
+//!   reach it: combining two numbers whose exponentials would each overflow is the entire job.
+//! - [`f32_range`] — the `NaN`-and-bounds contract for **fifty-four** `f32` kernels, which is
+//!   more of the narrow surface than any other file reaches. None of the numbers carry over from
+//!   [`range`]: `f32` stops at `3.4e38` and its `EPSILON` is `1.19e-7`, so every boundary moves.
+//! - [`f32_saturation`] — where those kernels reach the edge of the format, asserted as formulas
+//!   in `f32`'s own parameters rather than as constants, plus a regression pin for the `I₀ᵉ(1e38)`
+//!   overflow this crate once shipped.
+//! - [`f32_exhaustive`] — every `f32` around each kernel's overflow and underflow thresholds,
+//!   against the wide peer's *classification*. The one file here that found real defects: four
+//!   premature saturations, all invisible to [`f32_range`]'s 628 probes.
+//! - [`oscillatory`] — `J` and `Y` above `1e8`, where the phase is unrecoverable and every
+//!   pointwise test gives out. Uses the phase-free modulus `J² + Y²`, and first measures that the
+//!   `J`/`Y` Wronskian cannot stand in for it.
+//! - [`scaled_siblings`] — each plain kernel's saturation judged by its own scaled sibling, which
+//!   records the factor it divides out and so gives `ln|value|` free. The only oracle here that
+//!   needs no reference at all and works identically in both precisions.
+//! - [`narrow_models`] — the three `f32` kernels whose allowance is a *function* of the argument
+//!   rather than a constant: `ndtr`'s `x²`, `rgamma`'s `|lnΓ|`, `cos_int`'s flat absolute error.
+//!   All three topped a plain ulp ranking and none is a defect; the file records why.
+//! - [`symmetry_exact`] — every odd kernel negates and every even one repeats, at **zero ulps**.
+//!   The cheapest oracle here and the only one asserted exactly; it found `atanh` delegating to a
+//!   `std` implementation that is not odd, in both precisions.
+//! - [`exact_values`] — closed forms at exactly-representable arguments, where the reference
+//!   needs no construction at all, plus the `±∞` and `NaN` limits that [`range`]'s finite probe
+//!   set filters out. Found `lnΓ(1)` returning `−8.88e-16` for an exact zero.
+//! - [`cross_precision`] — the `f32` kernels against their wide peer rounded to `f32`, which is
+//!   the only bound that does not charge a narrow kernel for being narrow.
+//! - [`inverses`] — the `f64` inverses against their own backward error, which is the only
+//!   accuracy statement available for them without a wider float.
+//! - `round_trip` — `erf_inv(erf(x))` against its two-stage forward-stability bound. Left here
+//!   rather than moved, because it owns a budget baseline and a regression tape.
 //!
-//! # What this suite found, and what it does about it
-//!
-//! Scanning fifteen kernels at twenty-five likely thresholds turned up **no seams at all**,
-//! which is a real and reassuring result: the algorithm crossovers in this crate agree with
-//! each other to within a few ulps. That is asserted below, so a future crossover that does not
-//! agree fails here.
-//!
-//! The monotonicity scan found plenty, and the honest treatment is to **measure and pin** rather
-//! than to assert an ideal nobody promised. Over 50,000 consecutive representable inputs:
-//!
-//! | kernel | inverting pairs | worst inversion |
-//! |---|---|---|
-//! | `erf`, `erfc`, `digamma`, `tanh`, `exp`, `ln` | none | — |
-//! | `erf` near 2 | 0.008% | 1 ulp |
-//! | `sinc` near 0.5 | 6.2% | 1 ulp |
-//! | `ln_gamma` near 10 | 6.1% | 2 ulp |
-//! | `gamma` near 3 | 23.2% | 9 ulp |
-//! | `ln_gamma` near 3 | 31.1% | 24 ulp |
-//! | `erfcx` near 1 | 47.4% | 15 ulp |
-//!
-//! None of this contradicts the crate's documented contract, which claims *relative* accuracy
-//! around `1e-14` and never claims ulp monotonicity. The arithmetic is consistent with it: at
-//! `x = 3`, `ln_gamma` has derivative `0.92` and `ulp(3) = 4.4e-16`, so the true step between
-//! adjacent inputs is about 3.7 ulps of the output — and a kernel with ±12 ulps of noise will
-//! step backwards about a third of the time. The accuracy is as advertised; the *spacing* is
-//! finer than the accuracy, and that is what produces the inversions.
-//!
-//! It is still worth knowing, for one concrete reason: **do not root-find naively on these.**
-//! A bisection or Newton iteration over `ln_gamma` or `erfcx` near these points cannot converge
-//! to the last few ulps, because the function it is searching is not monotone there. An
-//! inverse built on one needs to stop at the accuracy of the forward kernel rather than at the
-//! resolution of the format.
-//!
-//! The counts below are therefore *budgets*. Today's behaviour passes; a kernel that gets worse
-//! fails. A kernel that gets better also fails, which is deliberate — the number is a recorded
-//! measurement, and improving it should be a visible decision rather than a silent drift.
+//! What the suite is for, and why a pointwise accuracy test cannot replace it: both a seam and a
+//! wiggle are about the *relationship between neighbouring* results rather than any single one.
+//! A seam is a discontinuity at a crossover, so every value on one side is systematically off
+//! while each looks plausible alone; wiggle is non-monotonicity inside tolerance, which breaks a
+//! root-find built on top. See each child for what it found.
 
 use euclid_scalar::Real;
 use euclid_stability::numeric::{LIKELY_THRESHOLDS, hunt_seams, next_up, scan_monotone};
 
-/// A named kernel, for the scan tables below.
-type Kernel = (&'static str, fn(f64) -> f64);
-
 /// A named kernel with a scan start and whether it should be increasing there.
 type MonotoneCase = (&'static str, fn(f64) -> f64, f64, bool);
+
+/// Never — the kernel must be real-valued everywhere in its domain.
+///
+/// Shared, because "`NaN` is never the right answer here" is the common case: it is every row of
+/// [`range`] bar three, and every row of [`log_domain`].
+fn never(_: f64) -> bool {
+    false
+}
+
+/// Inputs spanning the whole format: both signs, every decade, the subnormals, the extremes.
+///
+/// Shared by [`range`] and [`log_domain`], which both need the *whole format* rather than a
+/// comfortable interval — that is the entire point of a range contract, and a second copy of this
+/// list would be a second thing to keep in step.
+fn whole_format_probes() -> Vec<f64> {
+    let mut v: Vec<f64> = vec![
+        0.0,
+        -0.0,
+        f64::MIN_POSITIVE,
+        -f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        -f64::from_bits(1),
+        f64::from_bits(2),
+        f64::MAX,
+        f64::MIN,
+        1.0 - f64::EPSILON / 2.0,
+        1.0 + f64::EPSILON,
+        -1.0 + f64::EPSILON / 2.0,
+    ];
+    let mut e = -323i32;
+    while e <= 308 {
+        let decade = 10f64.powi(e);
+        if decade.is_finite() && decade > 0.0 {
+            // A non-integer multiplier matters: `1e3` and `3e3` are integers, so a sweep built
+            // only from them tests `Γ` and `ψ` exclusively at their poles and never between.
+            for scale in [1.0, 1.5, 3.0, 7.25] {
+                let x = decade * scale;
+                if x.is_finite() {
+                    v.push(x);
+                    v.push(-x);
+                }
+            }
+        }
+        e += 1;
+    }
+    v
+}
+
+/// The same sweep in `f32`: both signs, every decade, the subnormals, the extremes.
+///
+/// Not [`whole_format_probes`] cast down, which would be a different and much weaker test — the
+/// `f64` list runs to `1e308`, and casting that to `f32` gives infinity, so three quarters of it
+/// would be discarded as non-finite before the kernel saw it. `f32`'s own format has to be swept
+/// on its own terms: `MAX` is `3.4e38`, the smallest subnormal is `1.4e-45`, and `EPSILON` is
+/// `1.19e-7`, so every boundary worth probing sits somewhere different.
+fn narrow_format_probes() -> Vec<f32> {
+    let mut v: Vec<f32> = vec![
+        0.0,
+        -0.0,
+        f32::MIN_POSITIVE,
+        -f32::MIN_POSITIVE,
+        f32::from_bits(1),
+        -f32::from_bits(1),
+        f32::from_bits(2),
+        f32::MAX,
+        f32::MIN,
+        1.0 - f32::EPSILON / 2.0,
+        1.0 + f32::EPSILON,
+        -1.0 + f32::EPSILON / 2.0,
+        1.0,
+        -1.0,
+    ];
+    let mut e = -45i32;
+    while e <= 38 {
+        let decade = 10f32.powi(e);
+        if decade.is_finite() && decade > 0.0 {
+            // Non-integer multipliers for the same reason as the wide list: `Γ` and `ψ` have
+            // their poles at the negative integers, and a sweep built only from `±10^e` would
+            // test them nowhere else.
+            for scale in [1.0f32, 1.5, 3.0, 7.25] {
+                let x = decade * scale;
+                if x.is_finite() {
+                    v.push(x);
+                    v.push(-x);
+                }
+            }
+        }
+        e += 1;
+    }
+    v
+}
 
 /// Consecutive representable inputs scanned by each monotonicity test.
 const STEPS: usize = 50_000;
@@ -110,119 +214,6 @@ fn assert_budget(
     );
 }
 
-// ===== Seams ==============================================================
-
-/// No kernel may have a discontinuity at an algorithm crossover.
-///
-/// This is the strongest assertion in the suite and the one with no caveats: a continuous
-/// function cannot jump, so any jump is a bug. The scan needs no reference value and no
-/// knowledge of where the branches are — it only requires that stepping the input one ulp
-/// cannot move the output a thousand times further than the derivative allows.
-#[test]
-fn no_kernel_has_a_seam_at_a_likely_threshold() {
-    let kernels: Vec<Kernel> = vec![
-        ("erf", Real::erf),
-        ("erfc", Real::erfc),
-        ("erfcx", Real::erfcx),
-        ("erf_inv", Real::erf_inv),
-        ("ln_gamma", Real::ln_gamma),
-        ("gamma", Real::gamma),
-        ("digamma", Real::digamma),
-        ("exp_m1", |x| Real::exp_m1(&x)),
-        ("ln_1p", |x| Real::ln_1p(&x)),
-        ("cos_m1", |x| Real::cos_m1(x)),
-        ("sinc", Real::sinc),
-        ("ln_1p_exp", |x| Real::ln_1p_exp(&x)),
-        ("ln_exp_m1", |x| Real::ln_exp_m1(&x)),
-        ("cbrt", Real::cbrt),
-        ("hypot with 1", |x| Real::hypot(x, 1.0)),
-    ];
-
-    let mut reported = Vec::new();
-    for (name, f) in &kernels {
-        // 1000x the expected step. A smooth kernel scores about 1 and rarely exceeds 10, so
-        // this leaves three orders of magnitude of headroom and still catches a branch
-        // disagreement, which scores in the millions.
-        for seam in hunt_seams(f, LIKELY_THRESHOLDS, 256, 1_000.0) {
-            reported.push(format!(
-                "  {name}: {:e} -> {:e} gives {:e} -> {:e}, {:.2e} times the expected step",
-                seam.at, seam.next, seam.values.0, seam.values.1, seam.ratio
-            ));
-        }
-    }
-
-    assert!(
-        reported.is_empty(),
-        "discontinuities found at algorithm crossovers:\n{}",
-        reported.join("\n")
-    );
-}
-
-// ===== Wiggle: the kernels that are ulp-monotone ==========================
-
-/// These are monotone to the last bit over 50,000 consecutive inputs, which is a real quality
-/// property worth protecting. An inverse or a root-find over any of them can safely iterate to
-/// the format's resolution.
-#[test]
-fn the_ulp_monotone_kernels_stay_monotone() {
-    let clean: Vec<MonotoneCase> = vec![
-        ("erf", Real::erf, 0.5, true),
-        ("erfc", Real::erfc, 0.5, false),
-        ("erfc", Real::erfc, 2.0, false),
-        ("digamma", Real::digamma, 3.0, true),
-        ("tanh", f64::tanh, 1.0, true),
-        ("exp", f64::exp, 1.0, true),
-        ("ln", f64::ln, 3.0, true),
-    ];
-
-    for (name, f, start, increasing) in &clean {
-        let inversion = scan_monotone(|x| if *increasing { f(x) } else { -f(x) }, *start, STEPS);
-        assert!(
-            inversion.is_none(),
-            "{name} near {start} lost ulp-level monotonicity: {inversion:?}"
-        );
-    }
-}
-
-// ===== Wiggle: the measured budgets ======================================
-
-/// `erf` is very nearly ulp-monotone — four inverting pairs in fifty thousand, never by more
-/// than one ulp. Fine for anything; recorded so a regression is visible.
-#[test]
-fn erf_wiggle_stays_within_its_budget() {
-    assert_budget("erf", Real::erf, 2.0, true, 8, 1.0);
-}
-
-/// `sinc` inverts on about 6% of pairs by a single ulp. Its derivative near `0.5` is small, so
-/// the true step between adjacent inputs is comparable to the kernel's own rounding — which is
-/// the mechanism behind every entry in this section.
-#[test]
-fn sinc_wiggle_stays_within_its_budget() {
-    assert_budget("sinc", Real::sinc, 0.5, false, 3_300, 1.0);
-}
-
-/// `ln_gamma` near 3 is the worst case found: a third of adjacent pairs step backwards, by up
-/// to 24 ulps. Consistent with the documented `1e-14` relative accuracy, and the reason not to
-/// bisect on it past about twelve digits.
-#[test]
-fn ln_gamma_wiggle_stays_within_its_budget() {
-    assert_budget("ln_gamma", Real::ln_gamma, 3.0, true, 16_500, 32.0);
-    assert_budget("ln_gamma", Real::ln_gamma, 10.0, true, 3_300, 4.0);
-}
-
-/// `gamma` near 3 inverts on about a quarter of pairs, by up to 9 ulps.
-#[test]
-fn gamma_wiggle_stays_within_its_budget() {
-    assert_budget("gamma", Real::gamma, 3.0, true, 12_500, 12.0);
-}
-
-/// `erfcx` near 1 inverts on about half of all adjacent pairs, by up to 15 ulps — the highest
-/// inversion *rate* measured, though not the largest single inversion.
-#[test]
-fn erfcx_wiggle_stays_within_its_budget() {
-    assert_budget("erfcx", Real::erfcx, 1.0, false, 25_000, 20.0);
-}
-
 // ===== Forward stability ==================================================
 
 /// The round trip `erf_inv(erf(x))` must be forward stable — and getting that assertion right
@@ -263,6 +254,45 @@ fn erfcx_wiggle_stays_within_its_budget() {
 /// *unstable*, never it becoming twice as inaccurate while still inside its bound. The margin is
 /// around 0.5 today; a change taking it to 0.9 is a real loss of accuracy that the assertion
 /// cannot see and `.budget()` can.
+#[path = "stability/asymptotics.rs"]
+mod asymptotics;
+#[path = "stability/conditioned.rs"]
+mod conditioned;
+#[path = "stability/cross_precision.rs"]
+mod cross_precision;
+#[path = "stability/exact_values.rs"]
+mod exact_values;
+#[path = "stability/f32_exhaustive.rs"]
+mod f32_exhaustive;
+#[path = "stability/f32_range.rs"]
+mod f32_range;
+#[path = "stability/f32_saturation.rs"]
+mod f32_saturation;
+#[path = "stability/inverses.rs"]
+mod inverses;
+#[path = "stability/limits.rs"]
+mod limits;
+#[path = "stability/log_domain.rs"]
+mod log_domain;
+#[path = "stability/log_pairs.rs"]
+mod log_pairs;
+#[path = "stability/narrow_models.rs"]
+mod narrow_models;
+#[path = "stability/oscillatory.rs"]
+mod oscillatory;
+#[path = "stability/range.rs"]
+mod range;
+#[path = "stability/recurrences.rs"]
+mod recurrences;
+#[path = "stability/scaled_siblings.rs"]
+mod scaled_siblings;
+#[path = "stability/seams.rs"]
+mod seams;
+#[path = "stability/symmetry_exact.rs"]
+mod symmetry_exact;
+#[path = "stability/wiggle.rs"]
+mod wiggle;
+
 mod round_trip {
     use euclid_scalar::Real;
     use euclid_stability::numeric::{condition_at, two_stage_error_bound};

@@ -1,7 +1,12 @@
-//! `I₀`/`I₁`: the peak-factored series, its scaled forms, the ratio, and `ln I₀`.
+//! Accuracy and identity tests for the modified Bessel functions of the first kind.
+//!
+//! Split from the route tests so each file stays inside the crate's 400-line budget. What stays
+//! here is what compares *values*: the scaled forms against references, the unscaled against the
+//! scaled, the derivative relation, the ratio's bounds and the parity laws.
 
-use crate::kernels::bessel::asymptotic::i_scaled;
-use crate::kernels::bessel::modified_first::{I_ASYMPTOTIC_MIN, I1_NO_LOG_MAX, *};
+mod routes;
+
+use crate::kernels::bessel::modified_first::{I1_NO_LOG_MAX, *};
 
 fn close(a: f64, b: f64, tol: f64) {
     assert!(
@@ -126,36 +131,6 @@ fn parity_and_non_finite_inputs() {
 }
 
 #[test]
-fn the_stirling_threshold_leaves_no_step_at_ulp_resolution() {
-    // `stirling_remainder` switches from `ln_gamma` to its asymptotic series at a peak index
-    // of 20. The peak index is `round(x/2)`, so the switch happens as `x` crosses 39 — an
-    // internal boundary with no outward sign, and one no reference table would ever probe.
-    // Measured disagreement across the switch is 1.5e-14 relative, and it is the *lower*
-    // side that carries it: below the threshold `mu(k)` is formed as a difference of two
-    // O(k ln k) quantities, costing about `eps*42/0.0042 = 1.5e-14`, while above it the
-    // asymptotic series is exact to rounding. That is the documented 1.7e-14 worst case for
-    // this family, and it is bounded here rather than merely asserted elsewhere.
-    use euclid_utils::no_step_across;
-    let threshold = 39.0;
-    no_step_across(
-        "I0e",
-        i0e,
-        threshold,
-        i0e(threshold) - i1e(threshold),
-        1e-13,
-    );
-    no_step_across("I1e", i1e, threshold, i1e(threshold), 1e-13);
-    no_step_across("ln_i0", ln_i0, threshold, i1_over_i0(threshold), 1e-13);
-    no_step_across("i1_over_i0", i1_over_i0, threshold, 1.0, 1e-13);
-    // The peak index also steps by one every time x crosses an odd integer, since it is a
-    // rounding of x/2. Those are threshold crossings too, and there are many of them.
-    for odd in [5.0f64, 11.0, 21.0, 41.0, 101.0] {
-        no_step_across("I0e at a peak step", i0e, odd, i0e(odd) - i1e(odd), 1e-13);
-        no_step_across("ln_i0 at a peak step", ln_i0, odd, i1_over_i0(odd), 1e-13);
-    }
-}
-
-#[test]
 fn the_first_order_is_exact_in_the_small_argument_limit() {
     // I1(x) = (x/2)(1 + x^2/8 + ...), so I1/(x/2) - 1 should *be* x^2/8 and nothing else.
     //
@@ -250,29 +225,6 @@ fn the_scaled_forms_hold_all_the_way_to_the_top_of_the_format() {
     }
 }
 
-#[test]
-fn the_series_and_the_asymptotic_branch_agree_where_they_meet() {
-    // The two routes share no code — a peak-factored power series against a divergent
-    // asymptotic expansion — so agreement across the threshold is real evidence. Probed at
-    // the two representable values straddling it, where no derivative slack is needed.
-    use euclid_utils::no_step_across;
-    let x = I_ASYMPTOTIC_MIN;
-    no_step_across("i0e", i0e, x, i0e(x) - i1e(x), 1e-14);
-    no_step_across("i1e", i1e, x, i1e(x), 1e-14);
-    no_step_across("ln_i0", ln_i0, x, i1_over_i0(x), 1e-15);
-    no_step_across("i1_over_i0", i1_over_i0, x, 1.0, 1e-14);
-    // And across a whole band below the threshold, where the series is still the one in use
-    // and must already be converging on the expansion.
-    for i in 0..40 {
-        let x = 3e3 + f64::from(i) * 175.0;
-        let expected = i_scaled(0.0, x);
-        assert!(
-            ((i0e(x) - expected) / expected).abs() < 5e-15,
-            "series i0e({x:e}) vs the expansion"
-        );
-    }
-}
-
 /// `I₁/I₀` is odd, and it has **three** branches that each carry the sign separately.
 ///
 /// Seven mutants lived in two of them. `x = -3` exercises the peak-factored series and nothing
@@ -302,4 +254,60 @@ fn oddness_holds_in_every_branch() {
     // And zero is signless.
     assert_eq!(i1_over_i0(0.0), 0.0);
     assert_eq!(i1_over_i0(-0.0), 0.0);
+}
+
+/// `I₁ᵉ` returns `+0` at either zero, and `I₁`/`I₁ᵉ` are odd everywhere else.
+///
+/// The zero half is asserted through `is_sign_negative` rather than `==`, because `-0.0 == 0.0`:
+/// `replace < with <=` in `i1e`'s final sign step turns `+0.0` into `-0.0` and survived every
+/// other assertion in this crate. `cargo mutants` found it; review had not.
+///
+/// `i1_over_i0` is deliberately absent — it returns early on `ax == 0.0`, so the `x < 0.0` tests
+/// in its three branches cannot be reached with a zero argument and the same mutation there is
+/// *provably* equivalent rather than merely unkilled. See the module header.
+#[test]
+fn zero_is_unsigned_and_the_first_kind_is_odd() {
+    for (name, got) in [("i1e(+0)", i1e(0.0f64)), ("i1e(-0)", i1e(-0.0f64))] {
+        assert!(got == 0.0, "{name} must be zero, got {got:e}");
+        assert!(!got.is_sign_negative(), "{name} must be +0, not -0");
+    }
+    // Odd across the no-log, peak-factored and asymptotic forms in turn.
+    for &x in &[1e-30f64, 0.5, 0.999, 1.0, 3.0, 50.0, 700.0, 1e4, 1e6] {
+        assert_eq!(i1e(-x), -i1e(x), "i1e must be odd at x = {x:e}");
+    }
+}
+
+/// The asymptotic expansion's **term count**, which is all its second exit changes.
+///
+/// `i_scaled` has two ways out: the growth check, which always fires because the expansion is
+/// divergent, and `magnitude < TERM_EPS`, which fires first once the argument is large enough
+/// that the terms reach the format's floor before they turn. Weaken the second and the first
+/// still stops the loop at the same value, having summed more terms — so no accuracy assertion
+/// can see it and mutation testing finds every spelling unkillable. The count can.
+#[test]
+fn the_asymptotic_expansion_truncates_sooner_as_the_argument_grows() {
+    use crate::kernels::bessel::asymptotic::{i_scaled, i_scaled_terms};
+
+    // Further out, fewer terms: `a_k/x^k` reaches the floor earlier, so the tolerance exit wins
+    // and wins sooner. This is the monotone relation the second exit exists to produce.
+    let near = i_scaled_terms(0.0, 25.0);
+    let far = i_scaled_terms(0.0, 1.0e6);
+    assert!(
+        far.terms < near.terms,
+        "x = 1e6 should truncate sooner than x = 25: {} vs {}",
+        far.terms,
+        near.terms
+    );
+    // Both inside the cap, which is what says the loop is converging rather than running out.
+    for &x in &[25.0_f64, 1.0e3, 1.0e6, 1.0e300] {
+        let counted = i_scaled_terms(0.0, x);
+        assert!(
+            counted.terms < 200,
+            "x = {x:e} took {} terms",
+            counted.terms
+        );
+        assert!(counted.value > 0.0 && counted.value.is_finite());
+        // And the counted variant is the plain one.
+        assert_eq!(counted.value, i_scaled(0.0, x));
+    }
 }

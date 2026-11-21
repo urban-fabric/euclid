@@ -1,9 +1,9 @@
 use super::{M_PER_FOOT, M_PER_KM};
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AreaSquareMeters, LengthFeet, LengthKm, SpeedMs, TimeSeconds, VolumeCubicMeters};
 use bytemuck::{Pod, Zeroable};
 use euclid_units::Length;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A length in **metres**, the SI base unit and this crate's anchor for the length

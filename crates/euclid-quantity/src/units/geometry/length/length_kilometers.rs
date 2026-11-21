@@ -1,7 +1,7 @@
 use super::M_PER_KM;
 use crate::LengthMeters;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A length in **kilometres**. Exactly 1000 m, so conversion to metres is exact and the

@@ -11,7 +11,7 @@
 //! | underflow | `Ai`, `x ≳ 104` | `0`, as the true value does |
 //! | overflow | `Bi`, `x ≳ 104` | `+∞`, as the true value does |
 //! | the zeros | `x < 0`, infinitely many | absolute accuracy only |
-//! | the phase | `|x| ≳ 3e205` | `ζ` overflows; the oscillation is unrecoverable |
+//! | the phase | `|x| ≳ 4.17e205` | `ζ` overflows; the oscillation is unrecoverable |
 
 use crate::Real;
 use euclid_utils::assert_close;
@@ -128,7 +128,7 @@ fn the_oscillation_stays_inside_its_envelope_however_negative_the_argument() {
     // finite, and still on their envelopes. An implementation that lost the phase entirely
     // would return something of the wrong *magnitude*, which is what this detects.
     //
-    // Beyond |x| ~ 3e205 `zeta` itself overflows, and the module returns zero there: finite,
+    // Beyond |x| ~ 4.17e205 `zeta` itself overflows, and the module returns zero there: finite,
     // inside the envelope, and the mean of an oscillation whose phase is gone.
     //
     // The factor is 2 rather than 1, and that is a consequence of the phase loss rather than

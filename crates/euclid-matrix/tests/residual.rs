@@ -7,8 +7,20 @@ use euclid_scalar::Real;
 use euclid_tensor::Tensor;
 
 // Reuse the scalar law suite's generated f64 delegation.
+//
+// This `mod traits` is a **resolution shim, not a re-export**, and the distinction is why the
+// `pub(crate)` has to stay. `carrier.rs` below is `#[path]`-included from euclid-scalar, where it
+// names its traits as `crate::traits::Compare`; compiled in here, `crate` is this test binary, so
+// the path only resolves if a module called `traits` offers those names. Nothing is exported by
+// it — the file is `cfg(feature = "conformance")` inside `tests/`, so it is not on any crate's
+// surface and no caller can reach it.
+//
+// Demoting this to a private `use` while removing euclid-quantity's genuine cross-crate
+// re-exports broke `--all-features` with four `trait import ... is private` errors. A plain
+// `cargo test --workspace` does not reach it, because the feature gate above is off by default;
+// `cargo mutants` sets `--all-features` and found it by recording all 442 mutants unviable.
 mod traits {
-    pub(super) use euclid_scalar::{Arithmetic, Compare, Element, NormedDivisionAlgebra};
+    pub(crate) use euclid_scalar::{Arithmetic, Compare, Element, NormedDivisionAlgebra};
 }
 #[path = "../../euclid-scalar/src/tests/vacuity/carrier.rs"]
 mod carrier;

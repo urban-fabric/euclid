@@ -160,7 +160,27 @@ impl Real for f64 {
         f64::acosh(self)
     }
     fn atanh(self) -> Self {
-        f64::atanh(self)
+        // Evaluated on `|x|` and signed afterwards, rather than handed to `f64::atanh`
+        // directly, because that one is **not odd**. `atanh` satisfies `atanh(−x) = −atanh(x)`
+        // exactly, and `std`'s does not: measured over 100,000 arguments in `(0, 1)`, it
+        // disagrees with its own negation on **64,192** of them in `f32` and `63,344` in `f64`.
+        //
+        // The asymmetry is not a rounding tie either — it is one-sided and large. In `f32` the
+        // negative half is worse by up to `2500x`: `atanh(0.999)` is `1.9e-9` from the wide
+        // value and `atanh(−0.999)` is `4.8e-6`, and the worst relative asymmetry reaches
+        // `3.9e-3`. Folding to the positive half therefore does two things at once: it restores
+        // the exact symmetry, and it gives the negative half the *better* branch's accuracy.
+        //
+        // Every other odd or even kernel on this surface — `erf`, `erf_inv`, `asinh`, `cbrt`,
+        // `sin_int`, `I₁`, `I₁ᵉ`, `I₁/I₀`, `J₁`, `I₀`, `I₀ᵉ`, `ln I₀`, `J₀`, `cos_m1`, `sinc` —
+        // is already bit-exactly symmetric, which is what singled this one out. See
+        // `stability::symmetry_exact`.
+        let magnitude = f64::atanh(f64::abs(self));
+        if f64::is_sign_negative(self) {
+            -magnitude
+        } else {
+            magnitude
+        }
     }
     fn sin_cos(self) -> (Self, Self) {
         f64::sin_cos(self)

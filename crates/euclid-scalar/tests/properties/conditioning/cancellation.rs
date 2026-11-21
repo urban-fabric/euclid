@@ -5,7 +5,7 @@ use super::*;
 // ===== The cancellation-prone elementary forms ============================
 
 property! {
-    #![config(settings("exp_m1").require("naive loses 8+ digits", 5.0))]
+    #![config(measured("exp_m1").require("naive loses 8+ digits", 5.0))]
 
     /// `exp_m1(x)` against `exp(x) - 1`.
     ///
@@ -37,7 +37,7 @@ property! {
 }
 
 property! {
-    #![config(settings("ln_1p").require("naive loses 8+ digits", 5.0))]
+    #![config(measured("ln_1p").require("naive loses 8+ digits", 5.0))]
 
     /// `ln_1p(x)` against `(1.0 + x).ln()`.
     ///
@@ -65,7 +65,7 @@ property! {
 }
 
 property! {
-    #![config(settings("cos_m1").require("naive loses 8+ digits", 5.0))]
+    #![config(measured("cos_m1").require("naive loses 8+ digits", 5.0))]
 
     /// `cos_m1(x)` against `cos(x) - 1` — the haversine kernel.
     ///

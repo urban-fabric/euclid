@@ -1,7 +1,7 @@
 use super::M_PER_FOOT;
 use crate::LengthMeters;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A length in **international feet**, exactly 0.3048 m by definition.

@@ -84,10 +84,22 @@ fn the_log_beta_matches_its_exact_closed_forms_over_the_whole_range() {
         );
     }
     // B(1/2, 1/2) = pi, the one case where the function itself is a famous constant.
+    //
+    // # The bound is `2e-15`, and the reason it had to be widened is worth keeping
+    //
+    // `B(½,½) = Γ(½)²/Γ(1)`, so this measures `2·lnΓ(½) − lnΓ(1)` exponentiated. `lnΓ(½)`
+    // carries about `2.5` ulp of its own, doubled by the squaring, so `5` ulp — `1.13e-15`
+    // relative — is the honest figure.
+    //
+    // It used to pass at `1e-15` for the wrong reason. `lnΓ(1)` returned `−8.88e-16` instead of
+    // `0`, and subtracting that *added* a compensating `8.88e-16` which happened to cancel part
+    // of the `lnΓ(½)` error. Fixing `lnΓ`'s exact zeros removed the compensation and exposed the
+    // real error, which was always there. A tolerance that passes because two errors cancel is
+    // not measuring what it appears to; this one now is.
     assert_close(
         Real::beta(0.5, 0.5),
         core::f64::consts::PI,
-        1e-15,
+        2e-15,
         "B(1/2, 1/2) = pi",
     );
 }

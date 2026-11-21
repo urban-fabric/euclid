@@ -8,11 +8,13 @@
 //! foundations. euclid-quantity supplies the concrete `f64` unit/storage types and
 //! implements euclid's unit contracts for them.
 //!
-//! The quantity *contracts* are euclid's, not this crate's. [`Measure`], [`Quantity`],
-//! [`ScalarQuantity`], [`LinearQuantity`] and [`DiscreteQuantity`] are re-exported from
-//! `euclid-units`, so `use euclid_quantity::Quantity` and `use euclid_units::Quantity` name
-//! the same trait. Only [`HostQuantity`] and [`QuantityError`] originate here — see
-//! [`quantity`] for why those two cannot live in a carrier-generic crate.
+//! The quantity *contracts* are euclid's, not this crate's.
+//! [`euclid_units::Measure`], [`euclid_units::Quantity`], [`euclid_units::ScalarQuantity`],
+//! [`euclid_units::LinearQuantity`] and [`euclid_units::DiscreteQuantity`] are imported from
+//! `euclid-units` and **not** re-exported here: a caller naming one of them depends on
+//! `euclid-units` directly, which is the crate that defines and documents it. Only
+//! [`HostQuantity`] and [`QuantityError`] originate here — see [`quantity`] for why those two
+//! cannot live in a carrier-generic crate.
 //!
 pub mod conversion;
 /// Storage, count and timestamp newtypes: byte sizes, cardinal counts, and epoch instants.
@@ -28,10 +30,7 @@ pub mod units;
 
 pub use conversion::UnitOfMeasure;
 
-pub use quantity::{
-    Dimension, DiscreteQuantity, HostQuantity, LinearQuantity, Measure, Quantity, QuantityError,
-    ScalarQuantity, scalar_mul,
-};
+pub use quantity::{HostQuantity, QuantityError, scalar_mul};
 
 pub use data::{
     ByteRange, Bytes, Count, DistanceDecimeters, ThreadCount, TimeCentiseconds, UnixMillis,
@@ -41,23 +40,6 @@ pub use data::{
 pub use ops::{Interval, Point};
 
 pub use units::*;
-
-/// euclid's dimension contracts, re-exported so the cross-dimensional algebra reads ergonomically
-/// from euclid-quantity alone: `use euclid_quantity::Length;` then `distance.per_time(elapsed)`.
-///
-/// The base contracts (`Measure`, `Quantity`, `ScalarQuantity`, `LinearQuantity`,
-/// `DiscreteQuantity`) are re-exported alongside them, from [`quantity`]. They are euclid's own
-/// traits — this crate no longer defines same-named ones of its own — so
-/// `use euclid_quantity::Quantity` and `use euclid_units::Quantity` now name the same trait.
-pub use euclid_units::{
-    Acceleration, AmountOfSubstance, Angle, AngularAcceleration, AngularMomentum, AngularVelocity,
-    Area, Capacitance, CatalyticActivity, Concentration, Conductance, CurrentDensity, Density,
-    Dimensionless, DynamicViscosity, ElectricCharge, ElectricCurrent, ElectricField, Energy, Force,
-    Frequency, HeatCapacity, HeatFlux, Inductance, Jerk, Length, MagneticFlux, MagneticFluxDensity,
-    Mass, MassFlowRate, Molality, MolarEnergy, MolarMass, MolarVolume, MomentOfInertia, Momentum,
-    Power, Pressure, Resistance, SpecificEnergy, SpecificHeatCapacity, Speed, SurfaceTension,
-    Temperature, Time, Torque, Voltage, Volume, VolumetricFlowRate,
-};
 
 // The README's examples, compiled.
 //

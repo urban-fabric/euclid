@@ -1,8 +1,8 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AngleDegrees, AngularVelocityRadiansPerSecond, TimeSeconds};
 use bytemuck::{Pod, Zeroable};
 use euclid_units::Angle;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// An angle in **radians**, the unit every trigonometric function here takes.
