@@ -139,3 +139,45 @@ fn the_ratio_arm_is_preferred_by_a_wide_margin_where_the_sweep_found_its_worst_p
         );
     }
 }
+
+/// The two term lists are pinned by value, not only through the routing they feed.
+///
+/// Mutation testing asked for this. Seven mutants inside [`direct_terms`] and [`ratio_terms`]
+/// survived — `a * x.ln()` to `a + x.ln()`, `a.ln() - 1` to `a.ln() / 1`, and so on — because
+/// the only thing asserting on them was
+/// [`the_prefactor_form_is_chosen_by_which_arrangement_has_less_to_lose`], and a routing test
+/// cannot see a mutation that leaves the *comparison* the same way round. Both arms are correct
+/// arrangements, so picking the wrong one moves the answer by a few ulp rather than breaking it.
+///
+/// Pinning the terms closes that: each is the magnitude of one summand of its arrangement, so a
+/// wrong operator changes it by a factor and not by rounding.
+#[test]
+fn the_term_lists_are_the_summands_of_their_own_arrangements() {
+    // `a = 445`, `x = 1000`: the point the `Ratio` arm was introduced for.
+    let (a, x) = (445.0_f64, 1000.0);
+    // Direct sums `log_scale − x + a·ln x − lnΓ(a)`, with `a(ln a − 1)` standing in for `lnΓ(a)`.
+    let direct = direct_terms(a, x);
+    assert_eq!(direct[0], x);
+    assert_eq!(direct[1], a * x.ln());
+    assert_eq!(direct[2], a * (a.ln() - 1.0));
+    // Spot values, so a mutated operator fails on magnitude rather than on an identity that
+    // happens to hold: `445·ln 1000 = 3074` and `445(ln 445 − 1) = 2268.64`.
+    assert!((direct[1] - 3073.9).abs() < 0.1, "a ln x = {}", direct[1]);
+    assert!(
+        (direct[2] - 2268.64).abs() < 0.01,
+        "a(ln a - 1) = {}",
+        direct[2]
+    );
+
+    // Ratio sums `a·ln t + (a − x)` with `t = x/a`.
+    let ratio = ratio_terms(a, x);
+    assert_eq!(ratio[0], a * (x / a).ln());
+    assert_eq!(ratio[1], a - x);
+    assert!((ratio[0] - 360.3).abs() < 0.1, "a ln t = {}", ratio[0]);
+    assert_eq!(ratio[1], -555.0);
+
+    // And the discriminant follows from them, which is the claim the routing rests on.
+    assert_eq!(largest_term(&direct), direct[1]);
+    assert_eq!(largest_term(&ratio), ratio[1].abs());
+    assert!(largest_term(&ratio) < largest_term(&direct));
+}
