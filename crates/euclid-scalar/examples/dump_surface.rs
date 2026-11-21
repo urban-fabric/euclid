@@ -72,6 +72,36 @@ fn apply(name: &str, x: f64) -> f64 {
         "cos_m1" => Real::cos_m1(x),
         "ln_bessel_i0" => Real::ln_bessel_i0(x),
         "bessel_i1_over_i0" => Real::bessel_i1_over_i0(x),
+        // The scaled Airy quartet and the scaled modified Bessels: their own routes, none of
+        // which the sweep had ever reached.
+        "airy_ai_e" => Real::airy_ai_e(x),
+        "airy_ai_e_prime" => Real::airy_ai_e_prime(x),
+        "airy_bi_e" => Real::airy_bi_e(x),
+        "airy_bi_e_prime" => Real::airy_bi_e_prime(x),
+        "bessel_i1e" => Real::bessel_i1e(x),
+        "bessel_k1e" => Real::bessel_k1e(x),
+        // Elementary and structural. Mostly delegation, which is exactly why they are worth a
+        // sweep: a delegation that is *not* a pass-through is invisible without one.
+        "exp2" => Real::exp2(x),
+        "log2" => Real::log2(x),
+        "log10" => Real::log10(x),
+        "cbrt" => Real::cbrt(x),
+        "recip" => Real::recip(x),
+        "asin" => Real::asin(x),
+        "acos" => Real::acos(x),
+        "atan" => Real::atan(x),
+        "sinh" => Real::sinh(x),
+        "cosh" => Real::cosh(x),
+        "tanh" => Real::tanh(x),
+        "asinh" => Real::asinh(x),
+        "acosh" => Real::acosh(x),
+        "atanh" => Real::atanh(x),
+        // The circular trio. Worth measuring despite being delegation: a large argument needs
+        // exact reduction modulo `pi/2`, which is the classic place a pass-through stops being
+        // one.
+        "sin" => Real::sin(x),
+        "cos" => Real::cos(x),
+        "tan" => Real::tan(x),
         other => panic!("unknown function {other}"),
     }
 }
@@ -86,7 +116,31 @@ fn apply2(name: &str, a: f64, b: f64) -> f64 {
         "ln_rising_factorial" => Real::ln_rising_factorial(a, b),
         "xlogy" => Real::xlogy(a, b),
         "ln_add_exp" => Real::ln_add_exp(a, b),
+        "ln_sub_exp" => Real::ln_sub_exp(a, b),
+        "xlog1py" => Real::xlog1py(a, b),
+        "xlog1my" => Real::xlog1my(a, b),
+        "hypot" => Real::hypot(a, b),
+        "atan2" => Real::atan2(a, b),
+        "gamma_lr_inv" => Real::gamma_lr_inv(a, b),
+        // `order` is a `u32`, so the second word is read as a small integer rather than as a
+        // float — the driver sends it as the bit pattern of the integer's value.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        "polygamma" => Real::polygamma(a, b as u32),
         other => panic!("unknown two-argument function {other}"),
+    }
+}
+
+/// Three-argument functions, read as a triple of hex words per line.
+///
+/// `beta_reg` and its inverse are the only members of the public surface that need three, and
+/// they are also the pair carrying the deepest loop in the crate — so the harness had to grow a
+/// third slot before either could be measured at all.
+fn apply3(name: &str, a: f64, b: f64, c: f64) -> f64 {
+    match name {
+        "beta_reg" => Real::beta_reg(a, b, c),
+        "beta_reg_inv" => Real::beta_reg_inv(a, b, c),
+        "hypot3" => Real::hypot3(a, b, c),
+        other => panic!("unknown three-argument function {other}"),
     }
 }
 
@@ -140,11 +194,21 @@ fn main() {
                 Some(single) => apply_f32(single, f64::from_bits(first)),
                 None => apply(&name, f64::from_bits(first)),
             },
-            Some(second) => apply2(
-                &name,
-                f64::from_bits(first),
-                f64::from_bits(u64::from_str_radix(second, 16).expect("a 16-digit hex word")),
-            ),
+            Some(second) => {
+                let second =
+                    f64::from_bits(u64::from_str_radix(second, 16).expect("a 16-digit hex word"));
+                match words.next() {
+                    None => apply2(&name, f64::from_bits(first), second),
+                    Some(third) => apply3(
+                        &name,
+                        f64::from_bits(first),
+                        second,
+                        f64::from_bits(
+                            u64::from_str_radix(third, 16).expect("a 16-digit hex word"),
+                        ),
+                    ),
+                }
+            }
         };
         writeln!(out, "{:016x}", value.to_bits()).expect("stdout should be writable");
     }
