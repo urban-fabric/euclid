@@ -151,6 +151,53 @@ impl IncompleteGammaMethod {
 }
 
 /// Regularized **lower** incomplete gamma `P(a, x) = γ(a, x) / Γ(a)`, `a > 0`, `x ≥ 0`.
+/// Whether `P = x^a·e^{−x}·S/Γ(a)` can be formed as a product rather than through its logarithm.
+///
+/// The `f64` peer's reasoning applies unchanged and the bounds do not. Taking logs is what keeps
+/// `x^a` in range, and the price is `exp`'s: an absolute error in the exponent returns as a
+/// *relative* error, and the exponent's largest term is `a·ln x`. In this format that bites much
+/// sooner, because `ε` is `1.2e-7` — at `a = ½`, `x = 4.4e-5` the exponent is `−5.02`, which is
+/// five ulp, and that is what `erf(0.0066)` was carrying: `erf` above `ERF_LINEAR_MAX` is
+/// `P(½, x²)`, so the incomplete gamma's arithmetic is the error function's.
+///
+/// # Unlike `f64`, it is a *band* — the product form is not free
+///
+/// The `f64` peer takes the product wherever its factors fit, and that is right there: four
+/// roundings cost about two ulp against a log form whose typical error is larger. In `f32` the
+/// balance moves, because the log form's cost is `|a·ln x|·ε` and that is *small when the
+/// exponent is small*. At `a = ½`, `x = 0.92` the exponent is `−0.04`, so the logarithm is
+/// essentially free and the product's four roundings are the more expensive of the two.
+///
+/// Taking the product unconditionally there put `erfc(0.96)` eleven `f32` ulp from the wide
+/// kernel against an allowed seven — `erfc` is `Q(½, x²)` formed as `1 − P`, which amplifies
+/// `P`'s error by about `4.7`, so two ulp of `P` is ten of `erfc`.
+/// `the_independent_f32_kernels_stay_inside_their_budgets` is what said so.
+///
+/// So the product form takes only the band where `a·ln x` is genuinely large — above
+/// [`LOWER_PRODUCT_MIN`], where the logarithm starts costing more than the product — and leaves
+/// the rest to the arm that was already good at it.
+///
+/// The upper bounds are this format's own. `x^a` leaves `f32` past `88` upward and `−103`
+/// downward, so `85` is inside both with room for the remaining factors; and `Γ(a)` is finite
+/// only to about `a = 35`, against `171` in `f64`.
+fn lower_product_fits(a: f32, x: f32) -> bool {
+    let exponent = (a * x.ln()).abs();
+    (LOWER_PRODUCT_MIN..LOWER_PRODUCT_MAX).contains(&exponent) && a <= GAMMA_FINITE_MAX
+}
+
+/// Smallest `|a·ln x|` worth taking the product form for.
+///
+/// Below this the logarithm's error `|a·ln x|·ε` is under a third of an ulp and the product's four
+/// roundings are the larger cost. `2` is where they cross: at `a·ln x = 2` the log form carries
+/// about two ulp, which is what the product spends.
+const LOWER_PRODUCT_MIN: f32 = 2.0;
+
+/// Largest `|a·ln x|` the product form is used at. `f32` overflows at `88`, underflows at `−103`.
+const LOWER_PRODUCT_MAX: f32 = 85.0;
+
+/// Largest shape with a finite `Γ(a)` in this format. `Γ(35)` is `3.0e38` and `Γ(36)` is infinite.
+const GAMMA_FINITE_MAX: f32 = 34.0;
+
 pub(crate) fn gamma_lr(a: f32, x: f32) -> f32 {
     match IncompleteGammaMethod::for_arguments(a, x) {
         IncompleteGammaMethod::Invalid => f32::NAN,
@@ -165,7 +212,11 @@ pub(crate) fn gamma_lr(a: f32, x: f32) -> f32 {
         IncompleteGammaMethod::Edgeworth => gamma_edgeworth(a, x).0,
         IncompleteGammaMethod::LowerSeries => {
             let series = gamma_lower_series(a, x, EPS, MAX_ITER);
-            log_scaled_gamma(a, x, series.ln()).exp()
+            if lower_product_fits(a, x) {
+                x.powf(a) * (-x).exp() * series / gamma(a)
+            } else {
+                log_scaled_gamma(a, x, series.ln()).exp()
+            }
         }
         IncompleteGammaMethod::UpperFraction => 1.0 - gamma_ur(a, x),
     }
