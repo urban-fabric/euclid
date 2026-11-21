@@ -166,3 +166,25 @@ fn the_incomplete_gamma_matches_the_poisson_sum_at_integer_shape() {
         "no shape produced a measurable difference; the comparison is vacuous"
     );
 }
+
+/// The product band's two bounds, each named at its own constant.
+///
+/// Buried in `LowerSeriesForm::for_arguments`, the `<` against `LOWER_PRODUCT_MAX` mutated to
+/// `<=` differs only at an exponent of exactly `700` — unreachable through `gamma_lr`, and a
+/// point where both forms work anyway. As a predicate on its own operands each boundary is a
+/// value, and this says which side owns it.
+#[test]
+fn the_product_band_bounds_are_exclusive_above_and_inclusive_at_the_shape_cap() {
+    // The exponent bound is exclusive: at exactly `700` the logarithm takes it.
+    assert!(!product_fits(LOWER_PRODUCT_MAX, 1.0));
+    assert!(product_fits(LOWER_PRODUCT_MAX.next_down(), 1.0));
+    // The shape cap is inclusive: `Γ(171)` is finite, `Γ(172)` is not.
+    assert!(product_fits(1.0, GAMMA_FINITE_MAX));
+    assert!(!product_fits(1.0, GAMMA_FINITE_MAX.next_up()));
+    // Both must hold, so either one failing refuses the product.
+    assert!(!product_fits(LOWER_PRODUCT_MAX, GAMMA_FINITE_MAX));
+    assert!(
+        product_fits(0.0, 1.0),
+        "a unit exponent and a small shape always fit"
+    );
+}

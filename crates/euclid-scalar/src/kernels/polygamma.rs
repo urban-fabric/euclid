@@ -294,9 +294,15 @@ impl RgammaRoute {
             Self::AtPositiveInfinity
         } else if x <= 0.0 && x.fract() == 0.0 {
             Self::Pole
-        } else if x < 0.0 {
+        } else if x.is_sign_negative() {
             // The sign test comes **before** the `x < 1` split, or the negative non-integers
             // fall into the recurrence arm. They cannot: `Γ(1+x)` has its own poles down there.
+            //
+            // `is_sign_negative` rather than `x < 0.0`, and not as a style choice: the two agree
+            // at every input that reaches here — the pole arm above has already taken both
+            // signed zeros — so `<` mutated to `<=` is an *equivalent* mutant that no test can
+            // kill. This spelling has no comparison in it to mutate, which removes the survivor
+            // instead of chasing it. Same move `erf` made with `copysign`.
             Self::Reflection
         } else if x < 1.0 {
             // `0 < x < 1`: the pole arm above has already taken both signed zeros and every

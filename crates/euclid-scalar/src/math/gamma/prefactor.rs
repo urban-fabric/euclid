@@ -244,12 +244,29 @@ impl ScaledGammaForm {
             Self::Direct
         } else if ((x - a) / a).abs() <= T::from_f64(LN_1P_SERIES_MAX) {
             Self::Centred
-        } else if largest_term(&ratio_terms(a, x)) < largest_term(&direct_terms(a, x)) {
+        } else if prefers_ratio(
+            largest_term(&ratio_terms(a, x)),
+            largest_term(&direct_terms(a, x)),
+        ) {
             Self::Ratio
         } else {
             Self::Direct
         }
     }
+}
+
+/// Whether the rearranged form's largest term is the smaller of the two.
+///
+/// A function of the two magnitudes rather than of `(a, x)`, because that is what makes the
+/// comparison testable. Inside [`ScaledGammaForm::for_arguments`] it was `<` between two
+/// `largest_term` calls, and `<` mutated to `<=` differs only when the two are bit-equal — an
+/// `(a, x)` nobody can solve for, and one where either arrangement is correct anyway. Given the
+/// two scalars directly, the tie is one line of a test.
+///
+/// Ties go to [`ScaledGammaForm::Direct`], which is the arm that needs no `μ` series and is
+/// therefore the one to prefer when nothing distinguishes them.
+fn prefers_ratio<T: HostReal>(ratio: T, direct: T) -> bool {
+    ratio < direct
 }
 
 /// `log_scale − x + a·ln x − lnΓ(a)`; see [`ScaledGammaForm::Direct`].

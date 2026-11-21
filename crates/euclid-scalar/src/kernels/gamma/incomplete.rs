@@ -168,12 +168,23 @@ enum LowerSeriesForm {
 impl LowerSeriesForm {
     /// The product form wherever its factors fit, which is the common case by far.
     fn for_arguments(a: f64, x: f64) -> Self {
-        if (a * x.ln()).abs() < LOWER_PRODUCT_MAX && a <= GAMMA_FINITE_MAX {
+        if product_fits((a * x.ln()).abs(), a) {
             Self::Product
         } else {
             Self::Logged
         }
     }
+}
+
+/// Whether both of the product form's factors stay inside the format.
+///
+/// Takes the exponent already formed, rather than `(a, x)`, so that its two bounds can be named.
+/// Buried in [`LowerSeriesForm::for_arguments`] the `<` against [`LOWER_PRODUCT_MAX`] mutated to
+/// `<=` differs only at an exponent of exactly `700` — unreachable through `gamma_lr`, and a
+/// point where both forms work regardless. As a predicate on its own operands the boundary is a
+/// value, and `product_fits(LOWER_PRODUCT_MAX, 1.0)` states which side owns it.
+fn product_fits(exponent: f64, a: f64) -> bool {
+    exponent < LOWER_PRODUCT_MAX && a <= GAMMA_FINITE_MAX
 }
 
 /// Largest `|a·ln x|` the product form is used at.

@@ -225,3 +225,21 @@ fn the_series_radius_is_inclusive_and_nothing_past_it_uses_the_series() {
         );
     }
 }
+
+/// The discriminant's tie, which only a function of the two magnitudes can state.
+///
+/// `<` against `<=` inside `for_arguments` differs only when the two largest terms are bit-equal,
+/// at an `(a, x)` nobody can solve for. Given the scalars, it is one line.
+#[test]
+fn the_discriminant_gives_a_tie_to_the_direct_form() {
+    assert!(!prefers_ratio(5.0_f64, 5.0), "a tie goes to Direct");
+    assert!(
+        prefers_ratio(4.9_f64, 5.0),
+        "strictly smaller prefers Ratio"
+    );
+    assert!(!prefers_ratio(5.1_f64, 5.0));
+    // Zero is a legitimate largest term — at `x = a` the ratio form's `a·ln t` vanishes — and it
+    // must still win rather than tie.
+    assert!(prefers_ratio(0.0_f64, 1e-300));
+    assert!(!prefers_ratio(0.0_f64, 0.0));
+}

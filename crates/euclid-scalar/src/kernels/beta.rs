@@ -155,11 +155,30 @@ fn stirling_remainder_from_one(z: f64) -> f64 {
     debug_assert!(z >= 1.0, "the climb is one step per unit; see CENTRED_MIN");
     let mut climbed = 0.0;
     let mut lifted = z;
-    while lifted < STIRLING_MIN {
+    for _ in 0..climb_steps(z) {
         climbed += crate::math::gamma::stirling_remainder_step(lifted);
         lifted += 1.0;
     }
     climbed + stirling_remainder(lifted)
+}
+
+/// How many unit steps the climb takes before `z` reaches the series' range.
+///
+/// Lifted out of [`stirling_remainder_from_one`]'s loop because the loop's own condition could
+/// not be tested there. `while lifted < STIRLING_MIN` mutated to `<=` runs one extra step, and
+/// `μ(20) = step(20) + μ(21)` identically — so the *value* is unchanged and only the arithmetic
+/// path differs. No assertion on `μ` can see it.
+///
+/// As a count it is a value, and `climb_steps(20) == 0` says exactly what the comparison means:
+/// a `z` already in range climbs nothing. That is the whole content of the boundary.
+fn climb_steps(z: f64) -> u32 {
+    let mut lifted = z;
+    let mut steps = 0;
+    while lifted < STIRLING_MIN {
+        lifted += 1.0;
+        steps += 1;
+    }
+    steps
 }
 
 /// `μ(base + increment)` without forming the sum, which can leave the format while `ln B` does
@@ -248,5 +267,31 @@ mod stirling_tests {
             worst_at.0,
             worst_at.1
         );
+    }
+
+    /// The climb's loop bound, as a count.
+    ///
+    /// `while lifted < STIRLING_MIN` mutated to `<=` runs one extra step, and
+    /// `μ(20) = step(20) + μ(21)` identically — so no assertion on `μ` can see it. As a count the
+    /// boundary is a value: a `z` already in range climbs nothing.
+    #[test]
+    fn the_climb_takes_no_step_once_the_series_range_is_reached() {
+        assert_eq!(climb_steps(STIRLING_MIN), 0, "already in range");
+        assert_eq!(climb_steps(STIRLING_MIN + 5.0), 0, "past it");
+        assert_eq!(
+            climb_steps(STIRLING_MIN.next_down()),
+            1,
+            "one ulp short, one step"
+        );
+        assert_eq!(climb_steps(STIRLING_MIN - 1.0), 1);
+        assert_eq!(
+            climb_steps(1.0),
+            19,
+            "the longest climb a caller can ask for"
+        );
+        // And the climb is what makes `μ` reachable below the series: the reconstruction has to
+        // agree with the series' own value at the point where the two meet.
+        let direct = stirling_remainder(STIRLING_MIN);
+        assert_eq!(stirling_remainder_from_one(STIRLING_MIN), direct);
     }
 }
