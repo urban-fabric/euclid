@@ -181,3 +181,47 @@ fn the_term_lists_are_the_summands_of_their_own_arrangements() {
     assert_eq!(largest_term(&ratio), ratio[1].abs());
     assert!(largest_term(&ratio) < largest_term(&direct));
 }
+
+/// The band's radius is inclusive, and past it the series is not used at all.
+///
+/// Two mutants lived in `ln_1p_minus_linear`'s single comparison — `>` to `>=` and `>` to `==` —
+/// and neither is visible through the function's value. At `|u| = ½` the two forms agree to a few
+/// ulp by construction, so moving the boundary one representable value changes almost nothing;
+/// and the series still converges a little past the radius, so routing `0.6` through it is wrong
+/// without being obviously wrong. Asserting the *form* is what separates them.
+#[test]
+fn the_series_radius_is_inclusive_and_nothing_past_it_uses_the_series() {
+    use LnOnePlusForm::{Difference, Series};
+    let radius = LN_1P_SERIES_MAX;
+
+    // At the radius exactly, both signs: still the series. This is `>` against `>=`.
+    assert_eq!(LnOnePlusForm::for_offset(radius), Series);
+    assert_eq!(LnOnePlusForm::for_offset(-radius), Series);
+    // One representable value past it: the difference.
+    assert_eq!(LnOnePlusForm::for_offset(radius.next_up()), Difference);
+    assert_eq!(LnOnePlusForm::for_offset((-radius).next_down()), Difference);
+    // And well past it, which is what `>` against `==` turns on: an equality test would send
+    // every offset but `±½` itself back to the series.
+    for u in [0.6_f64, 1.0, 7.5, -0.6, -1.0, -0.99] {
+        assert_eq!(LnOnePlusForm::for_offset(u), Difference, "at u = {u}");
+    }
+    // Inside, including the degenerate centre where the series is the whole answer.
+    for u in [0.0_f64, -0.0, 1e-300, 0.25, -0.49] {
+        assert_eq!(LnOnePlusForm::for_offset(u), Series, "at u = {u}");
+    }
+    // A `NaN` offset fails the comparison and takes the series, which propagates it — the
+    // difference form would too, but only one of them is the documented arm.
+    assert_eq!(LnOnePlusForm::for_offset(f64::NAN), Series);
+
+    // The two forms are the same quantity where both are sound, which is what makes the radius
+    // a choice rather than a correctness boundary. At `±½` the series is accurate and the
+    // difference has lost about a third of a digit, so they agree to a handful of ulp.
+    for u in [radius, -radius, 0.4, -0.4] {
+        let series = ln_1p_minus_linear_series(u);
+        let difference = u.ln_1p() - u;
+        assert!(
+            ((series - difference) / series).abs() <= 1e-14,
+            "at u = {u} the series gives {series} and the difference {difference}"
+        );
+    }
+}

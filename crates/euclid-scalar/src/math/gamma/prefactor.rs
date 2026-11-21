@@ -46,10 +46,54 @@ const LN_1P_SERIES_MAX: f64 = 0.5;
 /// prefactor there is a second and unrelated reason to stay inside the band: out there `u` stops
 /// carrying `x` at all. See [`LN_1P_SERIES_MAX`].
 pub(crate) fn ln_1p_minus_linear<T: HostReal>(u: T) -> T {
-    if u.abs() > T::from_f64(LN_1P_SERIES_MAX) {
-        return u.ln_1p() - u;
+    match LnOnePlusForm::for_offset(u) {
+        LnOnePlusForm::Series => ln_1p_minus_linear_series(u),
+        LnOnePlusForm::Difference => u.ln_1p() - u,
     }
-    // t_k = (−1)^{k+1} u^k / k, starting at k = 2, advanced by t_{k+1} = t_k·(−u)·k/(k+1).
+}
+
+/// Which form evaluates `ln(1+u) − u` at this offset.
+///
+/// # Named because the band's own comparison was untestable
+///
+/// This was an early return inside [`ln_1p_minus_linear`], and mutation testing left two
+/// survivors in its single comparison: `>` to `>=`, which moves the boundary by one representable
+/// value, and `>` to `==`, which sends everything *past* the radius to the series. Neither is
+/// visible through the function's value — at `|u| = ½` the two forms agree to a few ulp by
+/// construction, and the series still converges a little beyond the radius, so routing `0.6`
+/// through it is wrong without being obviously wrong.
+///
+/// Split out, the choice is a value rather than a control-flow edge, and a test names `½` and
+/// `0.6` directly. This is the same move [`LanczosLogForm`](super::LanczosLogForm) was given for
+/// the same reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LnOnePlusForm {
+    /// `|u| ≤ `[`LN_1P_SERIES_MAX`]: the alternating series in `u`, which never forms `ln(1+u)`
+    /// and so never cancels it against `u`.
+    Series,
+    /// Past the radius: the direct difference, which by then has lost a fraction of one digit and
+    /// is the cheaper of the two.
+    Difference,
+}
+
+impl LnOnePlusForm {
+    /// The radius is inclusive — at exactly `½` the series is still the better form, which is
+    /// what separates `>` from `>=`.
+    fn for_offset<T: HostReal>(u: T) -> Self {
+        if u.abs() > T::from_f64(LN_1P_SERIES_MAX) {
+            Self::Difference
+        } else {
+            Self::Series
+        }
+    }
+}
+
+/// `ln(1+u) − u` by its alternating series; see [`LnOnePlusForm::Series`].
+///
+/// `t_k = (−1)^{k+1} u^k / k` from `k = 2`, advanced by `t_{k+1} = t_k·(−u)·k/(k+1)`. For `u < 0`
+/// every term carries the same sign so nothing cancels at all; for `u > 0` it alternates with the
+/// first term dominant.
+fn ln_1p_minus_linear_series<T: HostReal>(u: T) -> T {
     let mut index = T::TWO;
     let mut term = -u * u * T::HALF;
     let mut sum = term;
