@@ -28,7 +28,71 @@ than it sounds and the second half is the part worth watching:
 A relicence is listed too. It changes nothing at compile time and everything about what a
 recipient may do.
 
-## 0.6.0 (unreleased)
+## 0.7.0
+
+**`euclid-quantity` no longer re-exports `euclid-units`.** This is the one change here that can
+stop you compiling, and the fix is mechanical: depend on `euclid-units` and import from it.
+
+About sixty names left `euclid_quantity`'s surface — the five contracts (`Measure`, `Quantity`,
+`ScalarQuantity`, `LinearQuantity`, `DiscreteQuantity`), `Dimension`, `dim`, and the whole
+unit-marker set from `Length` and `Mass` through `Torque` and `VolumetricFlowRate`. They were
+never defined there. A caller naming one now depends on the crate that defines and documents it,
+so each name has exactly one path.
+
+```toml
+# add, if you were reaching these through euclid-quantity
+euclid-units = { version = "0.7", path = "../euclid/crates/euclid-units" }
+```
+
+```rust
+// before
+use euclid_quantity::{Length, Mass, Quantity};
+// after
+use euclid_units::{Length, Mass, Quantity};
+```
+
+`HostQuantity`, `QuantityError` and `scalar_mul` originate in `euclid-quantity` and are
+unaffected. Nothing else was removed from any crate's surface in this release: the conformance
+and law modules were split into sub-topic files, but every one re-exports at its former path, so
+`conformance::real_laws` and the rest resolve exactly as before.
+
+**Many kernels return different — more accurate — answers.** Listed because this file counts a
+changed answer as breaking, not because any of these is a regression. If you have reference
+values recorded against 0.6.0, re-record them. The direction is always toward the correctly
+rounded result, and every figure below is measured against an independent high-precision
+reference rather than against a previous version of the kernel.
+
+- **`bessel_j0`, `bessel_j1`, `bessel_y0`, `bessel_y1`** — the asymptotic phase was formed as
+  `x − c`, whose rounding *is* the angle's absolute error. Up to `4.1e-10` absolute, against a
+  documented promise of machine precision in absolute terms at every argument.
+- **`erf_inv` and `erfc_inv`** — now correctly rounded. The far tail measured `204` ulp through
+  `4.6e14` ulp across its bands, and there was a separate real defect near `|x| = 1`.
+- **`ln_rising_factorial`** — `6.5e13` ulp, from differencing two log-gammas. Its threshold had
+  been placed on *absolute* error while the answer grows like `n·ln a`.
+- **`gamma`** above `x = 20` — Lanczos *truncation*, not arithmetic, reached `458` ulp at the top
+  of the range; now `≤ 3.6` ulp throughout.
+- **`trigamma`** — `53` ulp at `x = 20` where the problem itself is benign.
+- **`erfcx` and `erfc`** — `23` ulp by `x = 1.36`; `erfcx` has its own Chebyshev route.
+- **`bessel_i0`, `bessel_i1`** and their scaled forms — one to four ulp uniformly from `1` to the
+  overflow edge. The `f32` Stirling remainder alone had cost about nine hundred ulp.
+- **`gamma_lr`, `gamma_ur`** — the prefactor no longer forms a cancelling sum under `exp`; worst
+  280 → 11 ulp, mean 38.9 → 2.0 on the measured grid.
+- **`beta_reg`** — the prefactor is centred on the mode; median 10 → 4 ulp, mean 24 → 16.6.
+- **`zeta`** — route boundaries moved to where the measurements put them, with a new third arm on
+  `(−1/8, 0)`.
+- **`ln_gamma`, `rgamma`, `polygamma`, `digamma`, `ln_beta`, `exp_int_e1`, `bessel_k0`,
+  `bessel_k1`** — all have reformulated arms or moved crossovers. `bessel_k0`'s series/quadrature
+  join moved from `2.0` to `1.25`, which costs about 9× on `(1.25, 2.0]` and buys 48 → 4 ulp.
+- **The whole `f32` surface** was measured for the first time, and several families are now
+  native single precision where they previously narrowed an `f64` result.
+
+**`euclid-stability` gains `relation::forward_stable_sum`.** Additive, so it breaks nothing, but
+worth knowing it exists: it bounds a sum whose reference itself cancels, and its failure message
+reports the `relative / admissible` ratio you act on. Error budgets across the suites are now set
+from each problem's conditioning rather than from picked tolerances, so a property that fails
+tells you whether the kernel is unstable or the input is simply hard.
+
+## 0.6.0
 
 **`euclid-numeric` is merged into `euclid-scalar`.** Replace the dependency and import paths
 (`euclid_numeric` → `euclid_scalar`). All numeric trait names, primitive implementations,
@@ -41,8 +105,7 @@ calls. The names `Real` and `Complex` now identify the backend-neutral traits fo
 numeric: they permit `Clone` carriers and mask-valued comparisons. Use `HostReal` or
 `HostComplex` when `Copy`, host predicates and associated constants are required.
 
-The workspace, generated laws and test tooling version together at 0.6.0. No release tag is
-created by this source migration.
+The workspace, generated laws and test tooling version together at 0.6.0.
 
 **`euclid-stability` assumptions now discard cases.** `assume!(false)` previously returned
 success, so a property could meet its case count without exercising any assertion. It now
