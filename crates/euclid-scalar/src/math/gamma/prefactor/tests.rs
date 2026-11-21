@@ -1,9 +1,10 @@
 //! The log prefactor `a·ln x − x − lnΓ(a)` and the three arrangements that evaluate it.
 //!
-//! Split from the parent so each file stays inside the crate's 400-line budget. The sub-topic is
-//! a real one: everything here is about [`ScaledGammaForm`] — that the two rearrangements are the
-//! same quantity as the sum they replace, and that each argument reaches the arm its own note
-//! claims. Nothing here evaluates `Γ` or `lnΓ` as such.
+//! Beside the module they test rather than under `math::gamma::tests`, because
+//! [`ScaledGammaForm`] and the two term lists are private to `prefactor` — and what these assert
+//! on *is* that privacy: that the two rearrangements are the same quantity as the sum they
+//! replace, and that each argument reaches the arm its own note claims. Nothing here evaluates
+//! `Γ` or `lnΓ` as such.
 
 use super::*;
 

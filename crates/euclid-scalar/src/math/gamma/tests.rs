@@ -6,10 +6,8 @@
 //! so each law is asserted once and holds for both precisions — which is the whole reason this
 //! code lives in `math` rather than being duplicated per format.
 //!
-//! The log prefactor and its three arrangements are in [`prefactor`], which keeps both files
-//! inside the 400-line budget.
-
-mod prefactor;
+//! The log prefactor and its three arrangements are tested beside their own module, in
+//! `math::gamma::prefactor`, which is where the private `ScaledGammaForm` they assert on lives.
 
 use super::*;
 use crate::math::continued_fraction::{LENTZ_TINY_F32, LENTZ_TINY_F64};

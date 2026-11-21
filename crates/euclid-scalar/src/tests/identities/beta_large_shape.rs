@@ -71,7 +71,7 @@
 use crate::Real;
 use euclid_utils::{assert_close, assert_exact};
 
-use crate::kernels::beta::BETA_EDGEWORTH_MIN;
+use crate::kernels::beta::incomplete::BETA_EDGEWORTH_MIN;
 
 /// `(a, b, x, I_x(a,b))`, the `Decimal` references described in the module header.
 ///
