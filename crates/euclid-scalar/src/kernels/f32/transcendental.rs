@@ -88,6 +88,19 @@ enum ZetaRoute {
     Hurwitz,
     /// The accelerated eta series, from [`ZETA_ETA_MIN`] up to `1`, including the critical strip.
     Eta,
+    /// `|s| < 1/8`: the shared Chebyshev fit, where `η`'s series is divergent and cancels.
+    ///
+    /// What [`ZETA_ETA_MIN`]'s note leaves open. Raising the handover fixed everything below
+    /// `−1/8`; the band `(−1/8, 0)` stayed at `6.8`–`7.1` ulp on every candidate because it is
+    /// the accelerator's own cancellation and no routing choice reaches it.
+    ///
+    /// The fit is [`zeta_near_origin`](crate::math::zeta::zeta_near_origin), **shared with the
+    /// wide kernel** rather than re-derived. It is one of the few constants that can be: its
+    /// sixteen coefficients were fitted to `1e-18` against a 400-bit reference, which is more
+    /// precision than this format can use, and narrowing them costs nothing. Eight would reach
+    /// `f32`'s `ε` — the eight extra Clenshaw steps are a speed question, not an accuracy one,
+    /// and sharing one table keeps a single derivation behind both.
+    NearOrigin,
     /// The functional equation, mapping `s ≤ −1` onto `1 − s ≥ 2`.
     Reflection,
 }
@@ -124,6 +137,17 @@ enum ZetaRoute {
 /// format has no such arm yet, and that band is where it would go.
 const ZETA_ETA_MIN: f32 = -0.125;
 
+/// Half-width of the interval the Chebyshev fit owns, `|s| < 1/8`.
+///
+/// The same value as the wide peer's, and for the same reason: `ζ` is analytic at the origin with
+/// its nearest singularity the pole at `s = 1`, so `1/8` keeps that `0.875` away against a
+/// half-width of `1/8`. It also makes the fit's `t = 8s` exact.
+///
+/// It coincides with [`ZETA_ETA_MIN`] in magnitude, which is arithmetic rather than design: the
+/// reflection takes everything at or below `−1/8` and the fit takes `(−1/8, 1/8)`, so the eta
+/// arm keeps `[1/8, 1)` alone.
+const ZETA_FIT_MAX: f32 = 0.125;
+
 fn zeta_route(s: f32) -> ZetaRoute {
     if s.is_nan() || s == f32::NEG_INFINITY {
         ZetaRoute::Value(f32::NAN)
@@ -135,6 +159,8 @@ fn zeta_route(s: f32) -> ZetaRoute {
         ZetaRoute::Value(f32::INFINITY)
     } else if s == 0.0 {
         ZetaRoute::Value(-0.5)
+    } else if s.abs() < ZETA_FIT_MAX {
+        ZetaRoute::NearOrigin
     } else if s > ZETA_ETA_MIN {
         ZetaRoute::Eta
     } else if s % 2.0 == 0.0 {
@@ -169,6 +195,7 @@ pub(crate) fn zeta(s: f32) -> f32 {
         ZetaRoute::Value(value) => value,
         ZetaRoute::Hurwitz => super::polygamma::hurwitz_zeta(s, 1.0),
         ZetaRoute::Eta => zeta_eta(s),
+        ZetaRoute::NearOrigin => crate::math::zeta::zeta_near_origin(s),
         ZetaRoute::Reflection => zeta_reflection(s),
     }
 }
@@ -221,8 +248,12 @@ mod tests {
         // reflection carries everything below `-1/8`, which took that band from 154 ulp to 5.
         assert_eq!(zeta_route(-0.5), ZetaRoute::Reflection);
         assert_eq!(zeta_route(ZETA_ETA_MIN), ZetaRoute::Reflection);
-        assert_eq!(zeta_route(-0.0625), ZetaRoute::Eta);
-        assert_eq!(zeta_route(-f32::MIN_POSITIVE), ZetaRoute::Eta);
+        // `(-1/8, 1/8)` is the fit's, so the eta arm keeps `[1/8, 1)` alone.
+        assert_eq!(zeta_route(-0.0625), ZetaRoute::NearOrigin);
+        assert_eq!(zeta_route(-f32::MIN_POSITIVE), ZetaRoute::NearOrigin);
+        assert_eq!(zeta_route(0.0625), ZetaRoute::NearOrigin);
+        assert_eq!(zeta_route(ZETA_FIT_MAX), ZetaRoute::Eta);
+        assert_eq!(zeta_route(0.99), ZetaRoute::Eta);
         assert_eq!(zeta_route(-2.0), ZetaRoute::Value(0.0));
         assert_eq!(zeta_route(-3.0), ZetaRoute::Reflection);
         assert_eq!(zeta_route(f32::INFINITY), ZetaRoute::Value(1.0));
