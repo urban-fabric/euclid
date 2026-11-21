@@ -108,7 +108,7 @@ fn rgamma_is_defined_where_gamma_overflows() {
 /// there to prevent.
 #[test]
 fn the_reciprocal_gamma_routes_split_the_line_at_the_integers() {
-    use RgammaRoute::{AtPositiveInfinity, Exponential, Pole, Reflection, Undefined};
+    use RgammaRoute::{AtPositiveInfinity, Exponential, Pole, Recurrence, Reflection, Undefined};
     for (x, want) in [
         (f64::NAN, Undefined),
         (f64::NEG_INFINITY, Undefined),
@@ -124,9 +124,13 @@ fn the_reciprocal_gamma_routes_split_the_line_at_the_integers() {
         ((-1.0_f64).next_down(), Reflection),
         (-0.5, Reflection),
         (-39.000_01, Reflection),
-        // The positive axis, including the subnormal floor and the top of the format.
-        (f64::MIN_POSITIVE, Exponential),
-        (0.5, Exponential),
+        // `(0, 1)` takes the recurrence, which keeps `1/Γ` away from `Γ`'s reflection — the
+        // subnormal floor is the whole point of it, where `gamma(x)` was building `1e308`.
+        (f64::MIN_POSITIVE, Recurrence),
+        (2.58e-16, Recurrence),
+        (0.5, Recurrence),
+        (1.0_f64.next_down(), Recurrence),
+        // From one upward `Γ` itself is well behaved and the reciprocal is two roundings.
         (1.0, Exponential),
         (175.0, Exponential),
         (f64::MAX, Exponential),

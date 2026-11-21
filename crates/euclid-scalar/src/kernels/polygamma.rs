@@ -260,7 +260,26 @@ enum RgammaRoute {
     /// The non-positive integers. The poles of `Γ` are the zeros of `1/Γ`, and they are returned
     /// exactly rather than left to [`Self::Reflection`]'s `sin(πx)` to round to zero.
     Pole,
-    /// `x > 0`, as `e^{−lnΓ(x)}` — not `gamma(x).recip()`, because `Γ` overflows from about
+    /// `0 < x < 1`, as `x/Γ(1+x)` — the recurrence, which keeps every intermediate `O(1)`.
+    ///
+    /// # The reciprocal was reached through a huge intermediate
+    ///
+    /// [`Self::Exponential`] takes `gamma(x).recip()`, and `Γ` of a small argument is itself
+    /// reached by reflection — `π/(sin(πx)·Γ(1−x))` — so `1/Γ(2.6e-16)` was built by forming
+    /// `3.9e15` and dividing back down. Each of `πx`, `sin`, `Γ(1−x)`, the division and the
+    /// reciprocal contributes a rounding to a quantity whose answer is just `x`: measured `5`
+    /// ulp at `x = 2.58e-16` against `κ = 1`, which the amplification ranking put second-worst
+    /// in the crate.
+    ///
+    /// `Γ(x) = Γ(1+x)/x` gives `1/Γ(x) = x/Γ(1+x)` exactly, and on `(0, 1)` the denominator runs
+    /// `0.8856`–`1`, so there is no large intermediate anywhere. Below `x = ε/2` the sum `1 + x`
+    /// rounds to one and `Γ(1) = 1` exactly, so the arm returns `x` itself — which is the right
+    /// answer, since `1/Γ(x) = x(1 + γx + ⋯)` and the correction is below half an ulp there.
+    ///
+    /// The `1 + x` rounding costs nothing: it moves the argument by at most `ulp(1+x)/2`, and
+    /// `|ψ(1+x)| ≤ 0.58` across the interval, so `Γ(1+x)` moves by under `1e-16` relative.
+    Recurrence,
+    /// `x ≥ 1`, as `e^{−lnΓ(x)}` — not `gamma(x).recip()`, because `Γ` overflows from about
     /// `x = 172` while `1/Γ` stays representable well past that.
     Exponential,
     /// `x < 0` and not an integer, by the reflection formula; see [`rgamma_reflection`].
@@ -275,13 +294,20 @@ impl RgammaRoute {
             Self::AtPositiveInfinity
         } else if x <= 0.0 && x.fract() == 0.0 {
             Self::Pole
-        } else if x.is_sign_positive() {
-            // A sign-bit test rather than `x > 0.0`: both signed zeros are integers, so the arm
-            // above has already taken them and `>` against `>=` cannot be told apart here.
-            // Mutation testing found that spelling unkillable; this one has no operator to flip.
-            Self::Exponential
-        } else {
+        } else if x < 0.0 {
+            // The sign test comes **before** the `x < 1` split, or the negative non-integers
+            // fall into the recurrence arm. They cannot: `Γ(1+x)` has its own poles down there.
             Self::Reflection
+        } else if x < 1.0 {
+            // `0 < x < 1`: the pole arm above has already taken both signed zeros and every
+            // non-positive integer.
+            Self::Recurrence
+        } else {
+            // A sign-bit test rather than `x > 0.0` was here when this arm covered all of
+            // `x > 0`: both signed zeros are integers, so the pole arm had already taken them
+            // and `>` against `>=` could not be told apart. The `x < 1.0` split above now
+            // separates them, so the spelling no longer matters.
+            Self::Exponential
         }
     }
 }
@@ -292,6 +318,7 @@ pub(crate) fn rgamma(x: f64) -> f64 {
         RgammaRoute::Undefined => f64::NAN,
         RgammaRoute::AtPositiveInfinity => 0.0,
         RgammaRoute::Pole => 0.0,
+        RgammaRoute::Recurrence => x / gamma(1.0 + x),
         RgammaRoute::Exponential => {
             // `1/Γ(x)` directly where `Γ(x)` is representable, and only through the log domain
             // where it is not. Going through the logarithm unconditionally costs `lnΓ(x)·ε` of
