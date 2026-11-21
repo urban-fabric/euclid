@@ -95,7 +95,8 @@ fn ln_gamma_matches_gamma() {
 #[test]
 fn the_log_gamma_methods_partition_the_line() {
     use LnGammaMethod::{
-        Divergent, Lanczos, NearTwoZero, NearUnitZero, Reflected, SmallShape, Undefined,
+        Divergent, Lanczos, NearTwoZero, NearUnitZero, Recurrence, Reflected, SmallShape,
+        Undefined, UnitInterval,
     };
     for (x, want) in [
         (f64::NAN, Undefined),
@@ -120,7 +121,21 @@ fn the_log_gamma_methods_partition_the_line() {
         // all sit at a coarser spacing and round the other way. Worth pinning rather than
         // tidying: it is the arithmetic, not the threshold, and a reader checking the bound
         // against the constant would otherwise conclude the routing was wrong.
-        (1.0 - SMALL_SHAPE, Lanczos),
+        //
+        // It used to fall through to `Lanczos`, which is what made this edge worth a note in
+        // the first place; the factored window now catches it, so missing the neighbourhood by
+        // one ulp costs nothing at all.
+        (1.0 - SMALL_SHAPE, UnitInterval),
+        // The factored window and the recurrence above it, at and either side of both edges.
+        (LN_GAMMA_UNIT_MIN, UnitInterval),
+        // Just below the window the reflection takes over — and lands back inside it, since
+        // `1 − x` is then just above a half.
+        (LN_GAMMA_UNIT_MIN.next_down(), Reflected),
+        (LN_GAMMA_UNIT_MAX, UnitInterval),
+        (LN_GAMMA_UNIT_MAX.next_up(), Recurrence),
+        (1.3, UnitInterval),
+        (LN_GAMMA_RECURRENCE_MAX, Recurrence),
+        (LN_GAMMA_RECURRENCE_MAX.next_up(), Lanczos),
         // The pole at the origin, approached from above only.
         (SMALL_SHAPE, SmallShape),
         (1e-30, SmallShape),
@@ -128,20 +143,20 @@ fn the_log_gamma_methods_partition_the_line() {
         (-0.5, Reflected),
         (-1.5, Reflected),
         (-1e5 - 0.5, Reflected),
-        (3.0, Lanczos),
+        (5.0, Lanczos),
         (1e30, Lanczos),
     ] {
         assert_eq!(LnGammaMethod::for_argument(x), want, "at {x:e}");
     }
-    // The neighbourhoods are closed, so one step outside each falls through to the general
-    // route rather than staying on the shifted series.
+    // The neighbourhoods are closed, so one step outside each leaves the shifted series — and
+    // now lands in the factored window rather than on Lanczos, which is the whole point of it.
     assert_eq!(
         LnGammaMethod::for_argument((1.0 + SMALL_SHAPE).next_up()),
-        Lanczos
+        UnitInterval
     );
     assert_eq!(
         LnGammaMethod::for_argument((2.0 + SMALL_SHAPE).next_up()),
-        Lanczos
+        UnitInterval
     );
     // Just above the small-shape cutoff the route is *Reflected*, not Lanczos: the reflection
     // applies to everything below `½`, which includes the small positives the shifted series
@@ -151,7 +166,9 @@ fn the_log_gamma_methods_partition_the_line() {
         Reflected
     );
     assert_eq!(LnGammaMethod::for_argument(0.25), Reflected);
-    assert_eq!(LnGammaMethod::for_argument(0.5), Lanczos);
+    // A half is the first argument the factored window admits, and the reflection stops exactly
+    // there — so the two thresholds meet without a gap or an overlap.
+    assert_eq!(LnGammaMethod::for_argument(0.5), UnitInterval);
     // No continuity assertion across the zero-neighbourhood joins, and that is the point of
     // them: the shifted series and Lanczos *deliberately* disagree there by about an ulp of one
     // — measured `2.53e-16` at `x = 1.001` — because Lanczos carries an absolute error of
@@ -201,4 +218,99 @@ fn the_gamma_methods_keep_the_two_pole_kinds_apart() {
     // A non-integer just off a pole is finite and enormous, not NaN — the distinction the
     // integer test exists to preserve.
     assert!(gamma(-20.0 + 1e-9).is_finite());
+}
+
+/// The factored window satisfies `lnΓ(x+1) = lnΓ(x) + ln x`, which needs no reference.
+///
+/// # Why a recurrence rather than a value table
+///
+/// [`LN_GAMMA_UNIT`] is thirty-nine machine-generated coefficients. A wrong one does not make
+/// `lnΓ` ragged or obviously broken — it shifts a smooth function by a smooth amount, which a
+/// handful of pinned values can easily straddle without noticing. The recurrence constrains the
+/// *whole* window against itself: `x` and `x + 1` are evaluated at different points of the same
+/// Chebyshev series and have to agree through an identity the series knows nothing about.
+///
+/// `x ∈ [½, 3/2]` is the range where both `x` and `x + 1` are inside the window, so this tests
+/// the factored route against itself rather than against a neighbour.
+///
+/// # The grid is in sixty-fourths, and that is not cosmetic
+///
+/// `x + 1` has to be **exact**, and for a general `x` near one it is not: `x` there carries bits
+/// at `2^-53` while `x + 1` can only hold `2^-52`, so the sum rounds and the identity is being
+/// asked about two arguments that are not one apart. On a decimal grid this showed up as `55`
+/// ulp at `x = 1.01`, which is `ψ(2.01)` times the `2.2e-16` by which `fl(2.01)` and `fl(1.01)+1`
+/// differ — the kernel was right at both points. Sixty-fourths need six bits, so `x`, `x + 1`
+/// and the subtraction back off them are all exact.
+///
+/// Measured worst over the arguments below: `3` ulp. The bar is `8`, which is the `3` ulp that
+/// `ln x` and the addition can contribute on top of the two evaluations, rounded up.
+#[test]
+fn the_factored_window_satisfies_the_gamma_recurrence() {
+    let mut worst = (0.0_f64, 0.0_f64);
+    let mut checked = 0usize;
+    for step in 0..=64 {
+        let x = 0.5 + f64::from(step) / 64.0;
+        let shifted = ln_gamma(x + 1.0);
+        let expected = ln_gamma(x) + x.ln();
+        // `lnΓ(x+1)` passes through zero at `x = 1`, where a relative comparison is meaningless.
+        // Scaled against the size of the terms it is built from instead.
+        let scale = ln_gamma(x).abs().max(x.ln().abs()).max(f64::MIN_POSITIVE);
+        let ulps = (shifted - expected).abs() / crate::Real::ulp(scale);
+        if ulps > worst.0 {
+            worst = (ulps, x);
+        }
+        assert!(
+            ulps <= 8.0,
+            "at x = {x} the recurrence gives {expected} and lnΓ(x+1) is {shifted}, \
+             {ulps} ulp apart"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 60,
+        "only {checked} arguments reached the assertion"
+    );
+    assert!(
+        worst.0 > 0.0,
+        "the recurrence held bit-exactly everywhere, so it compared nothing at {}",
+        worst.1
+    );
+}
+
+/// The two zeros come out exactly zero, and the slope through each is right.
+///
+/// This is what factoring buys that refinement cannot: `(x−1)` and `(x−2)` are exact on the
+/// window, so the product is exactly zero at `1` and `2` whatever the coefficients say. Beside
+/// the zero the answer is then `−γ·h` and `(1−γ)·h`, which is the *relative* accuracy a log
+/// density at shape one needs and which Lanczos could not give — it returned `−8.88e-16` at
+/// `x = 1` where the answer is zero.
+#[test]
+fn the_factored_window_has_exact_zeros_and_the_right_slopes() {
+    assert_eq!(ln_gamma(1.0), 0.0);
+    assert_eq!(ln_gamma(2.0), 0.0);
+
+    // Powers of two, so `1 + h` and `2 + h` are exact and the kernel sees the `h` this test
+    // compares against. A decimal `h` loses its low bits to the addition — `1.0 + 1e-9` is not
+    // `1 + 1e-9` — and the slope then misses by `1e-7` for reasons that have nothing to do with
+    // `lnΓ`.
+    let euler = crate::constants::f64::EULER_GAMMA;
+    for &h in &[
+        f64::from_bits(0x3E10_0000_0000_0000),
+        1.0 / 1_048_576.0,
+        1.0 / 1024.0,
+    ] {
+        // `lnΓ(1+h) ≈ −γh` and `lnΓ(2+h) ≈ (1−γ)h`, to first order in `h`.
+        let near_one = ln_gamma(1.0 + h);
+        let near_two = ln_gamma(2.0 + h);
+        assert!(
+            (near_one / (-euler * h) - 1.0).abs() <= 2.0 * h,
+            "lnΓ(1+{h}) = {near_one}, which is not −γ·h to first order"
+        );
+        assert!(
+            (near_two / ((1.0 - euler) * h) - 1.0).abs() <= 2.0 * h,
+            "lnΓ(2+{h}) = {near_two}, which is not (1−γ)·h to first order"
+        );
+    }
+    // And the sign is negative strictly between the zeros, positive outside.
+    assert!(ln_gamma(1.5) < 0.0 && ln_gamma(0.75) > 0.0 && ln_gamma(2.5) > 0.0);
 }

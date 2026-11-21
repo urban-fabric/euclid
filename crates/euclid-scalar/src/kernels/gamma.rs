@@ -71,6 +71,25 @@ enum LnGammaMethod {
     /// Sterbenz — and both forms are exactly zero at the zero, so the two exact zeros fall out of
     /// the general branch rather than needing an equality test of their own.
     NearTwoZero,
+    /// `½ ≤ x ≤ 5/2`: the two zeros factored out, by [`ln_gamma_unit_interval`].
+    ///
+    /// Ordered *after* the two zero neighbourhoods rather than before, so those keep the slivers
+    /// they already covered on both sides of `1` and `2` and nothing that worked changes. This
+    /// arm takes everything else in the window, which is where Lanczos was losing digits to
+    /// cancellation — inside `[1,2]` because `lnΓ` is small there, and either side of it because
+    /// the two zeros are still close enough to dominate the answer's size.
+    UnitInterval,
+    /// `5/2 < x ≤ 4`: one or two steps of `lnΓ(x) = lnΓ(x−1) + ln(x−1)` into the window above.
+    ///
+    /// Lanczos still carried `53` ulp here against a condition number of `5.8`, for a weaker
+    /// version of the same reason it carried `2014` inside `[1,2]`: the zeros at `1` and `2` are
+    /// close enough that `lnΓ` is still small compared with the terms Lanczos builds it from.
+    /// Stepping down is exact — `x − 1` loses nothing on `(5/2, 4]` — and the `ln(x−1)` it adds
+    /// is the same size as the answer, so nothing cancels.
+    ///
+    /// It stops at `4` because that is where Lanczos reaches `9` ulp on its own and the stepping
+    /// would start costing more logarithms than it saves digits.
+    Recurrence,
     /// `0 < x ≤ SMALL_SHAPE`: the pole at the origin, through `lnΓ(1+x)/x`.
     ///
     /// Thresholded at [`SMALL_SHAPE`], which is the range that polynomial is fitted for; past it
@@ -94,6 +113,10 @@ impl LnGammaMethod {
             Self::NearUnitZero
         } else if (x - 2.0).abs() <= SMALL_SHAPE {
             Self::NearTwoZero
+        } else if (LN_GAMMA_UNIT_MIN..=LN_GAMMA_UNIT_MAX).contains(&x) {
+            Self::UnitInterval
+        } else if (LN_GAMMA_UNIT_MAX..=LN_GAMMA_RECURRENCE_MAX).contains(&x) {
+            Self::Recurrence
         } else if x.is_sign_positive() && x <= SMALL_SHAPE {
             Self::SmallShape
         } else if use_gamma_reflection(x) {
@@ -116,6 +139,11 @@ pub(crate) fn ln_gamma(x: f64) -> f64 {
         LnGammaMethod::NearTwoZero => {
             let b = x - 2.0;
             b.ln_1p() + b * ln_gamma1p_over_a(b)
+        }
+        LnGammaMethod::UnitInterval => ln_gamma_unit_interval(x),
+        LnGammaMethod::Recurrence => {
+            let down = x - 1.0;
+            ln_gamma(down) + down.ln()
         }
         LnGammaMethod::SmallShape => x * ln_gamma1p_over_a(x) - x.ln(),
         LnGammaMethod::Reflected => log_gamma_reflection(reflection_sine(x), ln_gamma(1.0 - x)),
@@ -221,6 +249,127 @@ fn ln_gamma1p_over_a(a: f64) -> f64 {
                 + a * (0.270_580_808_427_784_55
                     + a * (-0.207_385_551_028_674 + a * 0.169_557_176_997_408_2))))
 }
+
+/// `lnΓ` on `[1, 2]`, with both of its zeros factored out exactly.
+///
+/// # Lanczos computes a small number as a difference of large ones here
+///
+/// `lnΓ` has simple zeros at `1` and `2` and a minimum of `−0.1214` between them, so across this
+/// whole interval it is a *small* quantity. Lanczos forms it as `ln(series) + (x−½)ln t − t`
+/// with `t ≈ 8`, so terms of size eight produce an answer of size an eighth: about two digits
+/// go, and they go everywhere in the interval rather than at a point. Measured against a
+/// 400-bit reference, worst ulp per band with the condition number beside it:
+///
+/// ```text
+/// band        [1.01,1.2]  [1.2,1.46]  [1.46,1.8]  [1.8,1.99]
+/// was                799         121         172        1902   ulp
+/// kappa             89.1        1.12        5.86         118
+/// ```
+///
+/// The outer bands are near the zeros, where a large `κ` is the honest explanation — `lnΓ`
+/// passes through zero, so relative error there is unbounded for any implementation. `[1.2,1.46]`
+/// is not: `κ` is `1.12` and the error is `121` ulp, an amplification of about a hundred.
+///
+/// # Factoring is structural, not a refinement
+///
+/// `lnΓ(x) = (x−1)(x−2)·R(x)`, and on `[1,2]` **both subtractions are exact** by Sterbenz. So
+/// the product carries only `R`'s own error and two roundings, and the zeros come out as exactly
+/// zero rather than as whatever the general route rounds to.
+///
+/// `R` is analytic here with removable singularities at both ends — `R(1) = γ` and
+/// `R(2) = 1 − γ`, which is the check that the factoring is the right one. See
+/// [`LN_GAMMA_UNIT`].
+fn ln_gamma_unit_interval(x: f64) -> f64 {
+    // Clenshaw on the Chebyshev series, in `t = x − 3/2` which maps the window to `[−1,1]`.
+    // Clenshaw rather than a monomial Horner because converting a degree-21 Chebyshev series to
+    // monomials loses most of what the fit was for: the monomial coefficients alternate and grow,
+    // so their sum cancels where the Chebyshev form does not.
+    let t = x - 1.5;
+    let twice = 2.0 * t;
+    let (mut nearer, mut further) = (0.0_f64, 0.0_f64);
+    for &coefficient in LN_GAMMA_UNIT.iter().skip(1).rev() {
+        let next = twice * nearer - further + coefficient;
+        further = nearer;
+        nearer = next;
+    }
+    let r = t * nearer - further + LN_GAMMA_UNIT[0];
+    (x - 1.0) * (x - 2.0) * r
+}
+
+/// Chebyshev coefficients of `R(x) = lnΓ(x)/((x−1)(x−2))` on `[½, 5/2]`, in `t = x − 3/2`.
+///
+/// Derived rather than transcribed, by `lngamma_unit.py`: `R` evaluated at Chebyshev nodes
+/// through MPFR and the transform run in 60-digit decimal. Run in `f64` the coefficients floor
+/// at `1e-16` around the eighteenth and look converged; they are not, and they keep falling by
+/// about a factor of six per order to `c₂₁ = −3.6e-18`. Two separate things had to leave `f64`
+/// before that showed — the node values *and* the `π` in the node angles.
+///
+/// Thirty-nine terms, which is where the tail drops below `2e-18` — a quarter ulp of `R`. The
+/// narrower `[1,2]` needs only twenty-two; the extra seventeen buy the bands either side, where
+/// the measurement said the error was worst of all (`1845` ulp on `[2.01, 2.5]`).
+///
+/// The window is bounded by where the series stops paying rather than by where it stops working:
+/// `R`'s nearest singularity is `lnΓ`'s pole at the origin, so widening costs terms geometrically
+/// — `[0.5, 2.5]` takes 39 where `[0.5, 4]` would take 56.
+const LN_GAMMA_UNIT: [f64; 39] = [
+    0.5233830675936226,
+    -0.17797233729529863,
+    0.043707765509376,
+    -0.012436054693716324,
+    0.0038166273622453444,
+    -0.0012248310110168689,
+    0.0004046307309337695,
+    -0.0001363999286478383,
+    4.6669854564403646e-05,
+    -1.6152571568530024e-05,
+    5.641861294289138e-06,
+    -1.985468608994096e-06,
+    7.031292350156658e-07,
+    -2.503431672683324e-07,
+    8.954655195462511e-08,
+    -3.216038816813161e-08,
+    1.1591674196198932e-08,
+    -4.191331343092517e-09,
+    1.5198287942838018e-09,
+    -5.525248244354367e-10,
+    2.0133461407895695e-10,
+    -7.351973399346738e-11,
+    2.6898575436827364e-11,
+    -9.85882886617758e-12,
+    3.619354400654772e-12,
+    -1.3307382122555227e-12,
+    4.899613435234918e-13,
+    -1.8063242404502505e-13,
+    6.667388160934133e-14,
+    -2.4638096705345538e-14,
+    9.114199669747885e-15,
+    -3.3749037208856614e-15,
+    1.2508630658961872e-15,
+    -4.640235454740319e-16,
+    1.7227826138316332e-16,
+    -6.401198458457187e-17,
+    2.3802040365336956e-17,
+    -8.85670810564711e-18,
+    3.2977685786612905e-18,
+];
+
+/// The window the factored route covers.
+///
+/// `[½, 5/2]`, and the bound that matters is `x − 1` and `x − 2` staying exact. On `[½, 2]`
+/// Sterbenz gives `x − 1` outright, and above `2` the difference lands in a binade whose ulp is
+/// no coarser than `x`'s, so it is exact there too. The one place it is not is `x − 2` below
+/// `x = 1`, where the result sits in `[−3/2, −1]` with a coarser ulp than `x` has — that costs
+/// at most half an ulp of `x` against a `|x − 2|` of about `3/2`, which is `0.7` ulp in the
+/// answer and is why the window is not pushed below a half.
+const LN_GAMMA_UNIT_MIN: f64 = 0.5;
+const LN_GAMMA_UNIT_MAX: f64 = 2.5;
+
+/// Above this the Lanczos form is accurate enough to keep.
+///
+/// `4`, which takes at most two steps to reach the window — `(5/2, 7/2]` lands in it directly
+/// and `(7/2, 4]` needs one more. Lanczos measures `9` ulp on `[4, 10]` and `4` beyond, so there
+/// is little left to win and each further step is another logarithm.
+const LN_GAMMA_RECURRENCE_MAX: f64 = 4.0;
 
 /// DLMF 8.7.1 with the constant term separated, for `x < 1+a`.
 mod incomplete;
