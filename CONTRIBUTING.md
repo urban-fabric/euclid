@@ -13,8 +13,8 @@ that independently-written parts of the fleet agree on definitions.
 So the surfaces are still allowed to move, but moving them is now a *release*
 rather than a push:
 
-- the **minor number is the breaking-change axis** — `0.5.x` is compatible,
-  `0.6.0` may not be, which is cargo's own reading of a `0.x` version
+- the **minor number is the breaking-change axis** — `0.6.x` is compatible,
+  `0.7.0` may not be, which is cargo's own reading of a `0.x` version
 - every breaking change is recorded in [RELEASES](RELEASES.md), which lists
   nothing else, because a pinned consumer has exactly one question
 - a release is a tag, cut after the merge — see [Releasing](#releasing)
@@ -380,8 +380,8 @@ A release is a **tag**, and consumers pin it. Three steps, in this order:
 
    ```sh
    jj git fetch --remote origin
-   git tag -a v0.6.0 origin/main -m "Euclid 0.6.0"
-   git push origin refs/tags/v0.6.0
+   git tag -a v0.7.0 origin/main -m "Euclid 0.7.0"
+   git push origin refs/tags/v0.7.0
    ```
 
    Getting this backwards is the one mistake the ordering exists to prevent, and

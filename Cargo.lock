@@ -24,14 +24,14 @@ dependencies = [
 
 [[package]]
 name = "euclid-algebra"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "euclid-stability",
 ]
 
 [[package]]
 name = "euclid-matrix"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "euclid-scalar",
  "euclid-tensor",
@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-quantity"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "bytemuck",
  "euclid-scalar",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-random"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "euclid-scalar",
  "euclid-stability",
@@ -60,7 +60,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-scalar"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "euclid-algebra",
  "euclid-stability",
@@ -69,11 +69,11 @@ dependencies = [
 
 [[package]]
 name = "euclid-stability"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "euclid-tensor"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "euclid-scalar",
  "euclid-stability",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-units"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "euclid-scalar",
  "euclid-stability",
@@ -90,7 +90,7 @@ dependencies = [
 
 [[package]]
 name = "euclid-utils"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "euclid-stability",
 ]

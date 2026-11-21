@@ -164,7 +164,7 @@ engine explicitly; ordinary consumers do not receive the test tooling.
 
 The nine workspace members include seven production crates and two test-tooling crates.
 `euclid-numeric` was merged into `euclid-scalar` for 0.6: scalar traits and scalar implementations
-now have one owner. See [the migration notes](RELEASES.md#060-unreleased).
+now have one owner. See [the migration notes](RELEASES.md#060).
 
 | concern | contract | implementation |
 |---|---|---|
@@ -399,23 +399,26 @@ it, so the engine travels with the test surface a consumer opted into.
 
 ## Using It
 
-**These crates are not on crates.io.** The current checkout is 0.6.0 in development;
-the scalar merge has not been tagged as a release. Against a local checkout, use paths:
+**These crates are not on crates.io.** The current release is 0.7.0. Against a local
+checkout, use paths:
 
 ```toml
 [dependencies]
-euclid-scalar = { version = "0.6", path = "../euclid/crates/euclid-scalar" }
-euclid-units = { version = "0.6", path = "../euclid/crates/euclid-units" }
-euclid-tensor = { version = "0.6", path = "../euclid/crates/euclid-tensor" }
-euclid-random = { version = "0.6", path = "../euclid/crates/euclid-random" }
-euclid-algebra = { version = "0.6", path = "../euclid/crates/euclid-algebra" }
-euclid-quantity = { version = "0.6", path = "../euclid/crates/euclid-quantity" }
-euclid-matrix = { version = "0.6", path = "../euclid/crates/euclid-matrix" }
+euclid-scalar = { version = "0.7", path = "../euclid/crates/euclid-scalar" }
+euclid-units = { version = "0.7", path = "../euclid/crates/euclid-units" }
+euclid-tensor = { version = "0.7", path = "../euclid/crates/euclid-tensor" }
+euclid-random = { version = "0.7", path = "../euclid/crates/euclid-random" }
+euclid-algebra = { version = "0.7", path = "../euclid/crates/euclid-algebra" }
+euclid-quantity = { version = "0.7", path = "../euclid/crates/euclid-quantity" }
+euclid-matrix = { version = "0.7", path = "../euclid/crates/euclid-matrix" }
 ```
+
+Note that `euclid-quantity` no longer re-exports `euclid-units`, so take `euclid-units`
+directly if you name `Quantity`, `Length` or any other unit marker.
 
 For released versions, depend on this private repository by git and **pin its actual release
 tag**, rather than a branch. `v0.5.0` retains the old crate split; use
-[the migration notes](RELEASES.md#060-unreleased) when adopting the merged scalar API.
+[the migration notes](RELEASES.md#070) when moving from 0.6.0.
 
 Take only the crates you use; there is no umbrella crate to pull the rest in.
 Every member is Apache-2.0 — see [License](#license).
@@ -438,7 +441,7 @@ unexpected fails resolution instead of compiling something you did not ask for.
 
 **What breaks between versions is recorded in [RELEASES](RELEASES.md)** — only
 the breaking changes, because that is the only question a pinned consumer has.
-The minor number is the breaking axis: `0.5.x` is compatible, `0.6.0` may not
+The minor number is the breaking axis: `0.6.x` is compatible, `0.7.0` may not
 be.
 
 ### One ref per build graph

@@ -34,7 +34,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "Apache-2.0"
 authors = ["Raymond Mead"]
@@ -42,12 +42,12 @@ rust-version = "1.95"
 repository = "https://github.com/urban-fabric/euclid"
 
 [workspace.dependencies]
-euclid-algebra = { version = "0.6.0", path = "crates/euclid-algebra" }
-euclid-scalar = { version = "0.6.0", path = "crates/euclid-scalar" }
-euclid-units = { version = "0.6.0", path = "crates/euclid-units" }
-euclid-tensor = { version = "0.6.0", path = "crates/euclid-tensor" }
-euclid-utils = { version = "0.6.0", path = "crates/euclid-utils" }
-euclid-stability = { version = "0.6.0", path = "crates/euclid-stability" }
+euclid-algebra = { version = "0.7.0", path = "crates/euclid-algebra" }
+euclid-scalar = { version = "0.7.0", path = "crates/euclid-scalar" }
+euclid-units = { version = "0.7.0", path = "crates/euclid-units" }
+euclid-tensor = { version = "0.7.0", path = "crates/euclid-tensor" }
+euclid-utils = { version = "0.7.0", path = "crates/euclid-utils" }
+euclid-stability = { version = "0.7.0", path = "crates/euclid-stability" }
 
 [workspace.lints.rust]
 missing_docs = "deny"
