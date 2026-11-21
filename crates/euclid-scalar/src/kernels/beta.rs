@@ -137,6 +137,31 @@ fn stirling_remainder(z: f64) -> f64 {
         + inv2 * (-1.0 / 360.0 + inv2 * (1.0 / 1260.0 + inv2 * (-1.0 / 1680.0 + inv2 / 1188.0))))
 }
 
+/// `μ(z)` for `z ≥ 1`, lifting the argument into [`stirling_remainder`]'s range when it is below.
+///
+/// The series above is asymptotic and says nothing at small `z` — its first omitted term is
+/// `691/(360360 z¹¹)`, `9.4e-18` at `z = 20` and `1.9e-3` at `z = 1`. That, and nothing else, is
+/// why the centred prefactor was gated on `min(a, b) ≥ 20`.
+///
+/// [`stirling_remainder_step`](crate::math::gamma::stirling_remainder_step) is the exact identity
+/// `μ(z) − μ(z+1)`, so repeating it costs one step per unit and loses nothing at any of them.
+/// Verified against `lnΓ` at 400 bits: `μ(1)` through `μ(19.5)` reconstruct to `2e-16` absolute.
+///
+/// **It delegates to the copy above rather than to `math::gamma`'s.** The two series are the same
+/// expansion written twice and are *not* bit-identical — this one ends `inv2 / 1188.0` where that
+/// one ends `inv2 * (1.0/1188.0)`, and `1/1188` is not representable. Taking the other would move
+/// every `a, b ≥ 20` result by a last bit of `μ` for no reason.
+fn stirling_remainder_from_one(z: f64) -> f64 {
+    debug_assert!(z >= 1.0, "the climb is one step per unit; see CENTRED_MIN");
+    let mut climbed = 0.0;
+    let mut lifted = z;
+    while lifted < STIRLING_MIN {
+        climbed += crate::math::gamma::stirling_remainder_step(lifted);
+        lifted += 1.0;
+    }
+    climbed + stirling_remainder(lifted)
+}
+
 /// `μ(base + increment)` without forming the sum, which can leave the format while `ln B` does
 /// not — the case the branch's own comment flags.
 fn stirling_remainder_of_sum(base: f64, increment: f64) -> f64 {

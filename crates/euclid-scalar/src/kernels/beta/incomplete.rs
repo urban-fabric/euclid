@@ -95,9 +95,10 @@ fn beta_fraction_cdf(a: f64, b: f64, x: f64) -> Option<f64> {
     // Above the Stirling threshold the prefactor is formed about the mode, where its three
     // large logarithms cancel symbolically instead of numerically. See
     // `math::beta::beta_power_terms`.
-    let front = if a.min(b) >= STIRLING_MIN && crate::math::beta::use_beta_power_terms(a, b, x) {
-        let remainders =
-            stirling_remainder_of_sum(a, b) - stirling_remainder(a) - stirling_remainder(b);
+    let front = if use_centred_prefactor(a, b, x) {
+        let remainders = stirling_remainder_of_sum(a, b)
+            - stirling_remainder_from_one(a)
+            - stirling_remainder_from_one(b);
         crate::math::beta::beta_power_terms(a, b, x, remainders)
     } else {
         crate::math::beta::beta_fraction_prefactor(a, b, x, ln_beta(a, b))
@@ -108,6 +109,22 @@ fn beta_fraction_cdf(a: f64, b: f64, x: f64) -> Option<f64> {
         beta_cf(b, a, 1.0 - x).map(|h| 1.0 - front * h / b)
     }
 }
+
+/// Whether the prefactor is formed about the mode rather than from `ln B(a, b)`.
+///
+/// Three conditions, guarding different things: the smaller shape must reach
+/// [`stirling_remainder_from_one`]'s climb, `a + b` must be in the Stirling series' range since
+/// [`stirling_remainder_of_sum`] takes it directly, and the offset from the mode must be within
+/// half of both shapes or the centring is the worse arrangement.
+fn use_centred_prefactor(a: f64, b: f64, x: f64) -> bool {
+    a.min(b) >= CENTRED_MIN
+        && a + b >= STIRLING_MIN
+        && crate::math::beta::use_beta_power_terms(a, b, x)
+}
+
+/// Smallest shape the centred prefactor is used at — a cost bound, since the climb in
+/// [`stirling_remainder_from_one`] is one step per unit.
+const CENTRED_MIN: f64 = 1.0;
 
 /// Rate for the gamma approximation to `T = -ln(1-X)`, with `X ~ Beta(a,b)`.
 ///
@@ -270,83 +287,4 @@ fn beta_cf(a: f64, b: f64, x: f64) -> Option<f64> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    fn close(a: f64, b: f64, tol: f64) {
-        assert!((a - b).abs() <= tol * b.abs().max(1.0), "{a} vs {b}");
-    }
-
-    #[test]
-    fn beta_known_values() {
-        close(beta(1.0, 1.0), 1.0, 1e-12);
-        close(beta(2.0, 3.0), 1.0 / 12.0, 1e-10);
-    }
-
-    #[test]
-    fn beta_fraction_agrees_with_the_integrated_polynomial() {
-        // For (2, 3), the CDF is x²(6 − 8x + 3x²) and its prefactor
-        // divided by a is 6x²(1 − x)³.
-        for x in [0.007_812_5_f64, 0.0625, 0.125, 0.25, 0.4] {
-            let expected = (6.0 - 8.0 * x + 3.0 * x * x) / (6.0 * (1.0 - x).powi(3));
-            let Some(actual) = beta_cf(2.0, 3.0, x) else {
-                panic!("fraction failed to converge at {x}");
-            };
-            close(actual, expected, 2e-15);
-        }
-    }
-
-    #[test]
-    fn both_fraction_orientations_match_the_integrated_cdf() {
-        for x in [0.0625, 0.25, 0.375, 0.5, 0.875] {
-            // Integral of 20x(1-x)^3, since B(2,4) = 1/20.
-            let expected = x * x * (10.0 + x * (-20.0 + x * (15.0 - 4.0 * x)));
-            let Some(actual) = beta_fraction_cdf(2.0, 4.0, x) else {
-                panic!("integer-shape fraction failed to converge at x={x}");
-            };
-            close(actual, expected, 4e-15);
-        }
-    }
-
-    #[test]
-    fn beta_reg_endpoints_and_symmetry() {
-        assert_eq!(beta_reg(2.0, 3.0, 0.0), 0.0);
-        assert_eq!(beta_reg(2.0, 3.0, 1.0), 1.0);
-        for &(a, b, x) in &[(2.0, 3.0, 0.4), (0.5, 0.5, 0.3), (5.0, 2.0, 0.7)] {
-            close(beta_reg(a, b, x), 1.0 - beta_reg(b, a, 1.0 - x), 1e-10);
-        }
-        close(beta_reg(1.0, 1.0, 0.37), 0.37, 1e-12);
-    }
-
-    #[test]
-    fn gamma_approximation_uses_the_shifted_rate_after_the_crossover() {
-        assert_eq!(beta_gamma_rate(2.0, 1e8), None);
-        assert_eq!(beta_gamma_rate(2.0, 2e8), None);
-        assert_eq!(beta_gamma_rate(2.0, 1e9), Some(1e9 + 0.5));
-        assert_eq!(beta_gamma_rate(0.5, 1e9), Some(1e9 - 0.25));
-        assert!(beta_gamma_rate(GAMMA_EDGEWORTH_MIN.next_down(), 1e30).is_some());
-        assert_eq!(beta_gamma_rate(GAMMA_EDGEWORTH_MIN, 1e30), None);
-    }
-
-    #[test]
-    fn edgeworth_at_the_mean_uses_the_beta_skewness() {
-        let (a, b) = (1e7_f64, 3e7_f64);
-        let n = a + b;
-        // At the mean, z = 0. The unscaled formula fits at these moderate shapes.
-        let skewness = 2.0 * (b - a) * (n + 1.0).sqrt() / ((n + 2.0) * (a * b).sqrt());
-        let expected = 0.5 + skewness / (6.0 * (2.0 * core::f64::consts::PI).sqrt());
-        close(beta_edgeworth(a, b, 0.25), expected, f64::EPSILON);
-    }
-
-    #[test]
-    fn beta_mean_residual_retains_the_low_bits_of_the_offset() {
-        let a = f64::from_bits(0x3ff0_0000_0000_0006);
-        let b = f64::from_bits(0x3fdb_bc37_cd1d_a36d);
-        let x = f64::from_bits(0x3fe6_533b_1ba2_862f);
-        let (n, n_error) = a.two_sum(b);
-        // Rounded once from the exact binary rationals x(a+b) − a.
-        let expected = f64::from_bits(0xbcaa_a02f_14b3_5725);
-        assert_eq!(beta_mean_residual(a, n, n_error, x), expected);
-    }
-}
+mod tests;

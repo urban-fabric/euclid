@@ -136,6 +136,18 @@ pub(crate) fn stirling_remainder<T: HostReal>(x: T) -> T {
                         + inv2 * (T::from_f64(-1.0 / 1680.0) + inv2 * T::from_f64(1.0 / 1188.0)))))
 }
 
+/// `μ(z) − μ(z+1) = (z+½)·ln(1+1/z) − 1`, exactly, and without the subtraction.
+///
+/// From `lnΓ(z+1) = lnΓ(z) + ln z` substituted into `μ`'s definition, so it is an identity and
+/// holds at every `z > 0`. With `u = 1/z` it rearranges to `[ln(1+u) − u]/u + ½ln(1+u)`, which
+/// has no `− 1` to cancel against and reaches [`ln_1p_minus_linear`] for the hard part. The
+/// direct spelling loses three digits by `z = 7` and five by `z = 20`, and the result is added
+/// into an exponent, so its absolute error is what matters.
+pub(crate) fn stirling_remainder_step<T: HostReal>(z: T) -> T {
+    let u = z.recip();
+    z * ln_1p_minus_linear(u) + T::HALF * u.ln_1p()
+}
+
 /// `x^{x/2}·e^{−x/2}`, the half of `x^x e^{−x}` that stays in range.
 ///
 /// **The base is `x`, not `x/e`**, and that is the whole accuracy of this route. `x/e` is not
