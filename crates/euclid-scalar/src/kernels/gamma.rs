@@ -225,6 +225,7 @@ fn ln_gamma1p_over_a(a: f64) -> f64 {
 /// DLMF 8.7.1 with the constant term separated, for `x < 1+a`.
 mod incomplete;
 mod psi;
+mod temme;
 
 // Re-exported so the family keeps one path per function: callers reached
 // `kernels::gamma::gamma_lr` before the split and still do. `SMALL_SHAPE`,

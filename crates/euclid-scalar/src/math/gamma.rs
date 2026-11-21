@@ -323,16 +323,16 @@ const LN_1P_SERIES_MAX: f64 = 0.5;
 ///
 /// No direct-form arm: the caller owns that decision, because the bound it tests is about `u`
 /// carrying `x` and not about this series converging.
-fn ln_1p_minus_linear<T: HostReal>(u: T, tolerance: T, limit: usize) -> T {
+pub(crate) fn ln_1p_minus_linear<T: HostReal>(u: T) -> T {
     // t_k = (−1)^{k+1} u^k / k, starting at k = 2, advanced by t_{k+1} = t_k·(−u)·k/(k+1).
     let mut index = T::TWO;
     let mut term = -u * u * T::HALF;
     let mut sum = term;
-    for _ in 0..limit {
+    for _ in 0..LN_1P_SERIES_MAX_TERMS {
         let next = index + T::ONE;
         term *= -u * index / next;
         sum += term;
-        if term_is_negligible(term, sum.abs(), tolerance) {
+        if term_is_negligible(term, sum.abs(), T::EPSILON) {
             break;
         }
         index = next;
@@ -391,7 +391,7 @@ pub(crate) fn log_scaled_gamma<T: HostReal>(a: T, x: T, log_scale: T) -> T {
     if a < T::from_f64(STIRLING_MIN) || u.abs() > T::from_f64(LN_1P_SERIES_MAX) {
         return log_scale - x + a * x.ln() - a.ln_gamma();
     }
-    let rate = ln_1p_minus_linear(u, T::EPSILON, LN_1P_SERIES_MAX_TERMS);
+    let rate = ln_1p_minus_linear(u);
     log_scale + a * rate + T::HALF * (a / T::TAU).ln() - stirling_remainder(a)
 }
 

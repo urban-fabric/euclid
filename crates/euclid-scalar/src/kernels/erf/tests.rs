@@ -154,34 +154,46 @@ fn erfc_tail_does_not_underflow() {
     }
 }
 
-/// The four forms, at and either side of the one threshold that is not a non-finite case.
+/// The five forms, at and either side of both finite thresholds.
 ///
-/// The linear cutoff is *sited* where the dropped `x²/3` term is below half an ulp, so the
-/// two forms agree across it to well under a rounding — which is what left `<` against `<=`
-/// alive against every value assertion. The decision is what gets pinned.
+/// Each cutoff is *sited* where the two routes agree to well under a rounding — the linear one
+/// where the dropped `x²/3` term is below half an ulp, the series/complement one at
+/// `ERFCX_CF_MIN` where `erfc` changes its own route. That is what left `<` against `<=` alive
+/// against every value assertion, so the decision is what gets pinned.
 #[test]
 fn the_erf_forms_partition_the_line() {
-    use ErfForm::{IncompleteGamma, Linear, Saturated, Undefined};
+    use ErfForm::{Complement, Linear, Saturated, Series, Undefined};
     assert_eq!(ErfForm::for_argument(f64::NAN), Undefined);
     assert_eq!(ErfForm::for_argument(f64::INFINITY), Saturated);
     assert_eq!(ErfForm::for_argument(f64::NEG_INFINITY), Saturated);
-    // The boundary belongs to the incomplete gamma, and the magnitude decides, so both
-    // signs route alike.
-    assert_eq!(ErfForm::for_argument(ERF_LINEAR_MAX), IncompleteGamma);
-    assert_eq!(ErfForm::for_argument(-ERF_LINEAR_MAX), IncompleteGamma);
+    // The boundary belongs to the series, and the magnitude decides, so both signs route alike.
+    assert_eq!(ErfForm::for_argument(ERF_LINEAR_MAX), Series);
+    assert_eq!(ErfForm::for_argument(-ERF_LINEAR_MAX), Series);
     assert_eq!(ErfForm::for_argument(ERF_LINEAR_MAX.next_down()), Linear);
     assert_eq!(ErfForm::for_argument(-ERF_LINEAR_MAX.next_down()), Linear);
-    assert_eq!(
-        ErfForm::for_argument(ERF_LINEAR_MAX.next_up()),
-        IncompleteGamma
+    assert_eq!(ErfForm::for_argument(ERF_LINEAR_MAX.next_up()), Series);
+    // The upper threshold is `erfc`'s own, and it belongs to the complement side.
+    assert_eq!(ErfForm::for_argument(ERFCX_CF_MIN), Complement);
+    assert_eq!(ErfForm::for_argument(-ERFCX_CF_MIN), Complement);
+    assert_eq!(ErfForm::for_argument(ERFCX_CF_MIN.next_down()), Series);
+    assert_eq!(ErfForm::for_argument(-ERFCX_CF_MIN.next_down()), Series);
+    // The two routes agree across it, which is what makes the join free.
+    let below = erf(ERFCX_CF_MIN.next_down());
+    let above = erf(ERFCX_CF_MIN);
+    assert!(
+        (below - above).abs() <= 8.0 * crate::Real::ulp(above),
+        "the series gives {below} just below the join and the complement {above} at it"
     );
     // Both zeros take the linear arm, which is what preserves the sign of a zero.
     assert_eq!(ErfForm::for_argument(0.0), Linear);
     assert_eq!(ErfForm::for_argument(-0.0), Linear);
     assert_eq!(erf(-0.0).to_bits(), (-0.0_f64).to_bits());
     assert_eq!(erf(0.0).to_bits(), 0.0_f64.to_bits());
-    for x in [1.0_f64, -1.0, 10.0] {
-        assert_eq!(ErfForm::for_argument(x), IncompleteGamma);
+    for x in [1.0_f64, -1.0] {
+        assert_eq!(ErfForm::for_argument(x), Series);
+    }
+    for x in [10.0_f64, -10.0, 2.0] {
+        assert_eq!(ErfForm::for_argument(x), Complement);
     }
     // And the saturated arm carries the sign rather than a comparison.
     assert_eq!(erf(f64::INFINITY), 1.0);

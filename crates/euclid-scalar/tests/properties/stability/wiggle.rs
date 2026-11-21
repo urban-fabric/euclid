@@ -111,11 +111,25 @@ fn gamma_wiggle_stays_within_its_budget() {
     assert_budget("gamma", Real::gamma, 3.0, true, 12_500, 12.0);
 }
 
-/// `erfcx` near 1 inverts on about half of all adjacent pairs, by up to 15 ulps — the highest
+/// `erfcx` near 1 inverts on about a third of all adjacent pairs, by up to 21 ulps — the highest
 /// inversion *rate* measured, though not the largest single inversion.
+///
+/// # Re-recorded when `erf` stopped routing through the incomplete gamma
+///
+/// The worst inversion rose from `15` to `21` ulp while the *rate* fell from about `25000` pairs
+/// to `19372`, and accuracy over the same scanned run improved from `51` to `29` ulp. All three
+/// move together for one reason: `erfcx` here is `e^{x²}(1 − erf(x))`, which magnifies `erf`'s
+/// error by `1/erfc(1) ≈ 6.4`, and `erf`'s error changed *in kind*. The old incomplete-gamma
+/// route carried a large but **smooth** bias — `exp` of a cancelling sum, so the error was a
+/// slowly varying function of `x`. The series carries a small but **random** one.
+///
+/// A smooth bias barely inverts adjacent pairs however big it is; last-bit noise inverts them
+/// constantly however small it is. So a kernel can get materially more accurate and measure
+/// *less* monotone, and these two numbers moving in opposite directions is that happening rather
+/// than anything going wrong. Budgets re-measured, not relaxed to fit.
 #[test]
 fn erfcx_wiggle_stays_within_its_budget() {
-    assert_budget("erfcx", Real::erfcx, 1.0, false, 25_000, 20.0);
+    assert_budget("erfcx", Real::erfcx, 1.0, false, 25_000, 26.0);
 }
 
 /// Wiggle budgets for the kernels the widened scan reached for the first time.
@@ -175,7 +189,10 @@ fn the_newly_scanned_kernels_stay_within_their_wiggle_budgets() {
     assert_budget("bessel_i0e", Real::bessel_i0e, 5.0, false, 18_000, 12.0);
     assert_budget("airy_ai_e", Real::airy_ai_e, 2.0, false, 20_000, 6.0);
     assert_budget("airy_bi_e", Real::airy_bi_e, 2.0, false, 16_000, 8.0);
-    assert_budget("erf_inv", Real::erf_inv, 0.5, true, 1_500, 8.0);
+    // Re-measured when `erf` left the incomplete gamma: inversions `1500 -> 2251` while the
+    // worst inversion fell `8 -> 5` and accuracy over the same run improved `12 -> 7` ulp. See
+    // `erfcx_wiggle_stays_within_its_budget` for why a more accurate kernel inverts more often.
+    assert_budget("erf_inv", Real::erf_inv, 0.5, true, 2_600, 8.0);
     assert_budget("erfc_inv", Real::erfc_inv, 0.5, false, 2_000, 10.0);
     assert_budget("ndtri", Real::ndtri, 0.3, true, 4_500, 6.0);
 }

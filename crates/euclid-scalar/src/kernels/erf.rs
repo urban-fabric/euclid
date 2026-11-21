@@ -1,6 +1,12 @@
 //! The error function family — `erf`, `erfc`, `erf_inv` — behind the Normal CDF
-//! (`Φ(x) = ½ erfc(-x/√2)`) and quantile. `erf`/`erfc` reduce to the regularized incomplete
-//! gamma `P(½, x²)`; `erf_inv` uses Giles's rational approximation plus one Newton step.
+//! (`Φ(x) = ½ erfc(-x/√2)`) and quantile. `erf` is an all-positive series below
+//! [`ERFCX_CF_MIN`] and `1 − erfc` above it; `erfc` is `1 − erf` below and a continued fraction
+//! above; `erf_inv` uses Giles's rational approximation plus Newton steps.
+//!
+//! **`erf` reduced to `P(½, x²)` until it was measured.** That identity is exact and the route
+//! is not: `P`'s prefactor exponentiates a cancelling sum of size `|ln x|`, which cost `erf`
+//! about `|ln x|` ulp everywhere — `32` at `x = 1e-8` against a condition number of `1`. See
+//! [`erf_series`]. Nothing in this file reaches the incomplete gamma now.
 //!
 //! The single-precision peer is [`crate::kernels::f32::erf`], in the mirrored tree with every
 //! other family. Its thresholds are this file's derivations re-evaluated at `f32`'s epsilon
@@ -32,7 +38,6 @@ pub(crate) use inverse::erf_inv;
 /// `if x == 0.0 { 0.0 }` dropped the sign of the zero, which an odd function should not.
 const ERF_LINEAR_MAX: f64 = 1e-8;
 
-use super::gamma::gamma_lr;
 use core::f64::consts::PI;
 
 /// Which form evaluates `erf` at this magnitude.
@@ -48,8 +53,15 @@ enum ErfForm {
     /// `|x| < `[`ERF_LINEAR_MAX`]: `erf` is its own leading term `2x/√π`. Taking `x = 0` through
     /// here is what makes `erf(−0.0)` return `−0.0`, which an odd function should.
     Linear,
-    /// Everything else: `±P(½, x²)`, the regularized incomplete gamma.
-    IncompleteGamma,
+    /// `ERF_LINEAR_MAX ≤ |x| < `[`ERFCX_CF_MIN`]: the all-positive series of [`erf_series`].
+    Series,
+    /// `|x| ≥ `[`ERFCX_CF_MIN`]: `1 − erfc(x)`, with `erfc` on its continued fraction.
+    ///
+    /// No cancellation worth the name: `erfc` is at most `0.052` here, so subtracting it from
+    /// one is an `O(1)` operation on an `O(1)` answer. It is the mirror of [`ErfcForm`]'s own
+    /// `Complement` arm, which is usable only in the opposite direction — and the two do not
+    /// recurse, because each calls the other strictly across the threshold.
+    Complement,
 }
 
 impl ErfForm {
@@ -61,8 +73,10 @@ impl ErfForm {
             Self::Saturated
         } else if x.abs() < ERF_LINEAR_MAX {
             Self::Linear
+        } else if x.abs() < ERFCX_CF_MIN {
+            Self::Series
         } else {
-            Self::IncompleteGamma
+            Self::Complement
         }
     }
 }
@@ -73,11 +87,70 @@ pub(crate) fn erf(x: f64) -> f64 {
         ErfForm::Undefined => f64::NAN,
         ErfForm::Saturated => 1.0_f64.copysign(x),
         ErfForm::Linear => 2.0 / PI.sqrt() * x,
-        // `erf` is odd, so the magnitude comes from the incomplete gamma and the sign from the
-        // argument — which is the same value the explicit negation produced, to the bit.
-        ErfForm::IncompleteGamma => gamma_lr(0.5, x * x).copysign(x),
+        // `erf` is odd, so the magnitude comes from the series and the sign from the argument.
+        ErfForm::Series => erf_series(x.abs()).copysign(x),
+        ErfForm::Complement => (1.0 - erfc(x.abs())).copysign(x),
     }
 }
+
+/// `erf` by its all-positive series, for `x ∈ [ERF_LINEAR_MAX, ERFCX_CF_MIN)`.
+///
+/// # Why `erf` no longer goes through the incomplete gamma
+///
+/// `erf(x) = P(½, x²)` is exact and was the whole implementation. It is also an **exponential of
+/// a cancelling sum**: `P`'s prefactor is formed as `a·ln x − x − lnΓ(a)`, and at `a = ½` that
+/// is `ln|x| − x² − lnΓ(½)`, whose magnitude is `|ln x|` — `18.4` at `x = 1e-8`. `exp` turns the
+/// exponent's absolute error into the answer's relative error, so `erf` carried about `|ln x|`
+/// ulp across its whole domain. Measured against a 400-bit reference, log-uniformly within each
+/// decade, with the condition number beside it:
+///
+/// ```text
+/// |x|       1e-8…1e-7  1e-6…1e-5  1e-4…1e-3  1e-2…1e-1  1e-1…1
+/// was              32         19         18         13       7   ulp
+/// kappa             1          1          1          1    0.65
+/// ```
+///
+/// A condition number of `1` means there is nothing to amplify: a correctly rounded `erf` is
+/// half an ulp, and the route was thirty times that. The same defect set the floor for `erf_inv`
+/// (whose Newton step divides by an `O(1)` derivative, so it inherited the error one for one)
+/// and for the uniform expansion in `super::gamma::temme`, which calls `erfc` here.
+///
+/// # The series
+///
+/// DLMF 7.6.2, with the Gaussian factored out so every term is positive:
+///
+/// ```text
+/// erf(x) = (2x/√π)·e^{−x²}·Σ_{n≥0} (2x²)^n/(2n+1)!!
+/// ```
+///
+/// Nothing cancels, at any `x` in range, and the only exponential is `e^{−x²}` whose argument is
+/// at most `1.9` — so its absolute error is `1.9ε`, not `|ln x|·ε`. The alternating form
+/// `Σ(−1)^n x^{2n+1}/(n!(2n+1))` is the one to avoid: its terms reach `e^{x²}` before cancelling
+/// back down, which is the same defect in a different coat.
+///
+/// It is bounded above by [`ERFCX_CF_MIN`] rather than carried further because the term count
+/// grows like `x²` and the terms themselves like `e^{x²}`; above the threshold `erfc`'s
+/// continued fraction is both accurate and cheaper, and `1 − erfc` is well conditioned there.
+fn erf_series(x: f64) -> f64 {
+    let square = 2.0 * x * x;
+    let mut term = 1.0;
+    let mut sum = 1.0;
+    for n in 1..ERF_SERIES_MAX_TERMS {
+        term *= square / (2.0 * f64::from(n) + 1.0);
+        sum += term;
+        if term <= f64::EPSILON * sum {
+            break;
+        }
+    }
+    2.0 / PI.sqrt() * x * (-x * x).exp() * sum
+}
+
+/// Terms [`erf_series`] is allowed before it gives up.
+///
+/// The ratio `2x²/(2n+1)` falls below a half once `n > 2x²`, so at the top of the range
+/// (`2x² = 3.78`) the tail is geometric from about the fourth term and the sum is converged by
+/// the twenty-fifth. Forty is that with headroom; the loop exits on its own well before.
+const ERF_SERIES_MAX_TERMS: u32 = 40;
 
 /// Lower edge of the continued-fraction regime, for both `erfc` and `erfcx`.
 ///

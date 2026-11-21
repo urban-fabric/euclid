@@ -46,12 +46,15 @@ pub(super) fn iteration_depths() {
     depth_row("erfcx levels, x<3/2", 145, 145);
     depth_row("erfcx levels, x>=50", 5, 145);
 
-    // The incomplete gamma's two routes, replaying their own stopping rules. These are the
-    // numbers that explain the dearest rows in the table above, and they are the reason
-    // `MAX_ITER` is 100_000 rather than something tidier: the lower series walks about
-    // `7.3·√a` terms, so the cap is only ~2.5x the worst case a caller can reach before the
-    // Edgeworth route takes over at `a = 3e7`. The fraction, by contrast, never needs more than
-    // a hundred steps anywhere — its share of that cap is pure slack.
+    // The incomplete gamma's two routes, replaying their own stopping rules — and only at the
+    // arguments that still *reach* them. The uniform expansion now intercepts `a ≥ 20` with
+    // `|x − a| ≤ 0.4a`, which is exactly where the lower series was at its deepest: its term
+    // ratio is `x/(a+k)`, so it is long only while `x` is close to `a`, and it walked about
+    // `8.5·√a` terms there — 32200 at the top of the range, which is what made
+    // `gamma_lr series, large a` the dearest row in the table above.
+    //
+    // Replaying the series over arguments it no longer sees would report a cost nothing pays.
+    // Skipping them is what keeps this row the answer to "how deep does this loop actually go".
     let (mut worst_series, mut worst_fraction) = (0, 0);
     for e in -6..=7 {
         for m in [1.0, 2.0, 5.0] {
@@ -63,6 +66,9 @@ pub(super) fn iteration_depths() {
                 let x = a * (0.01 + 0.03 * f64::from(j));
                 if x <= 0.0 || !x.is_finite() {
                     continue;
+                }
+                if a >= 20.0 && ((x - a) / a).abs() <= 0.4 {
+                    continue; // the uniform expansion runs here, not either loop
                 }
                 if x < a + 1.0 {
                     worst_series = worst_series.max(lower_series_terms(a, x));

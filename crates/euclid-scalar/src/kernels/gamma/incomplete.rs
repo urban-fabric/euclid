@@ -82,6 +82,13 @@ enum IncompleteGammaMethod {
     AtInfinity,
     /// `a ≥ `[`GAMMA_EDGEWORTH_MIN`]: the Edgeworth-corrected normal, where both series fail.
     Edgeworth,
+    /// `a ≥ 20` and `|x − a| ≤ 0.4a`: Temme's uniform asymptotic expansion.
+    ///
+    /// Placed after [`Self::Edgeworth`] so that arm keeps the region it was measured on, and
+    /// before the series arms because it supersedes them wherever it applies. It is the only
+    /// route here whose cost does not grow with the shape — see [`super::temme`] for why that
+    /// is the same fact as its accuracy.
+    Temme,
     /// `a ≤ `[`SMALL_SHAPE`] and `x < a + 1`: the DLMF 8.7.1 series, which keeps the `O(a)` terms
     /// the ordinary routes drop.
     SmallShapeSeries,
@@ -110,6 +117,8 @@ impl IncompleteGammaMethod {
             Self::AtInfinity
         } else if a >= GAMMA_EDGEWORTH_MIN {
             Self::Edgeworth
+        } else if temme::use_temme(a, x) {
+            Self::Temme
         } else if use_lower_gamma_series(a, x) {
             // The small shape still has to pick a tail: the series is an expansion in `x`.
             if a <= SMALL_SHAPE {
@@ -134,6 +143,7 @@ pub(crate) fn gamma_lr(a: f64, x: f64) -> f64 {
             let (lower, _) = gamma_edgeworth(a, x);
             lower
         }
+        IncompleteGammaMethod::Temme => temme::temme_lower(a, x),
         IncompleteGammaMethod::SmallShapeSeries => small_shape_log_lower(a, x).exp(),
         IncompleteGammaMethod::LowerSeries => {
             let series = gamma_lower_series(a, x, EPS, MAX_ITER);
@@ -156,6 +166,7 @@ pub(crate) fn gamma_ur(a: f64, x: f64) -> f64 {
             let (_, upper) = gamma_edgeworth(a, x);
             upper
         }
+        IncompleteGammaMethod::Temme => temme::temme_upper(a, x),
         IncompleteGammaMethod::SmallShapeSeries => -small_shape_log_lower(a, x).exp_m1(),
         IncompleteGammaMethod::LowerSeries => 1.0 - gamma_lr(a, x),
         IncompleteGammaMethod::SmallShapeFraction => {
