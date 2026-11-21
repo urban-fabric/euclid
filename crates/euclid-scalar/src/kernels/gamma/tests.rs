@@ -185,7 +185,7 @@ fn the_log_gamma_methods_partition_the_line() {
 /// entirely plausible.
 #[test]
 fn the_gamma_methods_keep_the_two_pole_kinds_apart() {
-    use GammaMethod::{Lanczos, Reflected, Saturated, SignedPole, Stirling, UnsignedPole};
+    use GammaMethod::{Lanczos, Reduced, Reflected, Saturated, SignedPole, Stirling, UnsignedPole};
     for (x, want) in [
         (0.0, SignedPole),
         (-0.0, SignedPole),
@@ -198,11 +198,16 @@ fn the_gamma_methods_keep_the_two_pole_kinds_apart() {
         (-20.5, Reflected),
         (0.25, Reflected),
         (0.5_f64.next_down(), Reflected),
+        // Lanczos keeps only `[½, 1)` now: from one upward the reduction to `[1,2)` is ten to
+        // twenty times more accurate, and above `STIRLING_MIN` the Stirling series already was.
         (0.5, Lanczos),
-        (1.0, Lanczos),
-        // The Lanczos/Stirling handover, closed on the Stirling side. Its placement is an
+        (1.0_f64.next_down(), Lanczos),
+        (1.0, Reduced),
+        (1.9999, Reduced),
+        (7.5, Reduced),
+        // The reduction/Stirling handover, closed on the Stirling side. Its placement is an
         // accuracy decision, not a range one — see `math::gamma::STIRLING_MIN`.
-        (crate::math::gamma::STIRLING_MIN.next_down(), Lanczos),
+        (crate::math::gamma::STIRLING_MIN.next_down(), Reduced),
         (crate::math::gamma::STIRLING_MIN, Stirling),
         (GAMMA_OVERFLOW_MIN, Stirling),
         (GAMMA_OVERFLOW_MIN.next_up(), Saturated),
@@ -313,4 +318,53 @@ fn the_factored_window_has_exact_zeros_and_the_right_slopes() {
     }
     // And the sign is negative strictly between the zeros, positive outside.
     assert!(ln_gamma(1.5) < 0.0 && ln_gamma(0.75) > 0.0 && ln_gamma(2.5) > 0.0);
+}
+
+/// The reduced range reproduces the factorials exactly, and its own recurrence.
+///
+/// # Why integers, and why the recurrence as well
+///
+/// `Γ(n) = (n−1)!` is exact in `f64` up to `n = 23`, so these are reference-free assertions
+/// about a route whose whole content is a product of exact subtractions times one `exp`. A
+/// coefficient-level defect in the `lnΓ` window it rests on shows up here as a factorial that is
+/// off by an ulp — which no amount of smoothness hides, because the target is an integer.
+///
+/// The recurrence then covers the non-integers between them: `Γ(x+1) = x·Γ(x)` constrains the
+/// whole range against itself, and unlike the factorials it does not care whether the reduction
+/// landed on a representable answer.
+#[test]
+fn the_reduced_range_reproduces_the_factorials_and_its_own_recurrence() {
+    let mut factorial = 1.0_f64;
+    for n in 1..=18_u32 {
+        // Γ(n) = (n−1)!, with the factorial built exactly — every one of these fits in f64.
+        let value = gamma(f64::from(n));
+        assert_eq!(
+            value, factorial,
+            "Γ({n}) is {value}, and {n}−1 factorial is {factorial}"
+        );
+        factorial *= f64::from(n);
+    }
+
+    // The recurrence across the reduced range, on a grid where `x + 1` is exact.
+    let mut worst = (0.0_f64, 0.0_f64);
+    for step in 0..=120 {
+        let x = 1.0 + f64::from(step) * 0.125;
+        if x + 1.0 >= crate::math::gamma::STIRLING_MIN {
+            break;
+        }
+        let shifted = gamma(x + 1.0);
+        let expected = x * gamma(x);
+        let ulps = (shifted - expected).abs() / crate::Real::ulp(shifted);
+        if ulps > worst.0 {
+            worst = (ulps, x);
+        }
+        assert!(
+            ulps <= 8.0,
+            "at x = {x} the recurrence gives {expected} and Γ(x+1) is {shifted}, {ulps} apart"
+        );
+    }
+    assert!(
+        worst.0 > 0.0,
+        "the recurrence held exactly everywhere, so it compared nothing"
+    );
 }

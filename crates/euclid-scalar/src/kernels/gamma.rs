@@ -178,7 +178,32 @@ enum GammaMethod {
     /// `x = 170` — measured by evaluating the same formula and coefficients at 60 digits, which
     /// reproduces the kernel's error exactly — and Stirling is `0.1` to `1.8` ulp there.
     Stirling,
-    /// Everything else: the Lanczos product form.
+    /// `1 ≤ x < STIRLING_MIN`: reduce to `[1, 2)` and exponentiate the logarithm there.
+    ///
+    /// # Lanczos's truncation is the error, and `lnΓ` no longer shares it
+    ///
+    /// The coefficients' own truncation — not the evaluation — is what cost this range, and the
+    /// earlier attribution concluded it needed a new fitted table, which was data this project
+    /// could not generate. It turns out not to need one. `lnΓ` is now accurate on `[1, 2]`
+    /// through its own factored window, and **there `lnΓ` is small**: at most `0.1214` in
+    /// magnitude, so `exp` of it carries `|lnΓ|·ε` and not the argument's own size. That is a
+    /// quarter of an ulp, and the recurrence `Γ(x) = (x−1)·Γ(x−1)` carries it upward on exact
+    /// subtractions.
+    ///
+    /// Measured against a 400-bit reference, worst ulp per band:
+    ///
+    /// ```text
+    /// x          [1,2]  [2,4]  [4,8]  [8,15]  [15,20]
+    /// Lanczos       21     18     44      43       34   ulp
+    /// reduced        1      1      3       4        4
+    /// ```
+    ///
+    /// The same trick does not extend above [`STIRLING_MIN`](crate::math::gamma::STIRLING_MIN),
+    /// and not because of the recurrence: `exp(lnΓ)` is useless once `lnΓ` is large, which is
+    /// the defect this crate has fixed three times elsewhere. Stirling already measures `0.1` to
+    /// `1.8` ulp there, so there is nothing to take from it.
+    Reduced,
+    /// Everything else — `[½, 1)` — the Lanczos product form.
     Lanczos,
 }
 
@@ -198,6 +223,8 @@ impl GammaMethod {
             Self::Saturated
         } else if x >= crate::math::gamma::STIRLING_MIN {
             Self::Stirling
+        } else if (1.0..crate::math::gamma::STIRLING_MIN).contains(&x) {
+            Self::Reduced
         } else {
             Self::Lanczos
         }
@@ -213,8 +240,28 @@ pub(crate) fn gamma(x: f64) -> f64 {
         }),
         GammaMethod::Saturated => f64::INFINITY,
         GammaMethod::Stirling => crate::math::gamma::stirling_gamma(x),
+        GammaMethod::Reduced => reduced_gamma(x),
         GammaMethod::Lanczos => lanczos_gamma(x, G, &LANCZOS),
     }
+}
+
+/// `Γ(x)` for `1 ≤ x < STIRLING_MIN`, by reduction to `[1, 2)`.
+///
+/// `Γ(x) = (x−1)(x−2)⋯r·Γ(r)` with `r ∈ [1, 2)`. Every subtraction is exact — the result lands
+/// in a binade no coarser than `x`'s — so the only error is the product's roundings and
+/// `Γ(r)`'s, and `Γ(r)` is `exp` of a logarithm bounded by `0.1214`.
+///
+/// The loop runs at most eighteen times, since it is entered only below
+/// [`STIRLING_MIN`](crate::math::gamma::STIRLING_MIN), and it cannot be entered at all by a
+/// `NaN` — the range test in [`GammaMethod::for_argument`] is false for one.
+fn reduced_gamma(x: f64) -> f64 {
+    let mut remaining = x;
+    let mut product = 1.0;
+    while remaining >= 2.0 {
+        remaining -= 1.0;
+        product *= remaining;
+    }
+    product * ln_gamma(remaining).exp()
 }
 
 /// Reflected argument past which `Γ` on the negative side has certainly rounded to signed zero.
