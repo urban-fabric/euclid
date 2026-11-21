@@ -15,10 +15,11 @@ use euclid_units::{
 use crate::{
     AccelerationMetersPerSecondSquared, AmountMoles, AngleRadians, AreaSquareMeters,
     ChargeCoulombs, ConductanceSiemens, CurrentAmperes, DensityKilogramsPerCubicMeter,
-    EnergyJoules, ForceNewtons, FrequencyHertz, LengthMeters, MassKilograms, Measure,
+    EnergyJoules, ForceNewtons, FrequencyHertz, LengthMeters, MassKilograms,
     MolarMassKilogramsPerMole, PowerWatts, ResistanceOhms, SpeedMs, TimeSeconds, UnitOfMeasure,
     VoltageVolts, VolumeCubicMeters,
 };
+use euclid_units::Measure;
 
 const EPS: f64 = 1e-12;
 
@@ -155,7 +156,7 @@ fn new_carriers_carry_unit_of_measure_and_serde() {
 fn euclid_contracts_are_reachable_from_the_crate_root() {
     // The dimension traits are re-exported from euclid-quantity, so the algebra reads ergonomically
     // without importing euclid directly.
-    use crate::{Length, Mass};
+    use euclid_units::{Length, Mass};
 
     let speed = crate::LengthMeters::new(100.0).per_time(crate::TimeSeconds::new(10.0));
     assert_eq!(speed, crate::SpeedMs::new(10.0));

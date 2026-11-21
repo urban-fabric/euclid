@@ -30,7 +30,8 @@ use core::ops::{Add, Div, Mul, Neg, Sub};
 
 use euclid_scalar::interval as kernels;
 
-use crate::{LengthMeters, LinearQuantity, SpeedMs, TimeSeconds};
+use crate::{LengthMeters, SpeedMs, TimeSeconds};
+use euclid_units::LinearQuantity;
 
 /// A closed interval `[lo, hi]` of a scalar quantity `Q`.
 ///

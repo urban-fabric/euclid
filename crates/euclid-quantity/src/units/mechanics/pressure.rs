@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AreaSquareMeters, DynamicViscosityPascalSeconds, EnergyJoules, ForceNewtons, TimeSeconds,
     VolumeCubicMeters,
 };
+use euclid_units::Measure;
 use euclid_units::Pressure;
+use euclid_units::dim;
 
 /// Pressure in pascals (Pa = N/m^2), the coherent SI unit.
 #[repr(transparent)]

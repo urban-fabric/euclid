@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{MassKilograms, VolumeCubicMeters};
 use euclid_units::Density;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Density in kilograms per cubic meter (kg/m^3), the coherent SI unit.
 #[repr(transparent)]

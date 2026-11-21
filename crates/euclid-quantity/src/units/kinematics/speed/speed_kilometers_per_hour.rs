@@ -1,7 +1,7 @@
 use super::{MPH_PER_KPH, MS_PER_KPH};
-use crate::conversion::dim;
 use crate::{SpeedMph, SpeedMs};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A speed in **kilometres per hour**. Exactly 1/3.6 m/s.

@@ -1,12 +1,12 @@
 use super::MPS2_PER_CMPS2;
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AccelerationCentimetersPerSecondSquared, ForceNewtons, JerkMetersPerSecondCubed, MassKilograms,
     SpeedMs, TimeSeconds,
 };
 use bytemuck::{Pod, Zeroable};
 use euclid_units::Acceleration;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// An acceleration in **metres per second squared**, the anchor for the acceleration

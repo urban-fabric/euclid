@@ -16,20 +16,9 @@
 //! branch on, or to hand to a host closure. A carrier that might be an expression handle can do
 //! neither. Those two conveniences stay here, on [`HostQuantity`].
 
-/// The physical dimension a quantity measures.
-///
-/// The single source of truth is [`euclid_units::Dimension`]; it is re-exported here so the
-/// concrete (`Copy`/`Pod`/serde) units in this crate share the exact same `Dimension` type — and
-/// the same runtime dimension tags — as euclid's carrier-generic unit contracts.
-pub use euclid_units::Dimension;
-
-/// euclid's quantity contracts, re-exported as this crate's own surface.
-///
-/// [`Measure`] is the one a unit implements by hand: carrier type, dimension, unit symbol, and
-/// raw access. [`Quantity`] follows from it by blanket impl for any `Real`-backed measure.
-/// [`ScalarQuantity`] and [`LinearQuantity`] are opt-in empty impls over euclid-units' default
-/// bodies, and [`DiscreteQuantity`] is the integer-carrier counterpart for counts and sizes.
-pub use euclid_units::{DiscreteQuantity, LinearQuantity, Measure, Quantity, ScalarQuantity};
+// euclid-units owns these contracts; this crate implements against them. Imported privately
+// rather than re-exported, so a caller naming them reaches for the crate that defines them.
+use euclid_units::{LinearQuantity, Measure};
 
 /// Why a quantity could not be converted into a representation that cannot hold it.
 ///
@@ -137,9 +126,9 @@ mod tests {
     //! regardless of which quantity they are called on.
 
     use crate::{
-        Factor, HostQuantity, LengthMeters, LinearQuantity, Measure, Percentage, QuantityError,
-        ScalarQuantity, SpeedMs, TimeSeconds,
+        Factor, HostQuantity, LengthMeters, Percentage, QuantityError, SpeedMs, TimeSeconds,
     };
+    use euclid_units::{LinearQuantity, Measure, ScalarQuantity};
 
     #[test]
     fn from_raw_finite_accepts_finite_and_rejects_the_rest() {

@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AreaSquareMeters, EnergyJoules, ForceNewtons, LengthMeters};
+use euclid_units::Measure;
 use euclid_units::SurfaceTension;
+use euclid_units::dim;
 
 /// Surface tension in newtons per meter (N/m), the coherent SI unit.
 #[repr(transparent)]

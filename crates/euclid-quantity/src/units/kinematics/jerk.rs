@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AccelerationMetersPerSecondSquared, TimeSeconds};
 use euclid_units::Jerk;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Jerk in meters per second cubed (m/s^3), the coherent SI unit.
 #[repr(transparent)]

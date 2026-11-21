@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AmountMoles, VolumeCubicMeters};
 use euclid_units::Concentration;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Amount-of-substance concentration in moles per cubic meter (mol/m^3), the coherent SI unit.
 #[repr(transparent)]

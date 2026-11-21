@@ -1,5 +1,6 @@
 mod length_tests {
-    use crate::{Dimension, LengthKm, LengthMeters, Measure};
+    use crate::{LengthKm, LengthMeters};
+    use euclid_units::{Dimension, Measure};
 
     #[test]
     fn length_meters_constants_and_quantity_impl() {
@@ -55,7 +56,8 @@ mod length_tests {
     }
 }
 mod area_tests {
-    use crate::{AreaSquareKilometers, AreaSquareMeters, Measure};
+    use crate::{AreaSquareKilometers, AreaSquareMeters};
+    use euclid_units::Measure;
 
     #[test]
     fn area_round_trips() {
@@ -67,13 +69,14 @@ mod area_tests {
 
     #[test]
     fn area_quantity_impls() {
-        assert_eq!(AreaSquareMeters::DIMENSION, crate::Dimension::Area);
+        assert_eq!(AreaSquareMeters::DIMENSION, euclid_units::Dimension::Area);
         assert_eq!(AreaSquareMeters::UNIT_NAME, "m^2");
         assert_eq!(AreaSquareKilometers::UNIT_NAME, "km^2");
     }
 }
 mod angle_tests {
-    use crate::{AngleDegrees, AngleRadians, Dimension, Measure};
+    use crate::{AngleDegrees, AngleRadians};
+    use euclid_units::{Dimension, Measure};
 
     #[test]
     fn angle_round_trip() {

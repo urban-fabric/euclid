@@ -1,12 +1,12 @@
 use super::SQUARE_METERS_PER_SQUARE_KILOMETER;
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AreaSquareKilometers, LengthMeters, SpeedMs, VolumeCubicMeters,
     VolumetricFlowRateCubicMetersPerSecond,
 };
 use bytemuck::{Pod, Zeroable};
 use euclid_units::Area;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// An area in **square metres**, the anchor for the area dimension.

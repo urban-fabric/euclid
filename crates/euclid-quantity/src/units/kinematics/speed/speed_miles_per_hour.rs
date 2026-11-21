@@ -1,7 +1,7 @@
 use super::{KPH_PER_MPH, MS_PER_MPH};
-use crate::conversion::dim;
 use crate::{SpeedKph, SpeedMs};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A speed in **miles per hour**, through the international foot — exactly 1609.344 m

@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     ChargeCoulombs, CurrentAmperes, ElectricFieldVoltsPerMeter, EnergyJoules, LengthMeters,
     MagneticFluxWebers, PowerWatts, ResistanceOhms, TimeSeconds,
 };
+use euclid_units::Measure;
 use euclid_units::Voltage;
+use euclid_units::dim;
 
 /// Electric potential in volts (V = W/A), the coherent SI unit.
 #[repr(transparent)]

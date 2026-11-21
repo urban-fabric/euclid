@@ -1,5 +1,3 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AccelerationMetersPerSecondSquared, AreaSquareMeters, ChargeCoulombs,
     ElectricFieldVoltsPerMeter, EnergyJoules, LengthMeters, MassKilograms,
@@ -7,6 +5,8 @@ use crate::{
     SurfaceTensionNewtonsPerMeter, TimeSeconds,
 };
 use euclid_units::Force;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Force in newtons (N = kg.m/s^2), the coherent SI unit.
 #[repr(transparent)]

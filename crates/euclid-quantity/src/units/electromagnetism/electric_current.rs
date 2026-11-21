@@ -1,10 +1,10 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AreaSquareMeters, ChargeCoulombs, CurrentDensityAmperesPerSquareMeter, InductanceHenries,
     MagneticFluxWebers, PowerWatts, ResistanceOhms, TimeSeconds, VoltageVolts,
 };
 use euclid_units::ElectricCurrent;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Electric current in amperes (A), the SI base unit.
 #[repr(transparent)]

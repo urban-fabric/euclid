@@ -6,7 +6,7 @@
 //! stops a `LengthMeters` from being handed where a `TimeSeconds` was meant.
 //!
 //! [`UnitOfMeasure`] gives the unit newtypes a common backbone, modelled on
-//! `squants`: each scalar unit declares the [dimension](dim) it measures and how
+//! `squants`: each scalar unit declares the [dimension](euclid_units::dim) it measures and how
 //! to express it in that dimension's *primary* unit (meters, seconds, m/s, kelvin,
 //! or a bare factor). From that, one generic [`convert`](UnitOfMeasure::convert)
 //! works across every unit, and the compiler rejects cross-dimension conversions
@@ -35,17 +35,7 @@
 
 use core::fmt;
 
-use crate::{Measure, ScalarQuantity};
-
-/// Type-level markers identifying a physical dimension, re-exported from
-/// [`euclid_units::dim`].
-///
-/// Two units convert into one another only when they share the same marker, which the compiler
-/// enforces. These are the type-level counterparts of the runtime [`crate::Dimension`] enum;
-/// [`euclid_units::Dimensioned`] is the canonical bridge from a marker to its runtime
-/// [`crate::Dimension`]. euclid owns both, so the concrete units here and euclid's
-/// carrier-generic contracts share exactly one marker set instead of maintaining parallel copies.
-pub use euclid_units::dim;
+use euclid_units::{Measure, ScalarQuantity};
 
 /// A scalar unit of measure that belongs to a dimension and has a known
 /// scale and offset to that dimension's primary unit.
@@ -111,10 +101,11 @@ mod tests {
     use crate::{
         AccelerationCentimetersPerSecondSquared, AccelerationMetersPerSecondSquared, AngleDegrees,
         AngleRadians, AreaSquareKilometers, AreaSquareMeters, Factor, LengthFeet, LengthKm,
-        LengthMeters, MassGrams, MassKilograms, MassMilligrams, Percentage, ScalarQuantity,
-        SpeedKph, SpeedMph, SpeedMs, TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin,
-        TimeHours, TimeMillis, TimeMinutes, TimeSeconds, UnitOfMeasure,
+        LengthMeters, MassGrams, MassKilograms, MassMilligrams, Percentage, SpeedKph, SpeedMph,
+        SpeedMs, TemperatureCelsius, TemperatureFahrenheit, TemperatureKelvin, TimeHours,
+        TimeMillis, TimeMinutes, TimeSeconds, UnitOfMeasure,
     };
+    use euclid_units::ScalarQuantity;
 
     #[test]
     fn convert_within_a_dimension() {

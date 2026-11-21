@@ -1,11 +1,11 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AngularAccelerationRadiansPerSecondSquared, AngularMomentumKilogramMetersSquaredPerSecond,
     AngularVelocityRadiansPerSecond, ForceNewtons, LengthMeters,
     MomentOfInertiaKilogramMetersSquared, PowerWatts, TimeSeconds,
 };
+use euclid_units::Measure;
 use euclid_units::Torque;
+use euclid_units::dim;
 
 /// Torque in newton-meters (N.m), the coherent SI unit.
 #[repr(transparent)]

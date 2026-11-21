@@ -1,5 +1,6 @@
 mod factor_tests {
-    use crate::{Dimension, Factor, Measure};
+    use crate::Factor;
+    use euclid_units::{Dimension, Measure};
 
     #[test]
     fn factor_constants() {
@@ -33,7 +34,8 @@ mod factor_tests {
     }
 }
 mod percentage_tests {
-    use crate::{Dimension, Factor, Measure, Percentage};
+    use crate::{Factor, Percentage};
+    use euclid_units::{Dimension, Measure};
 
     #[test]
     fn constants() {

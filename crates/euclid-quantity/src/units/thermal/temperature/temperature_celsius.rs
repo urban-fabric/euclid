@@ -1,7 +1,7 @@
 use super::KELVIN_OFFSET_CELSIUS;
-use crate::conversion::dim;
 use crate::{TemperatureFahrenheit, TemperatureKelvin};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A temperature in **degrees Celsius** — an **affine** scale, offset 273.15 from kelvin.

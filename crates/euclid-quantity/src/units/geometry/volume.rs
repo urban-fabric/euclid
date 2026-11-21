@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AmountMoles, AreaSquareMeters, LengthMeters, MolarVolumeCubicMetersPerMole};
+use euclid_units::Measure;
 use euclid_units::Volume;
+use euclid_units::dim;
 
 /// Volume in cubic meters (m^3), the coherent SI unit.
 #[repr(transparent)]

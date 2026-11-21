@@ -25,7 +25,7 @@ macro_rules! accessor_agrees {
             assert_eq!(q.$as(), v, "{label}({v:e}) must invert new");
             assert_eq!(
                 q.$as(),
-                crate::Measure::raw(&q),
+                euclid_units::Measure::raw(&q),
                 "{label}({v:e}) must agree with Measure::raw"
             );
         }

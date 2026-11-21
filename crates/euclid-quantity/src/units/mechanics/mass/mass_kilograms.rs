@@ -1,6 +1,4 @@
 use super::{KG_PER_GRAM, KG_PER_MILLIGRAM};
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AccelerationMetersPerSecondSquared, AmountMoles, AreaSquareMeters,
     DensityKilogramsPerCubicMeter, ForceNewtons, MassFlowRateKilogramsPerSecond, MassGrams,
@@ -9,6 +7,8 @@ use crate::{
 };
 use bytemuck::{Pod, Zeroable};
 use euclid_units::Mass;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A mass in **kilograms**, the SI base unit and the anchor for the mass dimension.

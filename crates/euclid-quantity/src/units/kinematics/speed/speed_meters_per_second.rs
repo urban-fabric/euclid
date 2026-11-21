@@ -1,9 +1,9 @@
 use super::{MS_PER_KPH, MS_PER_MPH};
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AccelerationMetersPerSecondSquared, LengthMeters, SpeedKph, SpeedMph, TimeSeconds};
 use bytemuck::{Pod, Zeroable};
+use euclid_units::Measure;
 use euclid_units::Speed;
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A speed in **metres per second**, the anchor for the speed dimension.

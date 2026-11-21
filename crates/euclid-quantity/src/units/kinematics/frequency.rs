@@ -1,7 +1,7 @@
-use crate::Measure;
 use crate::TimeSeconds;
-use crate::conversion::dim;
 use euclid_units::Frequency;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Frequency in hertz (Hz = 1/s), the coherent SI unit.
 #[repr(transparent)]

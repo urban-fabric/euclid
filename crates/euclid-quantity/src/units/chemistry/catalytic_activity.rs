@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AmountMoles, TimeSeconds};
 use euclid_units::CatalyticActivity;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Catalytic activity in katals (kat = mol/s), the coherent SI unit.
 #[repr(transparent)]

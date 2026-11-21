@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{EnergyJoules, MassKilograms};
+use euclid_units::Measure;
 use euclid_units::SpecificEnergy;
+use euclid_units::dim;
 
 /// Specific energy in joules per kilogram (J/kg), the coherent SI unit.
 #[repr(transparent)]

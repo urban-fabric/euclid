@@ -1,12 +1,12 @@
 use super::{MS_PER_S, S_PER_HOUR, S_PER_MIN};
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{
     AccelerationMetersPerSecondSquared, FrequencyHertz, LengthMeters, SpeedMs, TimeHours,
     TimeMillis, TimeMinutes,
 };
 use bytemuck::{Pod, Zeroable};
+use euclid_units::Measure;
 use euclid_units::Time;
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A duration in **seconds**, the SI base unit and this crate's anchor for the time

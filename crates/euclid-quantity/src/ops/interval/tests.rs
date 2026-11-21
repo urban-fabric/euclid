@@ -3,7 +3,8 @@
 //! A child module so implementation plus tests stay inside the crate 400-line budget, while
 //! `use super::*` still reaches the private endpoint ordering and rounding helpers.
 
-use crate::{Interval, LengthMeters, Measure, SpeedMs, TimeSeconds};
+use crate::{Interval, LengthMeters, SpeedMs, TimeSeconds};
+use euclid_units::Measure;
 
 fn meters(lo: f64, hi: f64) -> Interval<LengthMeters> {
     Interval::new(LengthMeters::new(lo), LengthMeters::new(hi))

@@ -1,5 +1,5 @@
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 use std::ops::{Div, Mul};
 
 #[repr(transparent)]

@@ -1,7 +1,7 @@
-use crate::Measure;
 use crate::ResistanceOhms;
-use crate::conversion::dim;
 use euclid_units::Conductance;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Electrical conductance in siemens (S = A/V), the coherent SI unit.
 #[repr(transparent)]

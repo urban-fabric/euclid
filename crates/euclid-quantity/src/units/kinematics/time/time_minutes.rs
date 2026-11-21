@@ -1,7 +1,7 @@
 use super::S_PER_MIN;
 use crate::TimeSeconds;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A duration in **minutes**. Exactly 60 s.

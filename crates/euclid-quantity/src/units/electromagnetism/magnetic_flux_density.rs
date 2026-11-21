@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AreaSquareMeters, MagneticFluxWebers};
 use euclid_units::MagneticFluxDensity;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Magnetic flux density in teslas (T = Wb/m^2), the coherent SI unit.
 #[repr(transparent)]

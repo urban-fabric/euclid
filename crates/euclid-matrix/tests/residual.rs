@@ -8,7 +8,7 @@ use euclid_tensor::Tensor;
 
 // Reuse the scalar law suite's generated f64 delegation.
 mod traits {
-    pub(super) use euclid_scalar::{Arithmetic, Compare, Element, NormedDivisionAlgebra};
+    use euclid_scalar::{Arithmetic, Compare, Element, NormedDivisionAlgebra};
 }
 #[path = "../../euclid-scalar/src/tests/vacuity/carrier.rs"]
 mod carrier;

@@ -1,7 +1,7 @@
 use super::S_PER_HOUR;
 use crate::TimeSeconds;
-use crate::conversion::dim;
 use bytemuck::{Pod, Zeroable};
+use euclid_units::dim;
 
 #[repr(transparent)]
 /// A duration in **hours**. Exactly 3600 s.

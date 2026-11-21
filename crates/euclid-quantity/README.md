@@ -19,10 +19,13 @@ third-party.
 
 ## Public API
 
-Common quantity types and traits are re-exported from the crate root:
+This crate's own units come from its root; the dimension *contracts* they
+implement come from `euclid-units`, which defines them. Nothing is re-exported
+across the crate boundary, so each name is imported from the crate that owns it:
 
 ```rust
-use euclid_quantity::{Length, LengthMeters, SpeedMs, TimeSeconds};
+use euclid_quantity::{LengthMeters, SpeedMs, TimeSeconds};
+use euclid_units::Length;
 
 let distance = LengthMeters::new(100.0);
 let elapsed = TimeSeconds::new(10.0);
@@ -34,20 +37,22 @@ assert_eq!(speed.as_ms(), 10.0);
 Use structured module paths when you want the implementation layout:
 
 ```rust
-use euclid_quantity::conversion::{UnitOfMeasure, dim};
+use euclid_quantity::conversion::UnitOfMeasure;
 use euclid_quantity::ops::Interval;
 use euclid_quantity::units::geometry::LengthMeters;
+use euclid_units::dim;
 ```
 
 The crate is organized by responsibility:
 
-- `euclid_quantity::quantity` re-exports euclid's quantity contracts —
-  `Dimension`, `Measure`, `Quantity`, `ScalarQuantity`, `LinearQuantity`,
-  `DiscreteQuantity` — and adds the two things they cannot express:
-  `HostQuantity` and `QuantityError`. It does **not** define traits of its own;
-  `euclid_quantity::Quantity` and `euclid_units::Quantity` are the same trait.
-- `euclid_quantity::conversion` defines `UnitOfMeasure` and re-exports euclid's
-  type-level `dim` markers, so a dimension has one definition rather than two.
+- `euclid_quantity::quantity` adds the two things euclid's quantity contracts
+  cannot express — `HostQuantity` and `QuantityError`. It defines no contracts of
+  its own: `Dimension`, `Measure`, `Quantity`, `ScalarQuantity`,
+  `LinearQuantity` and `DiscreteQuantity` all live in `euclid_units` and are
+  imported from there, not through this crate.
+- `euclid_quantity::conversion` defines `UnitOfMeasure`. The type-level `dim`
+  markers are euclid's, so they come from `euclid_units::dim` — a dimension has
+  one definition and one path to it.
 - `euclid_quantity::units` holds the physical units, grouped by euclid dimension
   family — `geometry` (length, area, volume, angle), `kinematics` (time, speed,
   acceleration, frequency, …), `mechanics` (mass, force, energy, power, …),
@@ -60,9 +65,11 @@ The crate is organized by responsibility:
 - `euclid_quantity::data` contains boundary/storage wrappers: bytes, counts,
   epoch timestamps, centiseconds, and decimeters.
 
-euclid's dimension traits are re-exported from the crate root, so the algebra in
-the [dimensional algebra](#dimensional-algebra) example works with just
-`use euclid_quantity::Length;` — no direct dependency on `euclid-units` needed.
+euclid's dimension traits are **not** re-exported here. The algebra in the
+[dimensional algebra](#dimensional-algebra) example needs `euclid_units::Length`
+in scope, and so a direct dependency on `euclid-units`. That is deliberate: a
+re-export would put a second, undocumented path on a trait euclid owns, and hide
+which crate a caller actually depends on.
 
 ## Conversion
 
@@ -113,7 +120,8 @@ algebra is exposed as methods on euclid's traits (`Length::per_time`,
 `Mass::times_acceleration`, ...) rather than as `/` and `*` operators:
 
 ```rust
-use euclid_quantity::{Length, LengthKm, LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
+use euclid_quantity::{LengthKm, LengthMeters, SpeedMs, TimeSeconds, UnitOfMeasure};
+use euclid_units::Length;
 
 let distance: LengthMeters = LengthKm::new(5.0).convert();
 let elapsed = TimeSeconds::new(1800.0);

@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AreaSquareMeters, CurrentAmperes};
 use euclid_units::CurrentDensity;
+use euclid_units::Measure;
+use euclid_units::dim;
 
 /// Current density in amperes per square meter (A/m^2), the coherent SI unit.
 #[repr(transparent)]

@@ -1,7 +1,7 @@
-use crate::Measure;
-use crate::conversion::dim;
 use crate::{AmountMoles, MassKilograms};
+use euclid_units::Measure;
 use euclid_units::MolarMass;
+use euclid_units::dim;
 
 /// Molar mass in kilograms per mole (kg/mol), the coherent SI unit.
 #[repr(transparent)]
