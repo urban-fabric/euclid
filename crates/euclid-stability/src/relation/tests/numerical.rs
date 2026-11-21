@@ -252,13 +252,17 @@ fn forward_stable_sum_charges_for_the_reference_cancellation() {
     // The cancellation term is what admits this. `1e5 - 99999.0` leaves `1.0` from terms of
     // `1e5`, a ratio of about `2e5`, so a kernel off by `1e-12` relative is inside the bound —
     // and would be far outside `forward_stable`'s, since `κ(|_| 1.0)` is zero.
-    let terms = [1e5, -99_999.0];
-    forward_stable_sum("cancelling", 1.0, |_| 1.0 + 1e-12, &terms, 1.0)
+    // The terms sum to **2**, not 1, and that matters: with a reference of exactly `1.0` the
+    // relative error `(computed - reference) / reference` is indistinguishable from
+    // `* reference`, so a `/` mutated to `*` survives every assertion below. A reference of `2`
+    // separates them by a factor of four.
+    let terms = [1e5, -99_998.0];
+    forward_stable_sum("cancelling", 1.0, |_| 2.0 * (1.0 + 1e-12), &terms, 1.0)
         .expect("the reference's own cancellation is charged for");
 
     // But it is not a blank cheque: ten thousand times further out still fails, and the message
     // says which term is binding rather than blaming the kernel.
-    let failure = forward_stable_sum("cancelling", 1.0, |_| 1.0 + 1e-8, &terms, 1.0)
+    let failure = forward_stable_sum("cancelling", 1.0, |_| 2.0 * (1.0 + 1e-8), &terms, 1.0)
         .expect_err("an error far past the cancellation is still the kernel's");
     assert!(
         failure.message.contains("cancellation"),
@@ -272,8 +276,9 @@ fn forward_stable_sum_charges_for_the_reference_cancellation() {
     );
     // The "over by" figure is `relative / admissible`, and it is the number a reader acts on —
     // whether this is 1.2x over or 12,000x decides whether to widen a bound or open the kernel.
-    // Asserting the words alone left `/` mutable to `*` and `%` in the message, so the ratio is
-    // pinned too. Here `1e-8` against a bound of `2e5 · u ≈ 2.2e-11` is about `450x`.
+    // Asserting the words alone left two `/`s mutable, so the ratio is pinned too: `1e-8`
+    // against a bound of `1e5 · u` is about `900x`, and either mutation of the relative error's
+    // own division lands far outside that window.
     let ratio: f64 = failure
         .message
         .split("over by:")
@@ -283,8 +288,8 @@ fn forward_stable_sum_charges_for_the_reference_cancellation() {
         .and_then(|n| n.parse().ok())
         .expect("the failure reports an 'over by' ratio");
     assert!(
-        (400.0..500.0).contains(&ratio),
-        "the reported ratio should be relative/admissible, about 450x, not {ratio}"
+        (850.0..950.0).contains(&ratio),
+        "the reported ratio should be relative/admissible, about 900x, not {ratio}"
     );
 
     // Guards abstain rather than fail: a reference summing to zero has no relative error, and a
