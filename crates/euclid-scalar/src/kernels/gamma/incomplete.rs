@@ -134,6 +134,63 @@ impl IncompleteGammaMethod {
     }
 }
 
+/// Which assembly builds the lower series' probability from its factors.
+///
+/// `P(a,x) = x^a·e^{−x}·S/Γ(a)` with `S` the series. Both arms are that expression; they differ
+/// in whether it is formed as a product or through its logarithm.
+///
+/// # The logarithm was costing `|a·ln x|·ε`, at arguments where nothing is hard
+///
+/// Taking logs is what keeps `x^a` in range when it would otherwise leave the format, and it was
+/// doing so unconditionally. The price is `exp`'s: an absolute error in the exponent comes back
+/// as a *relative* error in the result, and the exponent's own largest term is `a·ln x`. At
+/// `a = 1, x = 1e-8` that is `−18.42`, so the answer carried about `18` ulp — against a condition
+/// number of `1`, which is what makes it the implementation's error rather than the problem's.
+/// It grows like `|ln x|`, so it is worst exactly where `P` is small and smooth.
+///
+/// Found by [`forward_stable`](euclid_stability::relation::forward_stable) against the closed
+/// form `P(1,x) = −expm1(−x)`: the budget `κ·u` is what distinguishes 18 ulp at `κ = 1` from the
+/// same 18 ulp somewhere it would be free. No fixed tolerance in this tree had flagged it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LowerSeriesForm {
+    /// Every factor is representable, so the product is formed directly and carries only its
+    /// own four roundings — no exponent, and so no `|a·ln x|` in the error.
+    Product,
+    /// A factor has left the format, and the logarithm is the only way to reach the answer.
+    ///
+    /// Reached when `|a·ln x| ≥ `[`LOWER_PRODUCT_MAX`], where `x^a` overflows or underflows, or
+    /// when `Γ(a)` itself has — above `a = 171`. The error this arm carries is real and
+    /// unavoidable: the result's own logarithm is large there, which is the same argument
+    /// [`log_scaled_gamma`]'s own note makes about its direct form.
+    Logged,
+}
+
+impl LowerSeriesForm {
+    /// The product form wherever its factors fit, which is the common case by far.
+    fn for_arguments(a: f64, x: f64) -> Self {
+        if (a * x.ln()).abs() < LOWER_PRODUCT_MAX && a <= GAMMA_FINITE_MAX {
+            Self::Product
+        } else {
+            Self::Logged
+        }
+    }
+}
+
+/// Largest `|a·ln x|` the product form is used at.
+///
+/// `x^a` is `e^{a·ln x}`, which leaves `f64` past `709` upward and `−745` downward. `700` is
+/// inside both with room for the remaining factors — `e^{−x}` is at most `1` and `S/Γ(a)` is
+/// `O(1/a)` — so a product admitted here cannot overflow on the way to a probability that is
+/// itself at most one.
+const LOWER_PRODUCT_MAX: f64 = 700.0;
+
+/// Largest shape with a finite `Γ(a)`, which the product form divides by.
+///
+/// `Γ(171)` is `7.3e306` and `Γ(172)` is infinite. The series arm reaches shapes up to
+/// [`GAMMA_EDGEWORTH_MIN`], so this bound is doing real work rather than describing an
+/// unreachable case.
+const GAMMA_FINITE_MAX: f64 = 171.0;
+
 pub(crate) fn gamma_lr(a: f64, x: f64) -> f64 {
     match IncompleteGammaMethod::for_arguments(a, x) {
         IncompleteGammaMethod::Invalid => f64::NAN,
@@ -147,7 +204,10 @@ pub(crate) fn gamma_lr(a: f64, x: f64) -> f64 {
         IncompleteGammaMethod::SmallShapeSeries => small_shape_log_lower(a, x).exp(),
         IncompleteGammaMethod::LowerSeries => {
             let series = gamma_lower_series(a, x, EPS, MAX_ITER);
-            log_scaled_gamma(a, x, series.ln()).exp()
+            match LowerSeriesForm::for_arguments(a, x) {
+                LowerSeriesForm::Product => x.powf(a) * (-x).exp() * series / gamma(a),
+                LowerSeriesForm::Logged => log_scaled_gamma(a, x, series.ln()).exp(),
+            }
         }
         // Either upper arm is reached through the complement, which is what keeps the lower tail
         // from being formed by a cancelling subtraction where it is the small one.

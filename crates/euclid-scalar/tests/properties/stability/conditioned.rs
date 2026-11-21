@@ -38,9 +38,18 @@ use euclid_stability::relation::{
 };
 use euclid_stability::{Config, generate, property};
 
-/// Safety factor on `κ·u`. `64` matches the round-trip property's choice and is what a kernel
-/// built from a handful of correctly-rounded operations is entitled to.
-const SAFETY: f64 = 64.0;
+/// Safety factor on `κ·u`, measured rather than chosen.
+///
+/// `64` was the inherited figure, from the round-trip property. These properties pass at `16` and
+/// the incomplete gamma's closed-form arm fails at `8`, so `16` is where the budget actually
+/// binds — four times tighter than a kernel "built from a handful of correctly-rounded
+/// operations is entitled to", which is the kind of slack that lets a regression through.
+///
+/// It is `16` only because of the fix this file's own property prompted: `gamma_lr`'s lower
+/// series used to reach its answer through `exp(ln S − x + a·ln x − lnΓ(a))` and so carried
+/// `|a·ln x|·ε` — 18 ulp at `a = 1, x = 1e-8` against `κ = 1`. At that error this constant could
+/// not go below `64`. Tightening it is how the gain stops being a number in a commit message.
+const SAFETY: f64 = 16.0;
 
 mod closed_forms {
     use super::*;
