@@ -148,3 +148,53 @@ fn the_digamma_reductions_name_every_region() {
     let threshold = f64::from(PSI_ASYMPTOTIC_MIN);
     close(digamma(threshold.next_down()), digamma(threshold), 1e-14);
 }
+
+/// The asymptotic series agrees with itself evaluated further out, which pins its truncation.
+///
+/// # Why not `ψ₁(n) = ζ(2) − Σ_{k<n} k^{−2}`
+///
+/// Because that closed form is the inaccurate side. At `n = 18` it is `1.645 − 1.588`, losing
+/// five bits, so it carries about `28` ulp of the answer and reported this kernel as `17` ulp
+/// wrong when the kernel was fine — the standing trap that a reference may not be formed by a
+/// subtraction the quantity does not survive.
+///
+/// # What does work
+///
+/// `ψ₁(x) = Σ_{k<M} 1/(x+k)² + ψ₁(x+M)`. Every term is positive, so nothing cancels, and the
+/// right-hand side evaluates the asymptotic series at `x + M` where its truncation is
+/// negligible. A term-count defect in the series therefore shows up as a disagreement between
+/// the two sides, which is exactly the quantity `PSI_ASYMPTOTIC_MIN`'s own table could not see:
+/// that experiment varied the shift and held the term count fixed.
+///
+/// Measured worst over the arguments below: `2` ulp. Before the series was extended by two
+/// Bernoulli terms it was `47`, so a bar of `10` catches that defect with margin while leaving
+/// room for the forty roundings the reference path accumulates.
+#[test]
+fn the_trigamma_series_agrees_with_itself_evaluated_further_out() {
+    const SHIFT: u32 = 40;
+    let mut worst = (0.0_f64, 0.0_f64);
+    for step in 0..=48 {
+        // Straddles `PSI_ASYMPTOTIC_MIN`: below it the recurrence runs first, at and above it
+        // the series is evaluated directly, and only the second can expose a term-count defect.
+        let x = 14.0 + f64::from(step) * 0.25;
+        let mut summed = 0.0_f64;
+        for k in 0..SHIFT {
+            let term = x + f64::from(k);
+            summed += 1.0 / (term * term);
+        }
+        let indirect = summed + trigamma(x + f64::from(SHIFT));
+        let direct = trigamma(x);
+        let ulps = (direct - indirect).abs() / crate::Real::ulp(direct);
+        if ulps > worst.0 {
+            worst = (ulps, x);
+        }
+        assert!(
+            ulps <= 10.0,
+            "ψ₁({x}) is {direct} directly and {indirect} through the recurrence, {ulps} apart"
+        );
+    }
+    assert!(
+        worst.0 > 0.0,
+        "the two paths agreed bit-exactly everywhere, so this compared nothing"
+    );
+}

@@ -27,6 +27,29 @@ use super::*;
 ///
 /// It flattens at 20 — past that the series is at its own floor and further shifting only costs
 /// recurrence steps. A nonnegative argument takes at most twenty steps.
+///
+/// # The flattening was `trigamma`'s truncation, not a floor, and the table could not see it
+///
+/// That row is flat at `8.5e-15` for shifts of 20, 25 and 30, and the conclusion drawn from it
+/// was that the series had reached its limit. It had not. The experiment varied the **shift**
+/// and held the **term count** fixed, so it could only ever measure one of the two things that
+/// bound the answer — and for `trigamma` the binding one was the series, whose first omitted
+/// term `5/(66x¹¹)` is `6.7e-15` relative at `x = 20`. Flat across shifts is exactly what a
+/// term-count limit looks like from an experiment that cannot vary the term count.
+///
+/// Swept against a reference rather than at integers, the shape gives it away: the error *falls*
+/// with `x` — `53` ulp at `x = 20`, `7` at `24`, `1` beyond `40` — which no floor does. Two more
+/// Bernoulli terms in [`trigamma_positive`] cost two fused multiply-adds and remove it:
+///
+/// ```text
+/// x        [1,4]  [4,8]  [8,12]  [12,16]  [16,20]  [20,24]  [24,40]
+/// was          7     15      28       27       53       53        7   ulp
+/// now          4      3       2        2        2        1        1
+/// ```
+///
+/// `digamma`'s own omitted term is `1/(132x¹⁰)`, which is `7.6e-16` at `x = 20` — already under
+/// `ε`, which is why only one of the two needed extending and why the original threshold work
+/// was right about `digamma`.
 const PSI_ASYMPTOTIC_MIN: u8 = 20;
 
 /// The digamma function `ψ(x) = d/dx ln Γ(x)`.
@@ -229,7 +252,14 @@ fn trigamma_positive(mut x: f64) -> f64 {
     }
     let r = 1.0 / x;
     let r2 = r * r;
-    result + r + 0.5 * r2 + r2 * r * (1.0 / 6.0 - r2 * (1.0 / 30.0 - r2 * (1.0 / 42.0 - r2 / 30.0)))
+    result
+        + r
+        + 0.5 * r2
+        + r2 * r
+            * (1.0 / 6.0
+                - r2 * (1.0 / 30.0
+                    - r2 * (1.0 / 42.0
+                        - r2 * (1.0 / 30.0 - r2 * (5.0 / 66.0 - r2 * (691.0 / 2730.0))))))
 }
 
 #[cfg(test)]
