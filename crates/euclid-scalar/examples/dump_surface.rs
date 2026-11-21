@@ -166,6 +166,25 @@ fn apply_f32(name: &str, x: f64) -> f64 {
         "bessel_y0" => Real::bessel_y0(y),
         "airy_ai" => Real::airy_ai(y),
         "airy_bi" => Real::airy_bi(y),
+        // Added when the f32 surface was first swept and this list turned out to be the limit
+        // on it rather than the kernels. Everything here has a direct MPFR reference, which is
+        // what makes it measurable at all.
+        "ln_gamma" => Real::ln_gamma(y),
+        "digamma" => Real::digamma(y),
+        "trigamma" => Real::trigamma(y),
+        "bessel_j1" => Real::bessel_j1(y),
+        "bessel_y1" => Real::bessel_y1(y),
+        "bessel_k1" => Real::bessel_k1(y),
+        "bessel_i1e" => Real::bessel_i1e(y),
+        "bessel_k0e" => Real::bessel_k0e(y),
+        "bessel_k1e" => Real::bessel_k1e(y),
+        "zeta" => Real::zeta(y),
+        "exp_int_e1" => Real::exp_int_e1(y),
+        "exp_int_ei" => Real::exp_int_ei(y),
+        "erfcx" => Real::erfcx(y),
+        "erfc_inv" => Real::erfc_inv(y),
+        "airy_ai_prime" => Real::airy_ai_prime(y),
+        "airy_bi_prime" => Real::airy_bi_prime(y),
         other => panic!("unknown single-precision function {other}"),
     };
     f64::from(out)

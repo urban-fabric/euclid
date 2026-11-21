@@ -86,11 +86,43 @@ enum ZetaRoute {
     Value(f32),
     /// Euler–Maclaurin on the Hurwitz zeta, for `s > 1`.
     Hurwitz,
-    /// The accelerated eta series, which covers `(−1, 1)` including the critical strip.
+    /// The accelerated eta series, from [`ZETA_ETA_MIN`] up to `1`, including the critical strip.
     Eta,
     /// The functional equation, mapping `s ≤ −1` onto `1 − s ≥ 2`.
     Reflection,
 }
+
+/// Below this `s` the reflection replaces the eta acceleration.
+///
+/// **`−1/8`, raised from `−1`.** The eta route had all of `(−1, 0)` because the reflection needs
+/// `1 − s` and that loses `s` entirely as `s → 0⁻`. True, and it does not need the whole interval
+/// to avoid it — by `s = −1/8` the reflected argument is `9/8`, far enough from `ζ`'s pole at `1`
+/// that the rounding of `1 − s` costs about an ulp.
+///
+/// # It is `f64`'s value and not `f64`'s measurement
+///
+/// The wide peer reached `−1/8` the same way and that is no reason to inherit it: `ε` is `1.2e-7`
+/// here, so `ζ(1−s)`'s pole tells sooner and the crossover could easily have sat further out.
+/// Measured against a 400-bit reference, worst `f32` ulp per band, with the handover forced to
+/// each candidate:
+///
+/// ```text
+/// s              [-0.99,-0.9]  [-0.9,-0.75]  [-0.75,-0.5]  [-0.5,-0.25]  [-0.25,-0.125]
+/// handover −1           154.3         106.3          46.3          15.0             7.0   ulp
+/// handover −1/4           5.0           5.1           5.1           6.2             7.0
+/// handover −1/8           5.0           5.1           5.1           6.2             6.2
+/// ```
+///
+/// `−1/8` is never worse than `−1/4` and strictly better on `[−1/4, −1/8)`, so it is the choice
+/// rather than the inheritance. The `f32` figures also happen to be *better* than the `f64` ones
+/// at the old handover — 154 against 171 — because this format's coarser inputs keep `sin(πs/2)`
+/// away from zero, which is the same asymmetry `REFLECTED_ZERO_MIN` turns on.
+///
+/// What remains is `(−1/8, 0)`, which measures `6.8`–`7.1` ulp on every candidate because it is
+/// the accelerator's own cancellation rather than a routing choice: `η`'s alternating series is
+/// divergent for `s < 0`. The wide peer answers that with a Chebyshev fit on `|s| < 1/8`; this
+/// format has no such arm yet, and that band is where it would go.
+const ZETA_ETA_MIN: f32 = -0.125;
 
 fn zeta_route(s: f32) -> ZetaRoute {
     if s.is_nan() || s == f32::NEG_INFINITY {
@@ -103,7 +135,7 @@ fn zeta_route(s: f32) -> ZetaRoute {
         ZetaRoute::Value(f32::INFINITY)
     } else if s == 0.0 {
         ZetaRoute::Value(-0.5)
-    } else if s > -1.0 {
+    } else if s > ZETA_ETA_MIN {
         ZetaRoute::Eta
     } else if s % 2.0 == 0.0 {
         // The negative even integers are the trivial zeros, returned exactly rather than left to
@@ -185,7 +217,12 @@ mod tests {
         assert_eq!(zeta_route(1.0), ZetaRoute::Value(f32::INFINITY));
         assert_eq!(zeta_route(0.5), ZetaRoute::Eta);
         assert_eq!(zeta_route(0.0), ZetaRoute::Value(-0.5));
-        assert_eq!(zeta_route(-0.5), ZetaRoute::Eta);
+        // `-0.5` is past `ZETA_ETA_MIN` now: the eta series is divergent for `s < 0` and the
+        // reflection carries everything below `-1/8`, which took that band from 154 ulp to 5.
+        assert_eq!(zeta_route(-0.5), ZetaRoute::Reflection);
+        assert_eq!(zeta_route(ZETA_ETA_MIN), ZetaRoute::Reflection);
+        assert_eq!(zeta_route(-0.0625), ZetaRoute::Eta);
+        assert_eq!(zeta_route(-f32::MIN_POSITIVE), ZetaRoute::Eta);
         assert_eq!(zeta_route(-2.0), ZetaRoute::Value(0.0));
         assert_eq!(zeta_route(-3.0), ZetaRoute::Reflection);
         assert_eq!(zeta_route(f32::INFINITY), ZetaRoute::Value(1.0));
