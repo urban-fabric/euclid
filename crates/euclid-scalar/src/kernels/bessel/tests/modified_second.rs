@@ -1,6 +1,11 @@
-//! `K₀`/`K₁`: the cosh-integral quadrature, the small-argument series, and the join between
-//! them. The two cross-family checks at the end belong here rather than with `I`, because what
-//! they constrain is `K`'s consistency *with* `I` rather than anything about `I` alone.
+//! `K₀`/`K₁`: the cosh-integral quadrature and the small-argument series. The two cross-family
+//! checks at the end belong here rather than with `I`, because what they constrain is `K`'s
+//! consistency *with* `I` rather than anything about `I` alone.
+//!
+//! The join between the two routes — where `K_SERIES_MAX` sits, and why — is in [`join`], which
+//! keeps both files inside the 400-line budget.
+
+mod join;
 
 use crate::constants::f64::EULER_GAMMA;
 use crate::kernels::bessel::modified_first::{i0e, i1e};
@@ -111,36 +116,6 @@ fn the_modified_wronskian_ties_i_to_k() {
             (residual * x).abs() <= 1e-13,
             "I/K Wronskian broken at x = {x}: residual {residual:e}"
         );
-    }
-}
-
-#[test]
-fn the_second_kind_joins_its_two_regimes_smoothly() {
-    // K0' = -K1 and K1' = -(K0 + K1/x), which bound a legitimate change across the join
-    // between the power series and the quadrature.
-    let x = K_SERIES_MAX;
-    let h = 1e-9;
-    for (name, f, derivative) in [
-        ("K0", k0 as fn(f64) -> f64, -k1(x)),
-        ("K1", k1 as fn(f64) -> f64, -(k0(x) + k1(x) / x)),
-    ] {
-        let (below, above) = (f(x - h), f(x + h));
-        let implied = derivative.abs() * 2.0 * h;
-        assert!(
-            (above - below).abs() <= implied * 1.05 + 1e-16,
-            "{name} steps at the join: {below:e} then {above:e}"
-        );
-    }
-    // And the two routes agree throughout a band rather than only at the switch. The band
-    // has to stay narrow because it is the *series* that decays, not the quadrature: the
-    // `ln(x/2)·I₀` subtraction loses about one digit at x = 2, 1.6 by x = 2.5 and 3.1 by
-    // x = 4, where its relative error reaches 1.4e-13. Measured disagreement across
-    // (2, 2.5] is 1.2e-14, all of it the series'. That growth is exactly why
-    // `K_SERIES_MAX` sits at 2 rather than higher.
-    for i in 1..=10 {
-        let x = K_SERIES_MAX + f64::from(i) * 0.05;
-        rel_close(k_nu_scaled(0.0, x), k0_series(x) * x.exp(), 5e-14);
-        rel_close(k_nu_scaled(1.0, x), k1_series(x) * x.exp(), 5e-14);
     }
 }
 
@@ -291,20 +266,6 @@ fn both_scaled_kinds_stay_machine_precision_at_large_argument() {
     rel_close(i0e(1e8), scaled_asymptotic(0.0, 1e8, true), 1e-13);
     rel_close(k0e(1e8), scaled_asymptotic(0.0, 1e8, false), 1e-15);
     rel_close(k1e(1e8), scaled_asymptotic(1.0, 1e8, false), 1e-15);
-}
-
-#[test]
-fn the_series_quadrature_threshold_leaves_no_step_at_ulp_resolution() {
-    // The series -> quadrature switch at x = 2, probed at the two representable values that
-    // straddle it. K decays exponentially, so the comparison is scaled by the value itself.
-    // The two routes agree to about 1e-14 relative here, all of it the series' `ln(x/2)·I₀`
-    // subtraction; see `the_second_kind_joins_its_two_regimes_smoothly` for the measurement.
-    use euclid_utils::no_step_across;
-    let x = K_SERIES_MAX;
-    no_step_across("K0", k0, x, -k1(x), 1e-13);
-    no_step_across("K1", k1, x, -(k0(x) + k1(x) / x), 1e-13);
-    no_step_across("K0e", k0e, x, k0e(x) - k1e(x), 1e-13);
-    no_step_across("K1e", k1e, x, k1e(x) - k0e(x) - k1e(x) / x, 1e-13);
 }
 
 /// `K`'s three routes, shared by all four entry points.

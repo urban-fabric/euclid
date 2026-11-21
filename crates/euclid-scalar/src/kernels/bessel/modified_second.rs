@@ -67,9 +67,41 @@ const TERM_EPS: f64 = 1e-19;
 /// At or below this argument `K₀`/`K₁` use their power series; above it, the quadrature.
 ///
 /// The series is exact for small `x` and the quadrature's node count grows like `ln(1/x)` as
-/// `x → 0`, so the series takes the small end. At `x = 2` the series has lost about one digit
-/// to the `ln(x/2)·I₀` subtraction and the quadrature is already at machine precision.
-pub(super) const K_SERIES_MAX: f64 = 2.0;
+/// `x → 0`, so the series takes the small end. **The quadrature is the accurate route at every
+/// argument**; the series earns the small end on cost alone, and this constant is therefore the
+/// largest `x` at which it is still free.
+///
+/// # `2.0` was a digit's worth of optimism, and the `f32` peer had already found it
+///
+/// This read `2.0`, on the stated grounds that the `ln(x/2)·I₀` subtraction costs "about one
+/// digit" there — a tenth of `f64`'s budget. It costs rather more than that. Measured against a
+/// 320-bit reference (`k0_ref.py`: the trapezoidal rule on the integral representation, anchored
+/// at `ν = ½` against `√(π/2x)e^{−x}` and cross-checked against this same power series at 95
+/// digits), worst ulp per band with each route forced over the whole range:
+///
+/// ```text
+/// x          1.0   1.25   1.3   1.4   1.65   1.95   2.05
+/// K₀  series   2      1     5     7     23     40     52   ulp
+///     quad     2      0     1     3      2      1      3
+/// K₁  series   1      2     4     2      4      6     11
+///     quad     0      2     2     1      3      1      2
+/// K₀ᵉ series   2      1     4     9     30     35     51
+///     quad     1      1     1     3      3      1      3
+/// ```
+///
+/// So the two cross at about `1.3`, not at `2`, and the old join shipped `40` ulp of `K₀` at
+/// `x = 1.95` where the other arm carries one. `1.25` is that crossing with a band of margin,
+/// and it is exactly representable.
+///
+/// The [`f32` peer](crate::kernels::f32::bessel) reached this conclusion first and lowered its
+/// own constant to `1.5`, reasoning that one digit is a *seventh* of that format's budget. The
+/// premise was the part that needed checking: the loss is not one digit in either format, and
+/// each threshold is still its own measurement — `1.5` there, `1.25` here.
+///
+/// Pushing the join to zero does not follow from the table. The quadrature measures `0`–`4` ulp
+/// down to `x = 1e-3`, but its node count grows like `ln(1/x)` and reaches ~6300 at `x = 1e-300`,
+/// so the series keeps the small end on cost where both are accurate.
+pub(super) const K_SERIES_MAX: f64 = 1.25;
 
 /// Largest trapezoid step, set by the strip half-width `d → π/2` that bounds the small-`x`
 /// regime: the error is `≈ e^{−2πd/h} = e^{−π²/h}`, and `e^{−π²/0.2} ≈ 4e-22`.
