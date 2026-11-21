@@ -20,7 +20,7 @@ pub(super) enum E1Route {
     /// A value the function takes exactly: the pole at the origin, the limit at `+∞`, and the
     /// `NaN` that states the domain.
     Value(f64),
-    /// The power series below [`E1_SERIES_MAX`], which cancels `ln x` against a growing sum.
+    /// The power series below [`E1_CHEBYSHEV_MIN`], which cancels `ln x` against a growing sum.
     Series,
     /// `1 ≤ x ≤ 4`: a Chebyshev series, because *both* neighbours are weak there.
     ///
