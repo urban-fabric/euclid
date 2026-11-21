@@ -3,6 +3,8 @@
 //! Split by sub-topic, because one file carrying all of it went past this crate's 400-line
 //! budget:
 //!
+//! - [`conditioned`] — error budgets set by `κ(x)·u` rather than by a literal, against closed
+//!   forms and cross-family identities; and the six relations this suite had never used.
 //! - [`seams`] — no kernel may jump at an algorithm crossover. Forty-five kernels, each at the
 //!   generic threshold list plus the constants its own source names.
 //! - [`wiggle`] — ulp-level monotonicity: which kernels have none, and measured budgets for the
@@ -252,6 +254,8 @@ fn assert_budget(
 /// cannot see and `.budget()` can.
 #[path = "stability/asymptotics.rs"]
 mod asymptotics;
+#[path = "stability/conditioned.rs"]
+mod conditioned;
 #[path = "stability/cross_precision.rs"]
 mod cross_precision;
 #[path = "stability/exact_values.rs"]
