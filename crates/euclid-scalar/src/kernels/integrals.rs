@@ -60,41 +60,6 @@ use crate::math::continued_fraction::{LENTZ_TINY_F64, converged};
 /// nothing from either side.
 const TRIG_SERIES_MAX: f64 = 4.0;
 
-/// Above this argument `E₁` leaves the power series for Lentz's continued fraction.
-///
-/// # `2.0`, raised from `1.0`, because the fraction is worst where it takes over
-///
-/// Both routes were measured against a 90-digit reference — the alternating series and the
-/// continued fraction evaluated independently in `Decimal`, agreeing with each other to between
-/// 24 and 75 digits, which is what makes either usable as a referee:
-///
-/// ```text
-/// x       series   fraction
-/// 1.00     0.00      0.00
-/// 1.05     0.00     16.10   ulp
-/// 1.10     0.67     21.51
-/// 1.50     0.62     11.87
-/// 2.00     0.00      2.56
-/// 2.50    28.22      2.51
-/// 3.00    76.64      1.20
-/// 4.00   349.87      1.55
-/// ```
-///
-/// The two cross at about `x = 2`, and the old threshold of `1.0` sat a decade below that — so
-/// every argument in `[1, 2]` took the *worse* of the two routes. The fraction converges slowest
-/// exactly where it is handed control, which is the same pattern `erfcx` shows above
-/// `ERFCX_CF_MIN` and the modified Bessels showed below `I_ASYMPTOTIC_MIN`.
-///
-/// Raising it halves the pointwise error on `[1, 2]` — `0`–`11.7` ulp against `12`–`22` — and
-/// also repairs the monotonicity that `stability::wiggle` records: the worst inversion was `114`
-/// ulp just above `1.0`, and `E₁` is now **exactly monotone** there, with the residual peak `64`
-/// ulp near `1.9` where the series' own cancellation is largest.
-///
-/// It cannot go higher. The series' terms are `xᵏ/(k·k!)`, alternating, and their peak grows with
-/// `x` while `E₁` itself decays — so cancellation beats even the compensated summation past about
-/// `2.5`, reaching `350` ulp by `x = 4` and `3.7e8` by `x = 12`.
-const E1_SERIES_MAX: f64 = 2.0;
-
 /// Above this argument `Ei` switches from its series to its asymptotic expansion. Every term
 /// of the series is positive for `x > 0`, so it suffers no cancellation at all and is
 /// preferred as far as it keeps converging cheaply.

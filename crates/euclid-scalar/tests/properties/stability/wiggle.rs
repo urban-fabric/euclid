@@ -44,11 +44,13 @@ fn the_ulp_monotone_kernels_stay_monotone() {
         ("airy_bi", Real::airy_bi, 1.0, true),
         ("airy_bi", Real::airy_bi, 5.0, true),
         ("exp_int_e1", Real::exp_int_e1, 10.0, false),
-        // `E₁` at `1.0` became bit-monotone when `E1_SERIES_MAX` rose from `1.0` to `2.0`: this
-        // argument used to be the *first* one on the continued fraction, and is now the last one
-        // on the series. It carried the worst inversion in the suite, `114` ulp. See
+        // `E₁` at `1.0` is **no longer here**, and the history is worth keeping because it has
+        // now gone both ways. It was budgeted with the worst inversion in the suite — `114` ulp
+        // — when `1.0` was the first argument on the continued fraction; it became bit-monotone
+        // when `E1_SERIES_MAX` rose to `2.0` and left it the *last* argument on the series; and
+        // it is budgeted again now that the series has given `[7/8, 4]` to a Chebyshev fit, at
+        // `1` ulp over `32` of `50000` pairs. See
         // `the_newly_scanned_kernels_stay_within_their_wiggle_budgets`.
-        ("exp_int_e1", Real::exp_int_e1, 1.0, false),
         // The last fifteen kernels the scan had never reached. Thirteen start points among them
         // are clean to the last bit, which is more than the earlier rounds found — the
         // oscillatory families are *better* behaved here than the gamma ones, away from their
@@ -195,6 +197,13 @@ fn the_newly_scanned_kernels_stay_within_their_wiggle_budgets() {
     assert_budget("erf_inv", Real::erf_inv, 0.5, true, 2_600, 8.0);
     assert_budget("erfc_inv", Real::erfc_inv, 0.5, false, 2_000, 10.0);
     assert_budget("ndtri", Real::ndtri, 0.3, true, 4_500, 6.0);
+    // `E₁` at `1.0`, which the fit on `[7/8, 4]` took off the bit-monotone list. Measured `32`
+    // of `50000` pairs inverting by `1` ulp, against the `17`-to-`43` ulp of *accuracy* the
+    // series carried over that window — an approximation is not bit-monotone where the series it
+    // replaced happened to be, and a smooth route's last bits wobble wherever its error does.
+    // The window's lower edge is already an eighth below `1` for the related reason: see
+    // `E1_CHEBYSHEV_MIN`, which explains why a boundary should not sit on a scanned argument.
+    assert_budget("exp_int_e1", Real::exp_int_e1, 1.0, false, 200, 4.0);
 }
 
 /// Wiggle budgets for the last fifteen kernels, and the two mechanisms they expose.

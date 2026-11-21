@@ -63,13 +63,20 @@ fn every_crossover_leaves_no_step_at_ulp_resolution() {
         TRIG_SERIES_MAX.cos() / TRIG_SERIES_MAX,
         1e-14,
     );
-    no_step_across(
-        "E1",
-        exp_int_e1,
-        E1_SERIES_MAX,
-        -(-E1_SERIES_MAX).exp() / E1_SERIES_MAX,
-        1e-14,
-    );
+    // `E₁` has two joins now, both edges of the Chebyshev window, and neither is
+    // `E1_SERIES_MAX` — which no longer routes anything and has been retired.
+    for threshold in [
+        super::exponential::E1_CHEBYSHEV_MIN,
+        super::exponential::E1_CHEBYSHEV_MAX,
+    ] {
+        no_step_across(
+            "E1",
+            exp_int_e1,
+            threshold,
+            -(-threshold).exp() / threshold,
+            1e-14,
+        );
+    }
     no_step_across(
         "Ei",
         exp_int_ei,

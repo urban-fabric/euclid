@@ -42,15 +42,39 @@ fn ei_matches_reference_values() {
     close(exp_int_ei(50.0), 1.058_563_689_713_169e20, 1e-15);
 }
 
+/// Both of `E₁`'s joins are smooth, which is what makes the three routes one function.
+///
+/// `E₁′ = −e^{−x}/x`, so across `2h` the value may change by about that much and no more. A
+/// route that is *accurate* can still leave a step at a join — the seam and the accuracy are
+/// different questions — so each crossover is checked rather than only the one that used to
+/// exist.
 #[test]
-fn e1_joins_its_two_regimes_smoothly() {
-    // E1' = -e^-x/x, so over 2h the value may change by at most about that much.
+fn e1_joins_its_regimes_smoothly() {
     let h = 1e-8;
-    let (below, above) = (exp_int_e1(E1_SERIES_MAX - h), exp_int_e1(E1_SERIES_MAX + h));
-    let implied = (-E1_SERIES_MAX).exp() / E1_SERIES_MAX * 2.0 * h;
+    for threshold in [super::E1_CHEBYSHEV_MIN, super::E1_CHEBYSHEV_MAX] {
+        let (below, above) = (exp_int_e1(threshold - h), exp_int_e1(threshold + h));
+        let implied = (-threshold).exp() / threshold * 2.0 * h;
+        assert!(
+            (above - below).abs() <= implied * 1.01 + 1e-15,
+            "step at the E1 join {threshold}: {below:e} then {above:e}"
+        );
+    }
+}
+
+/// `E₁` at the one argument it is widely tabulated at, to the last bit.
+///
+/// `E₁(1) = 0.2193839343955203` sits on the Chebyshev window's lower edge, so this pins the
+/// fit's value where a seam test only pins its continuity. The scaling matters here too: the
+/// route returns `fit·e^{−x}/x`, and at `x = 1` that division and exponential are both exact
+/// enough that a wrong constant term shows up directly.
+#[test]
+fn e1_matches_its_tabulated_value_at_one() {
+    let got = exp_int_e1(1.0);
+    let known = 0.219_383_934_395_520_27_f64;
+    let ulps = (got - known).abs() / crate::Real::ulp(known);
     assert!(
-        (above - below).abs() <= implied * 1.01 + 1e-15,
-        "step at the E1 join: {below:e} then {above:e}"
+        ulps <= 2.0,
+        "E1(1) = {got}, tabulated {known}, {ulps} ulp apart"
     );
 }
 
@@ -98,19 +122,25 @@ fn e1_is_positive_decreasing_and_handles_its_edges() {
     assert!(exp_int_e1(f64::NAN).is_nan());
 }
 
-/// `E₁`'s three routes, including the series crossover and the whole negative half-line.
+/// `E₁`'s four routes, including both crossovers and the whole negative half-line.
 ///
 /// The negative arm is the one no value assertion reaches: a negative argument that fell through
 /// to the series would evaluate `ln x` and return `NaN` regardless, so the domain statement and
 /// the accident agree on the answer. Only the decision separates them.
 #[test]
 fn the_e1_routes_cover_the_line_and_its_series_crossover() {
-    use super::E1Route::{ContinuedFraction, Series, Value};
+    use super::E1Route::{Chebyshev, ContinuedFraction, Series, Value};
 
-    let threshold = super::E1_SERIES_MAX;
-    assert_eq!(super::e1_route(threshold.next_down()), Series);
-    assert_eq!(super::e1_route(threshold), Series);
-    assert_eq!(super::e1_route(threshold.next_up()), ContinuedFraction);
+    // The series now stops at `E1_CHEBYSHEV_MIN` rather than running to `E1_SERIES_MAX`: both
+    // it and the fraction were weak on `[1, 4]`, so a fit took the middle. `E1_SERIES_MAX` is
+    // still where the series' *own* cancellation was measured and is kept for that note.
+    let lower = super::E1_CHEBYSHEV_MIN;
+    assert_eq!(super::e1_route(lower.next_down()), Series);
+    assert_eq!(super::e1_route(lower), Chebyshev);
+    assert_eq!(super::e1_route(2.0), Chebyshev);
+    let upper = super::E1_CHEBYSHEV_MAX;
+    assert_eq!(super::e1_route(upper), Chebyshev);
+    assert_eq!(super::e1_route(upper.next_up()), ContinuedFraction);
     assert_eq!(super::e1_route(f64::MIN_POSITIVE), Series);
     assert_eq!(super::e1_route(1e30), ContinuedFraction);
     assert_eq!(super::e1_route(f64::MAX), ContinuedFraction);
