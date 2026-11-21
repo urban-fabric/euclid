@@ -150,4 +150,59 @@ mod tests {
         assert_eq!(eta_divisor(1.0_f32), 0.0);
         assert_eq!(eta_divisor(2.0_f32), 0.5);
     }
+
+    /// Every coefficient of the fit contributes, and each one's **sign** is pinned.
+    ///
+    /// Four mutants survived here, all `delete -` on a coefficient. They live through the
+    /// functional-equation property because the later terms contribute below its tolerance:
+    /// `c[11]` is `1.2e-13` against a `ζ` of `0.5`, so flipping it moves the answer by `2.4e-13`
+    /// and the identity check is looser than that.
+    ///
+    /// A Chebyshev series cannot be spot-checked term by term through its own evaluation, so this
+    /// compares Clenshaw against the **definition** — `Σ cₖ Tₖ(t)` with `Tₖ` by its own
+    /// recurrence — at a `t` where no term vanishes. Any sign flip then shows up as a difference
+    /// of twice that coefficient, which is far above the agreement two correct evaluations have.
+    #[test]
+    fn every_fit_coefficient_contributes_with_its_own_sign() {
+        // `t = 0.3` keeps every `T_k(t)` away from zero, so no coefficient is masked.
+        let t = 0.3_f64;
+        let s = t / 8.0;
+        let mut previous = 1.0_f64;
+        let mut current = t;
+        let mut direct = ZETA_ORIGIN_FIT[0] + ZETA_ORIGIN_FIT[1] * t;
+        for &coefficient in &ZETA_ORIGIN_FIT[2..] {
+            let next = 2.0 * t * current - previous;
+            direct += coefficient * next;
+            previous = current;
+            current = next;
+        }
+        let clenshaw = zeta_near_origin(s);
+        assert!(
+            (clenshaw - direct).abs() <= 8.0 * f64::EPSILON * direct.abs(),
+            "Clenshaw gives {clenshaw} against the direct sum {direct}"
+        );
+        // Comparing two evaluations cannot reach the tail, and the assertion above is why: its
+        // floor is `8ε·|ζ|`, about `9e-16`, while the last coefficient is `1.9e-18`. Flipping
+        // that one moves nothing either spelling of the series can see. The first draft of this
+        // test asserted the opposite and failed, which is the useful kind of failure.
+        //
+        // What does reach every coefficient is its **sign**: all sixteen are negative on this
+        // interval, because `ζ` is negative and monotone across it with no inflection. So a
+        // deleted minus is a structural break rather than a numerical one, and this catches it
+        // at `c[15]` exactly as well as at `c[0]`.
+        assert!(
+            ZETA_ORIGIN_FIT.iter().all(|c| *c < 0.0),
+            "every fit coefficient is negative on [-1/8, 1/8]; a deleted sign breaks that"
+        );
+        // Monotone decay is the other structural fact, and it pins the ordering: a coefficient
+        // moved or duplicated shows up here even where its magnitude is below the floor above.
+        for pair in ZETA_ORIGIN_FIT.windows(2) {
+            assert!(
+                pair[1].abs() < pair[0].abs(),
+                "the fit should decay monotonically: {:e} then {:e}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
 }

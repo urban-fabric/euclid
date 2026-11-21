@@ -205,3 +205,51 @@ fn the_prefactor_recurrence_holds_across_the_band_the_centring_governs() -> eucl
     }
     Ok(())
 }
+
+/// Each predicate is asserted **at** its boundary, which is what a mutation survives without.
+///
+/// Three of these came straight off a mutation run. Every one is a comparison that no argument
+/// reaching it through `beta_reg` lands on exactly — `|z| = 40` needs an `(a, b, x)` nobody can
+/// solve for, and `a + b = STIRLING_MIN` only differs from `a · b = STIRLING_MIN` on a pair the
+/// grids never drew. The arithmetic was correct and untestable at once, and naming the boundary
+/// is what makes it reachable.
+#[test]
+fn the_routing_predicates_are_pinned_at_their_boundaries() {
+    use EdgeworthRange::{Certain, Impossible, Interior};
+
+    // `> MAX` and `< -MAX`, each at the constant and both neighbours. The constant itself is
+    // Interior, which is what distinguishes `>` from `>=`.
+    assert_eq!(EdgeworthRange::for_standardised(EDGEWORTH_Z_MAX), Interior);
+    assert_eq!(EdgeworthRange::for_standardised(-EDGEWORTH_Z_MAX), Interior);
+    assert_eq!(
+        EdgeworthRange::for_standardised(EDGEWORTH_Z_MAX.next_up()),
+        Certain
+    );
+    assert_eq!(
+        EdgeworthRange::for_standardised((-EDGEWORTH_Z_MAX).next_down()),
+        Impossible
+    );
+    // Zero is Interior from either side, so `z > 0.0` is not what selects the saturation; the
+    // magnitude is. A mutant moving the sign test cannot hide behind the magnitude test here.
+    assert_eq!(EdgeworthRange::for_standardised(0.0), Interior);
+    assert_eq!(EdgeworthRange::for_standardised(-0.0), Interior);
+    // And a `NaN` fails both comparisons, so the expansion keeps it. This is the arm that broke
+    // when the predicate was written as `|z| <= MAX`.
+    assert_eq!(EdgeworthRange::for_standardised(f64::NAN), Interior);
+    assert_eq!(EdgeworthRange::for_standardised(f64::INFINITY), Certain);
+    assert_eq!(
+        EdgeworthRange::for_standardised(f64::NEG_INFINITY),
+        Impossible
+    );
+
+    // `a + b >= STIRLING_MIN` is a *sum*, and the pair that says so is one where the product
+    // disagrees: `19 + 1.05 = 20.05` passes while `19 × 1.05 = 19.95` would not.
+    // `x` is the mode, where both offsets are zero so the band predicate always admits it and
+    // the shape conditions are the only things left deciding.
+    let at_mode = |a: f64, b: f64| use_centred_prefactor(a, b, a / (a + b));
+    assert!(at_mode(19.0, 1.05));
+    assert!(!at_mode(0.5, 1e6), "below CENTRED_MIN");
+    // At the sum's boundary exactly, and one ulp below it.
+    assert!(at_mode(STIRLING_MIN - 1.0, 1.0));
+    assert!(!at_mode((STIRLING_MIN - 1.0).next_down(), 1.0));
+}

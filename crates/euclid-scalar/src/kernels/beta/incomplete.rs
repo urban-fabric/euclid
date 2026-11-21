@@ -126,6 +126,60 @@ fn use_centred_prefactor(a: f64, b: f64, x: f64) -> bool {
 /// [`stirling_remainder_from_one`] is one step per unit.
 const CENTRED_MIN: f64 = 1.0;
 
+/// Which side of the Edgeworth expansion's usable range the standardised point falls on.
+///
+/// # Named because two comparisons inside one guard cannot be tested apart
+///
+/// This was `if z.abs() > 40.0 { return f64::from(u8::from(z > 0.0)); }`, and mutation testing
+/// left three survivors in it — `>` to `>=` and `>` to `==` on the magnitude, and `>` to `>=` on
+/// the sign. Every one is unreachable through `beta_reg`: getting `|z|` to land exactly on `40`
+/// needs a `(a, b, x)` nobody can solve for, and the sign test is only read once the magnitude
+/// test has already passed. The arithmetic was correct and untestable in the same breath.
+///
+/// Split out, each arm is a value of a function of one argument, and a test names `40` and its
+/// two neighbouring doubles directly.
+///
+/// Past `|z| = 40` the standard normal tail has left the format in both directions: `erfc` has
+/// saturated to `0` or `2`, and `e^{−z²/2}` underflowed at `|z| ≈ 38.6`. So returning the
+/// certainty changes no value the expansion could have produced, and it keeps `z·z` out of an
+/// overflow that would make the correction `NaN`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EdgeworthRange {
+    /// `|z| ≤ 40`: the expansion is evaluated.
+    Interior,
+    /// `z > 40`: the lower tail is `1`.
+    Certain,
+    /// `z < −40`: the lower tail is `0`.
+    Impossible,
+}
+
+impl EdgeworthRange {
+    /// Each bound is compared against separately, which is both the testable spelling and the
+    /// only `NaN`-correct one.
+    ///
+    /// Going through `|z| ≤ MAX` instead sends a `NaN` to a saturation arm, because every
+    /// comparison against it is false — and `beta_reg(NaN, a, b)` then returns `0` where it owes
+    /// a `NaN`. `subnormal_beta_shapes_preserve_the_endpoint_mass_ratio` caught exactly that.
+    /// Written this way a `NaN` fails both tests, lands in [`Self::Interior`], and the expansion
+    /// propagates it as it always did.
+    fn for_standardised(z: f64) -> Self {
+        if z > EDGEWORTH_Z_MAX {
+            Self::Certain
+        } else if z < -EDGEWORTH_Z_MAX {
+            Self::Impossible
+        } else {
+            Self::Interior
+        }
+    }
+}
+
+/// Largest `|z|` the Edgeworth expansion is evaluated at.
+///
+/// `erfc` has saturated by here and `e^{−z²/2}` underflowed at `|z| ≈ 38.6`, so the expansion has
+/// no information left to add. A `NaN` is the alternative: `z·z` at a `z` that reached the
+/// format's top overflows, and `inf · 0` in the correction is how that shows up.
+const EDGEWORTH_Z_MAX: f64 = 40.0;
+
 /// Rate for the gamma approximation to `T = -ln(1-X)`, with `X ~ Beta(a,b)`.
 ///
 /// `(1-e^-t)^(a-1) = t^(a-1) e^(-(a-1)t/2) (sinh(t/2)/(t/2))^(a-1)`.
@@ -243,12 +297,10 @@ fn beta_edgeworth(a: f64, b: f64, x: f64) -> f64 {
     // factors in range even when a·b overflows or σ² underflows.
     let inverse_width = (n + 1.0).sqrt() / a.sqrt() / b.sqrt();
     let z = beta_mean_residual(a, n, n_error, x) * inverse_width;
-    // Past `|z| = 40` the standard normal tail has left the format in both directions: `erfc`
-    // has saturated to `0` or `2`, and `e^{−z²/2}` underflowed at `|z| ≈ 38.6`. The answer is
-    // a certainty, so returning it directly changes no value the expression below could
-    // produce — while keeping `z·z` out of an overflow that would make the correction `NaN`.
-    if z.abs() > 40.0 {
-        return f64::from(u8::from(z > 0.0));
+    match EdgeworthRange::for_standardised(z) {
+        EdgeworthRange::Certain => return 1.0,
+        EdgeworthRange::Impossible => return 0.0,
+        EdgeworthRange::Interior => {}
     }
     let skew = 2.0 * ((b - a) / (n + 2.0)) * inverse_width;
     let density = (-0.5 * z * z).exp() / SQRT_TAU;

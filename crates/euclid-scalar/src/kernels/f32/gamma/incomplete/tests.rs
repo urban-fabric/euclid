@@ -87,3 +87,45 @@ fn the_small_shape_upper_fraction_tracks_the_wide_kernel() {
         assert!(got > 0.0 && got < 1e-2, "{got:e}");
     }
 }
+
+/// `lower_product_fits` is a band, so both of its edges and the shape cap need naming.
+///
+/// Three mutants lived here: `*` to `+` inside the exponent, the whole predicate replaced by
+/// `false`, and `<=` to `>` on the shape cap. The last two survive the public surface by
+/// construction — both arms compute the same quantity, so forcing the logarithm everywhere costs
+/// a few ulp and breaks nothing a tolerance would notice. That is precisely the case a predicate
+/// test has to carry, because no value assertion will.
+#[test]
+fn the_product_band_is_pinned_at_both_edges_and_the_shape_cap() {
+    // `a * x.ln()`, not `a + x.ln()`: at `a = 4`, `x = e^-1` the product is `-4` and inside the
+    // band, where the sum would be `3` and also inside — so the distinguishing point needs the
+    // two to disagree. `a = 0.5`, `x = e^-8`: product `-4` (inside), sum `-7.5` (inside too).
+    // `a = 8`, `x = e^-0.125`: product `-1` (below MIN, refused), sum `7.875` (inside). That is
+    // the pair that separates them.
+    assert!(
+        !lower_product_fits(8.0, (-0.125f32).exp()),
+        "product -1 is below MIN"
+    );
+    assert!(
+        lower_product_fits(8.0, (-1.0f32).exp()),
+        "product -8 is inside"
+    );
+
+    // Both edges of the band, at the constant and just past it.
+    assert!(lower_product_fits(1.0, (-LOWER_PRODUCT_MIN).exp()));
+    assert!(!lower_product_fits(1.0, (-LOWER_PRODUCT_MIN * 0.99).exp()));
+    assert!(!lower_product_fits(1.0, (-LOWER_PRODUCT_MAX * 1.01).exp()));
+
+    // The shape cap, which `<=` admits and `>` would invert.
+    // Inside the band at this shape: `34 × 1 = 34`, which is in `[2, 85)`. A deeper `x` would
+    // be refused by the band rather than by the cap, which would test nothing about the cap.
+    let deep = (-1.0f32).exp();
+    assert!(
+        lower_product_fits(GAMMA_FINITE_MAX, deep),
+        "at the cap, admitted"
+    );
+    assert!(
+        !lower_product_fits(GAMMA_FINITE_MAX.next_up(), deep),
+        "one ulp past the cap, refused — Gamma(a) is about to be infinite"
+    );
+}
