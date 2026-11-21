@@ -100,3 +100,69 @@ fn the_incomplete_gamma_methods_partition_the_quadrant() {
     );
     assert!(gamma_lr(0.0, 1.0).is_nan() && gamma_ur(0.0, 1.0).is_nan());
 }
+
+/// The incomplete gamma at integer shape against the Poisson sum, which needs no reference.
+///
+/// For integer `a`, `Q(a,x) = e^{−x}·Σ_{k<a} x^k/k!` exactly. Every term of that sum is
+/// positive, so it carries only its own `a` roundings — a few ulp — which makes it an honest
+/// yardstick for a routine whose error this test exists to bound.
+///
+/// # The comparison is made on `Q`, and that is not a detail
+///
+/// The first version of this test compared `P` against `1 − poisson_upper` and failed at
+/// `P(20, 11.06)` by `43` ulp. **The reference was the wrong side.** `Q` there is `0.99`, so
+/// its few-ulp error is `2e-15` absolute, and against a `P` of `9.8e-3` that is over a thousand
+/// ulp — the standing trap that a reference may not be formed by a subtraction the kernel
+/// exists to avoid. The Poisson sum computes `Q` *directly* and keeps its relative accuracy at
+/// any `x`, so `Q` is the quantity to compare and no subtraction appears on either side.
+///
+/// # Why this is the test the prefactor needed
+///
+/// It is sharpest exactly where [`log_scaled_gamma`](crate::math::gamma::log_scaled_gamma) was
+/// weakest. At `a = 100`, `x = 120` the old form summed `a·ln x`, `x` and `lnΓ(a)` — `479`,
+/// `120` and `359` — into an exponent of order one, and `exp` turned the surviving absolute
+/// error into hundreds of ulp of relative error. The rearranged form's terms there are `−1.76`,
+/// `1.38` and `8e-4`.
+#[test]
+fn the_incomplete_gamma_matches_the_poisson_sum_at_integer_shape() {
+    /// `e^{−x}·Σ_{k<a} x^k/k!`, accumulated as positive terms so nothing cancels.
+    fn poisson_upper(shape: u32, x: f64) -> f64 {
+        let mut term = (-x).exp();
+        let mut sum = term;
+        for k in 1..shape {
+            term *= x / f64::from(k);
+            sum += term;
+        }
+        sum
+    }
+
+    let mut worst = (0.0_f64, 0.0_f64, 0.0_f64);
+    let mut checked = 0usize;
+    for shape in [20_u32, 25, 30, 40, 50, 60, 80, 100] {
+        let a = f64::from(shape);
+        // The upper arm over `x ∈ (a, 1.5a]`, which is exactly `0 < u ≤ ½` — the rearranged
+        // prefactor's whole band, and the side on which `Q` is the directly computed tail.
+        for step in 1..=8 {
+            let x = a + f64::from(step) * a * 0.05;
+            let want = poisson_upper(shape, x);
+            let got = gamma_ur(a, x);
+            let ulps = (got - want).abs() / crate::Real::ulp(want);
+            if ulps > worst.0 {
+                worst = (ulps, a, x);
+            }
+            assert!(
+                ulps <= 40.0,
+                "Q({a}, {x}) = {got:e}, Poisson gives {want:e}, {ulps} ulp apart"
+            );
+            checked += 1;
+        }
+    }
+    assert!(
+        checked >= 60,
+        "only {checked} arguments reached the assertion"
+    );
+    assert!(
+        worst.0 > 0.0,
+        "no shape produced a measurable difference; the comparison is vacuous"
+    );
+}

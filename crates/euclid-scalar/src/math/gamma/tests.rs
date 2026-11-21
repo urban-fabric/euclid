@@ -308,3 +308,40 @@ fn gamma_satisfies_its_recurrence_across_the_stirling_handover() {
          when the Stirling route was introduced, so check which arm moved"
     );
 }
+
+/// The rearranged prefactor is the same quantity as the direct one, where both are sound.
+///
+/// [`log_scaled_gamma`] replaces `a·ln x − x − lnΓ(a)` with `a·[ln(1+u) − u] + ½ln(a/2π) − μ(a)`,
+/// which is an identity only if Stirling's series is substituted correctly. An algebra slip
+/// there does not produce nonsense — it produces a smooth, plausible, wrong function — so it
+/// needs pinning against the form it replaced.
+///
+/// Asserted just above [`STIRLING_MIN`] and at small `|u|`, which is the one corner where both
+/// forms are trustworthy: `lnΓ(a)` is still only `39`, so the direct form has lost little, while
+/// the rearranged form is in its own best region. Further up the direct form is the wrong one
+/// and agreement would prove nothing — the same reason `erf_inv`'s two numerators are compared
+/// at the threshold rather than in the tail.
+#[test]
+fn the_rearranged_prefactor_agrees_with_the_direct_one_where_both_are_sound() {
+    for a in [20.0_f64, 21.0, 24.0] {
+        for u in [-0.05_f64, -0.01, 0.0, 0.01, 0.05] {
+            let x = a * (1.0 + u);
+            let rearranged = log_scaled_gamma(a, x, 0.0);
+            let direct = -x + a * x.ln() - <f64 as crate::Real>::ln_gamma(a);
+            assert!(
+                (rearranged - direct).abs() <= 2e-13,
+                "at a={a}, x={x} the rearranged prefactor is {rearranged} \
+                 and the direct one {direct}"
+            );
+        }
+    }
+    // Outside the band the direct form is what runs, so the two are the same expression and
+    // must agree exactly — this is what pins the branch to the right side of its own test.
+    for (a, x) in [(50.0_f64, 10.0_f64), (50.0, 200.0), (10.0, 11.0)] {
+        assert_eq!(
+            log_scaled_gamma(a, x, 0.25),
+            0.25 - x + a * x.ln() - <f64 as crate::Real>::ln_gamma(a),
+            "at a={a}, x={x}"
+        );
+    }
+}

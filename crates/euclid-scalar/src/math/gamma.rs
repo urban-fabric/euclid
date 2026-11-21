@@ -292,10 +292,115 @@ pub(crate) fn gamma_lower_series<T: HostReal>(a: T, x: T, tolerance: T, limit: u
     sum
 }
 
-/// The common log prefactor for the lower series and upper continued fraction.
-pub(crate) fn log_scaled_gamma<T: HostReal>(a: T, x: T, log_scale: T) -> T {
-    log_scale - x + a * x.ln() - a.ln_gamma()
+/// The widest `|u| = |x−a|/a` the rearranged prefactor is used on.
+///
+/// `½`, and it is a **correctness** bound rather than a convergence one. `u` is formed as
+/// `(x−a)/a` and then fed to `ln(1+u)`, so it has to carry `x/a` in its own last bits. At
+/// `|u| ≤ ½` that is free: Sterbenz makes `x − a` exact on `[a/2, 2a]`, so `u` is the quotient's
+/// single rounding and `ln(1+u)` sees every digit of `x`.
+///
+/// Push it further and the formulation destroys the thing it is computing. At `a = 20`,
+/// `x = 1e-6` the quotient is `−0.99999995`, whose ulp is `1.1e-16` against a `1+u` of `5e-8` —
+/// a relative error of `2.2e-9` in the argument of the logarithm, which `a` then multiplies into
+/// the exponent. Measured: `2.7e8` ulp, against `539` for the direct form it replaced. **The
+/// rearrangement is algebraically exact and numerically valid only near `u = 0`**, which cost a
+/// full measurement pass to notice because the algebra checks out at every step.
+///
+/// Outside this band the direct form is also the *right* form: there the exponent is genuinely
+/// large — `−316` at the argument above — so its own magnitude bounds the accuracy and no
+/// rearrangement helps.
+const LN_1P_SERIES_MAX: f64 = 0.5;
+
+/// `ln(1+u) − u` for `|u| ≤ `[`LN_1P_SERIES_MAX`], by series.
+///
+/// Both terms are `≈ u` while the result is `≈ −u²/2`, so the direct difference throws away
+/// `1/|u|` of relative accuracy. That matters here because this value is multiplied by `a` and
+/// exponentiated: an *absolute* error `δ` in the exponent is a *relative* error `δ` in the
+/// answer, so the quantity has to be right in absolute terms, not merely relative ones.
+///
+/// The series is `−u²/2 + u³/3 − u⁴/4 + ⋯`, summed by ratio. For `u < 0` every term carries the
+/// same sign, so nothing cancels at all; for `u > 0` it alternates with the first term dominant.
+///
+/// No direct-form arm: the caller owns that decision, because the bound it tests is about `u`
+/// carrying `x` and not about this series converging.
+fn ln_1p_minus_linear<T: HostReal>(u: T, tolerance: T, limit: usize) -> T {
+    // t_k = (−1)^{k+1} u^k / k, starting at k = 2, advanced by t_{k+1} = t_k·(−u)·k/(k+1).
+    let mut index = T::TWO;
+    let mut term = -u * u * T::HALF;
+    let mut sum = term;
+    for _ in 0..limit {
+        let next = index + T::ONE;
+        term *= -u * index / next;
+        sum += term;
+        if term_is_negligible(term, sum.abs(), tolerance) {
+            break;
+        }
+        index = next;
+    }
+    sum
 }
+
+/// The common log prefactor for the lower series and upper continued fraction.
+///
+/// # The direct form is a cancelling sum under an exponential, and that was the error
+///
+/// This read `log_scale − x + a·ln x − lnΓ(a)` and returned a value that is then `exp`-ed. Those
+/// three terms are each of size `a·ln a` while their sum is `O(ln a)` — at `a = x = 1000` they
+/// are `6908`, `1000` and `5905`, summing to `2.53`. Rounding leaves each with an absolute error
+/// of `|term|·ε`, the sum keeps it, and `exp` turns an absolute error in its argument into a
+/// *relative* error in its result. So the answer carried about `|largest term|` ulp.
+///
+/// Measured against a 400-bit reference, worst ulp over 300 log-uniform samples per cell, with
+/// the prediction `≈ |a·ln x|` beside it:
+///
+/// ```text
+/// a               2      20     100    1000    3000
+/// largest term   28     263     434    6327   22771
+/// was            26     686    1112   11473   45448   ulp
+/// ```
+///
+/// That is one root cause under several symptoms: `erf` is `P(½, x²)` and carried `7`–`32` ulp
+/// across its whole domain above `ERF_LINEAR_MAX`, which in turn is the floor `erf_inv`'s
+/// interior route inherits through its Newton step.
+///
+/// # The rearrangement
+///
+/// Stirling gives `lnΓ(a) = (a−½)ln a − a + ½ln 2π + μ(a)` with `μ` from
+/// [`stirling_remainder`], and substituting it lets the large parts cancel *symbolically*
+/// rather than numerically. With `u = (x−a)/a`,
+///
+/// ```text
+/// a·ln x − x − lnΓ(a) = a·[ln(1+u) − u] + ½·ln(a/2π) − μ(a)
+/// ```
+///
+/// Every term on the right is now the size of the answer: at `a = x = 1000` they are `0`,
+/// `2.535` and `8.3e-5`. `ln(1+u) − u` is itself a cancelling difference, which is why
+/// [`ln_1p_minus_linear`] exists rather than the expression being written inline.
+///
+/// # Both guards are necessary, and they guard different things
+///
+/// Below [`STIRLING_MIN`] the old form is kept because `lnΓ(a)` is `O(1)` there — nothing large
+/// to cancel — and because `μ`'s series is not valid that low. Outside [`LN_1P_SERIES_MAX`] it
+/// is kept because `u` stops carrying `x`; that bound is the one that is easy to get wrong, and
+/// its note records what happens when it is.
+///
+/// What error remains outside the band is `a·ln x` being genuinely large at tiny `x` — the size
+/// of the answer's own logarithm, which no rearrangement removes.
+pub(crate) fn log_scaled_gamma<T: HostReal>(a: T, x: T, log_scale: T) -> T {
+    let u = (x - a) / a;
+    if a < T::from_f64(STIRLING_MIN) || u.abs() > T::from_f64(LN_1P_SERIES_MAX) {
+        return log_scale - x + a * x.ln() - a.ln_gamma();
+    }
+    let rate = ln_1p_minus_linear(u, T::EPSILON, LN_1P_SERIES_MAX_TERMS);
+    log_scale + a * rate + T::HALF * (a / T::TAU).ln() - stirling_remainder(a)
+}
+
+/// Terms the `ln(1+u) − u` series is allowed before it gives up.
+///
+/// `|u| ≤ ½` there, where `(½)^k/k` falls below `ε` relative to a result of size `u²/2` by about
+/// the fifty-second term. Sixty-four is that with headroom, and the loop exits on its own long
+/// before for the small `|u|` that the interesting arguments produce.
+const LN_1P_SERIES_MAX_TERMS: usize = 64;
 
 /// Advance the denominator and return the numerator for the next coefficient.
 fn upper_gamma_coefficient<T: HostReal>(a: T, index: T, denominator: &mut T) -> T {
