@@ -270,6 +270,22 @@ fn forward_stable_sum_charges_for_the_reference_cancellation() {
         "a cancellation-dominated failure should suggest reorienting: {}",
         failure.message
     );
+    // The "over by" figure is `relative / admissible`, and it is the number a reader acts on —
+    // whether this is 1.2x over or 12,000x decides whether to widen a bound or open the kernel.
+    // Asserting the words alone left `/` mutable to `*` and `%` in the message, so the ratio is
+    // pinned too. Here `1e-8` against a bound of `2e5 · u ≈ 2.2e-11` is about `450x`.
+    let ratio: f64 = failure
+        .message
+        .split("over by:")
+        .nth(1)
+        .and_then(|tail| tail.split('x').next())
+        .map(str::trim)
+        .and_then(|n| n.parse().ok())
+        .expect("the failure reports an 'over by' ratio");
+    assert!(
+        (400.0..500.0).contains(&ratio),
+        "the reported ratio should be relative/admissible, about 450x, not {ratio}"
+    );
 
     // Guards abstain rather than fail: a reference summing to zero has no relative error, and a
     // non-finite computed value is not a disagreement to measure.
