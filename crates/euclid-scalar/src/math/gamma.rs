@@ -303,12 +303,6 @@ pub(crate) fn gamma_lower_series<T: HostReal>(a: T, x: T, tolerance: T, limit: u
     }
     sum
 }
-/// `ln(1+u) − u` and the log prefactor the incomplete gamma exponentiates.
-///
-/// A child module so the parent stays inside the crate's 400-line budget. The sub-topic is a
-/// real one: everything in it exists because `a·ln x − x − lnΓ(a)` is a cancelling sum under an
-/// `exp`, and the three arrangements that answer that are argued against each other rather than
-/// against anything in the Lanczos or Stirling machinery above.
 mod prefactor;
 
 pub(crate) use prefactor::{ln_1p_minus_linear, log_scaled_gamma};

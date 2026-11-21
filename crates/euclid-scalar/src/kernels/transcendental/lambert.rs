@@ -20,7 +20,7 @@ use crate::constants::f64::NEG_INV_E;
 /// It is left at sixty deliberately. The `f32` peer argues for a tight cap — "a backstop seven
 /// times larger than any argument needs is one that hides a non-converging case instead of
 /// reporting it" — and that argument is now served by
-/// [`no_argument_runs_the_halley_loop_to_its_cap`](tests), which fails if any argument reaches
+/// `tests::no_argument_runs_the_halley_loop_to_its_cap`, which fails if any argument reaches
 /// the cap at all. With the cap *tested* rather than merely sized, lowering it would only convert
 /// a loop that runs long into a root that is silently truncated, and the measured worst case is
 /// over one band of a domain that spans the whole format.

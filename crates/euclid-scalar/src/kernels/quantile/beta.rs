@@ -23,7 +23,7 @@ pub(crate) fn beta_reg_inv(p: f64, a: f64, b: f64) -> f64 {
 
 /// Which route produces the beta quantile at this `(p, a, b)`.
 ///
-/// One arm fewer than [`GammaQuantileRoute`], and the missing one is the point: the beta's
+/// One arm fewer than `gamma::GammaQuantileRoute`, and the missing one is the point: the beta's
 /// support is bounded, so both endpoints are attained and there is no unresolvable-shape case to
 /// detect — the bracket `[0, 1]` is correct for every `a` and `b`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

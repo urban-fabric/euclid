@@ -418,7 +418,6 @@ const LN_GAMMA_UNIT_MAX: f64 = 2.5;
 /// is little left to win and each further step is another logarithm.
 const LN_GAMMA_RECURRENCE_MAX: f64 = 4.0;
 
-/// DLMF 8.7.1 with the constant term separated, for `x < 1+a`.
 mod incomplete;
 mod psi;
 mod temme;

@@ -1,6 +1,6 @@
 //! [`MomentOfInertia`], [`AngularMomentum`], [`Torque`] — the rotational analogues.
 //!
-//! The same three relations as [`Mass`](crate::Mass) and [`Force`](crate::Force), with the linear
+//! The same three relations as [`Mass`] and [`Force`], with the linear
 //! quantities replaced by their angular counterparts: inertia times angular acceleration is
 //! torque, inertia times angular velocity is angular momentum. Grouped because that parallel is
 //! the thing worth seeing, and because [`Torque`]'s separation from `Energy` only makes sense

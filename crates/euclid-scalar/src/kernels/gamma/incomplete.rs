@@ -8,6 +8,7 @@
 
 use super::*;
 
+/// DLMF 8.7.1 with the constant term separated, for `x < 1+a`.
 fn small_shape_log_lower(a: f64, x: f64) -> f64 {
     let mut power = -x;
     let mut sum = power / (a + 1.0);

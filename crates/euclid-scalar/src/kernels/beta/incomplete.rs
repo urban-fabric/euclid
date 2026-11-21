@@ -1,8 +1,11 @@
 //! The regularized incomplete beta `Iₓ(a, b)`, `x ∈ [0, 1]`, `a, b > 0`.
 //!
-//! Split from the parent, which keeps the complete beta. The routing is the substance here: most
-//! of [`BetaRegMethod`]'s arms are exact forms that exist to keep the continued fraction away
-//! from arguments where its intermediates misbehave.
+//! A child module so the parent stays inside the crate's 400-line budget, on the same seam
+//! `kernels::gamma` uses: what is left there is the *complete* beta — `ln B(a, b)`, `B(a, b)` and
+//! the Stirling machinery they share — while the incomplete `Iₓ(a, b)`, its eight-arm router, the
+//! continued fraction and the Edgeworth approximation are this module. The routing is the
+//! substance here: most of [`BetaRegMethod`]'s arms are exact forms that exist to keep the
+//! continued fraction away from arguments where its intermediates misbehave.
 
 use super::*;
 
@@ -273,9 +276,9 @@ fn beta_mean_residual(a: f64, n: f64, n_error: f64, x: f64) -> f64 {
 /// ```
 ///
 /// `Φ` is formed as `½erfc(−z/√2)` so a small lower tail keeps its relative accuracy instead of
-/// being lost to a complement. The `erfc` call reaches into [`super::erf`], which is built on
-/// `gamma_lr` — but that recursion terminates at once, since `erfc` asks for shape `½`, far
-/// below any threshold that returns here.
+/// being lost to a complement. The `erfc` call reaches into [`erf`](crate::kernels::erf), which
+/// is built on `gamma_lr` — but that recursion terminates at once, since `erfc` asks for shape
+/// `½`, far below any threshold that returns here.
 fn beta_edgeworth(a: f64, b: f64, x: f64) -> f64 {
     let (n, n_error) = a.two_sum(b);
     if !n.is_finite() {

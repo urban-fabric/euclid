@@ -15,11 +15,11 @@
 //!   every step and no retuning recovers it.
 //!
 //!   Measured, it costs less than that argument suggests, for a reason that only shows up once
-//!   `J`'s handover has moved: the march runs from [`Y_SERIES_MAX`] to [`HANKEL_MIN`], and that
-//!   interval is `[2, 7]` here against `f64`'s `[4, 18]` — about six steps either way. Forward
-//!   integration is stable here because `J` and `Y` both decay like `x^{−1/2}`, so neither
-//!   dominates and an error introduced at one step is not amplified at the next. The finished
-//!   `Y` holds to `2.9e-7` of its envelope across `x ∈ (0, 300]`, under three ulp.
+//!   `J`'s handover has moved: the march runs from [`second::Y_SERIES_MAX`] to [`HANKEL_MIN`],
+//!   and that interval is `[2, 7]` here against `f64`'s `[4, 18]` — about six steps either way.
+//!   Forward integration is stable here because `J` and `Y` both decay like `x^{−1/2}`, so
+//!   neither dominates and an error introduced at one step is not amplified at the next. The
+//!   finished `Y` holds to `2.9e-7` of its envelope across `x ∈ (0, 300]`, under three ulp.
 //!
 //!   The concern was real and the conclusion drawn from it was not. A per-step `ε` matters when
 //!   the step count is large; bounding the count is what makes the mechanism affordable, and

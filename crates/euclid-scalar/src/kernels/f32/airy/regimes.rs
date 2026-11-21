@@ -1,7 +1,7 @@
 //! The regime tables, and the four-at-once evaluation they route to.
 //!
 //! A child module so the parent stays inside the crate's 400-line budget; the `f64` peer at
-//! [`crate::kernels::airy::regimes`] splits the same way. What lives here is the *routing*
+//! `kernels::airy::regimes` splits the same way. What lives here is the *routing*
 //! rather than any one solution: [`AiryRegime`] divides the line and `quad` is the shared
 //! evaluation both public pairs are carved out of.
 

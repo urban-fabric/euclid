@@ -1,7 +1,7 @@
 //! The regularized incomplete gamma pair `P(a, x)` and `Q(a, x)`, at single precision.
 //!
 //! A child module so the parent stays inside the crate's 400-line budget; the `f64` peer at
-//! [`crate::kernels::gamma::incomplete`] splits the same way. Its own topic rather than a
+//! `kernels::gamma::incomplete` splits the same way. Its own topic rather than a
 //! continuation of `Γ`: the pair are probabilities in *two* arguments, and the route turns on the
 //! relationship between `a` and `x` rather than on the magnitude of either. Every term count and
 //! crossover here is rederived at this format rather than inherited.

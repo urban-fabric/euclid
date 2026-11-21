@@ -1,4 +1,4 @@
-//! The [`Real`](crate::Real) contract: the arithmetic and the special functions over it.
+//! The [`Real`] contract: the arithmetic and the special functions over it.
 //!
 //! The largest suite in the crate, and the one a carrier author is most likely to be checking.
 //! Relations rather than reference values throughout — `exp(ln x) == x` to a tolerance, the

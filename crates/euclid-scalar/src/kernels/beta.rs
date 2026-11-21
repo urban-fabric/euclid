@@ -197,12 +197,6 @@ pub(crate) fn beta(a: f64, b: f64) -> f64 {
     ln_beta(a, b).exp()
 }
 
-/// The regularized incomplete beta and the routes that evaluate it.
-///
-/// A child module so the parent stays inside the crate's 400-line budget, on the same seam
-/// `kernels::gamma` uses: what is left here is the *complete* beta — `ln B(a, b)`, `B(a, b)` and
-/// the Stirling machinery they share — while the incomplete `Iₓ(a, b)`, its eight-arm router,
-/// the continued fraction and the Edgeworth approximation are their own topic.
 pub(crate) mod incomplete;
 
 pub(crate) use incomplete::beta_reg;

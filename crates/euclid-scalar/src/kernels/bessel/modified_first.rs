@@ -396,7 +396,7 @@ fn i1_rel_sum(h: f64, k_peak: f64) -> f64 {
 ///
 /// Asserted rather than handled, and the assertion replaced a dead branch. `k_peak` is
 /// `round(ax/2)`, which is below 1 exactly when `ax < 1` — and both callers send `ax < 1` to
-/// [`i1_no_log`] instead, precisely because the logarithm round trip is lossy there. So the
+/// `scaled::i1_no_log` instead, precisely because the logarithm round trip is lossy there. So the
 /// `k_peak < 1` arm this function used to open with could not be reached, and a dense sweep of
 /// 20,700 arguments at both precisions, both signs, across all four entry points confirmed it:
 /// a `panic!()` in that arm never fired.

@@ -4,7 +4,7 @@
 //! those parts of the `f32` [`Real`](crate::Real) surface never round-trip through `f64`. The
 //! continued-fraction tolerances are loosened to the `f32` noise floor (~`1e-6`), and the
 //! module follows [`super`]'s layout one module per function family. The one place it does not
-//! mirror [`super`] exactly is [`bessel::ordinary`](crate::kernels::f32::bessel::ordinary):
+//! mirror [`super`] exactly is [`bessel::ordinary`]:
 //! `J` and `Y` get a file each there, but
 //! share one here, because both merely narrow the `f64` march and neither carries an algorithm
 //! of its own to separate.
@@ -15,14 +15,12 @@
 //!
 //! # There is no longer an exception, and the list is worth keeping as a record
 //!
-//! This module header used to carry one: [`bessel::ordinary`](crate::kernels::f32::bessel::ordinary)
-//! (`J`, `Y`), [`bessel::modified_second`](crate::kernels::f32::bessel::modified_second) (`K`),
-//! [`integrals`](crate::kernels::f32::integrals) (`Si`, `Ci`, `E₁`, `Ei`),
-//! [`transcendental`](crate::kernels::f32::transcendental) (`W`, `ζ`) and
-//! [`airy`](crate::kernels::f32::airy) evaluated in `f64` and narrowed, on the grounds that each
-//! reaches its values through "a cancelling series, a divergent asymptotic expansion, or an
-//! outward march", every one of which has an error floor set by the *working* precision — so a
-//! native `f32` port would be less accurate rather than more.
+//! This module header used to carry one: [`bessel::ordinary`] (`J`, `Y`),
+//! [`bessel::modified_second`] (`K`), [`integrals`] (`Si`, `Ci`, `E₁`, `Ei`),
+//! [`transcendental`] (`W`, `ζ`) and [`airy`] evaluated in `f64` and narrowed, on the grounds
+//! that each reaches its values through "a cancelling series, a divergent asymptotic expansion,
+//! or an outward march", every one of which has an error floor set by the *working* precision —
+//! so a native `f32` port would be less accurate rather than more.
 //!
 //! Every one of those five has since been measured, and every one has come off the list. The
 //! reasons differ, and the differences are the useful part:

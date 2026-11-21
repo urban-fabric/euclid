@@ -26,7 +26,7 @@ const EM_COEFFS: [f32; 6] = [
 /// scheme itself has no such restriction, and the `f64` peer exposes it on the same grounds.
 /// # Why this does not take the `f64` peer's squaring optimisation
 ///
-/// [`crate::kernels::polygamma::ZetaPower`] forms the head's powers by exponentiation-by-squaring
+/// `kernels::polygamma`'s `ZetaPower` forms the head's powers by exponentiation-by-squaring
 /// when `s` is an integer, which is 3.19x faster there. **It does not fit in this format, and the
 /// measurement is the reason rather than caution:** applied here it put `polygamma(2, 1.76875)`
 /// **4 `f32` ulp** from the wide kernel rounded down, against the 3 that

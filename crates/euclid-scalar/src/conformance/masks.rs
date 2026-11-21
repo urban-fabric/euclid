@@ -1,4 +1,4 @@
-//! The [`Boolean`](euclid_algebra::Boolean) and [`Mask`](crate::Mask) contracts.
+//! The [`Boolean`] and [`Compare`] contracts — a carrier's lattice and its masks.
 //!
 //! Together because a mask *is* the boolean surface of a carrier: these laws check that the
 //! lattice operations agree with each other and that selection honours them. Kept away from the

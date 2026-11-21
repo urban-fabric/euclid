@@ -70,8 +70,7 @@ const ZETA_ORIGIN_FIT: [f64; 16] = [
 /// The asymmetry is structural. `η(s) = Σ(−1)^{n−1}n^{−s}` converges for `s > 0`, and for `s < 0`
 /// its terms *grow* with `n`, so the accelerator is summing a divergent series and cancels much
 /// harder. Below zero it is at its own floor, which is why no movement of
-/// [`ZETA_ETA_MIN`](crate::kernels::transcendental::ZETA_ETA_MIN) could help and a third arm
-/// could.
+/// `kernels::transcendental`'s `ZETA_ETA_MIN` could help and a third arm could.
 ///
 /// The reflection cannot have the band either, and its own note says why: it needs `1 − s`, and
 /// as `s → 0⁻` the pole of `ζ(1−s)` is cancelled against a vanishing `sin(πs/2)`. Measured, it

@@ -140,9 +140,9 @@ fn psi_near_zero(d: f64) -> f64 {
 /// The series is only valid for a large positive argument, so every other arm is a reduction
 /// onto that case — and the reductions are different functions of the input rather than
 /// variations of one formula, which is why they are named. The `f32` peer in
-/// [`super::f32::gamma`] carries the same vocabulary as `PsiReduction`, with one arm fewer:
-/// it reduces onto `[1, 2)` with a factored polynomial where this one has a Taylor series about
-/// `ψ`'s real zero.
+/// [`f32::gamma`](crate::kernels::f32::gamma) carries the same vocabulary as `PsiReduction`, with
+/// one arm fewer: it reduces onto `[1, 2)` with a factored polynomial where this one has a Taylor
+/// series about `ψ`'s real zero.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PsiReduction {
     /// No answer: `NaN`, or `−∞` where the function oscillates without limit.

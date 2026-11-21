@@ -1,6 +1,7 @@
 //! The affine units, where the additive laws do **not** apply.
 //!
-//! Temperature is the reason this is a separate contract rather than a stricter [`Measure`]:
+//! Temperature is the reason this is a separate contract rather than a stricter
+//! [`Measure`](crate::Measure):
 //! `20°C + 20°C` is not `40°C`, because the scale has an arbitrary zero. What survives is the
 //! *difference* — a delta is a proper measure even where the absolute value is not — so these
 //! laws check the absolute/delta split rather than linearity.

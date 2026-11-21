@@ -1,11 +1,11 @@
 //! [`Energy`], [`Power`], [`Action`], [`SpecificEnergy`], [`EnergyDensity`] — work and its
 //! rates and densities.
 //!
-//! `force × length = energy` enters from [`Force`](crate::Force), and
-//! everything here divides it by something: by time for power, by mass for specific energy, by
-//! volume for energy density. [`Action`] multiplies instead, by time.
+//! `force × length = energy` enters from [`Force`], and everything here divides it by something:
+//! by time for power, by mass for specific energy, by volume for energy density. [`Action`]
+//! multiplies instead, by time.
 //!
-//! [`Energy`] shares a base-dimension signature with [`Torque`](crate::Torque) —
+//! [`Energy`] shares a base-dimension signature with [`Torque`] —
 //! both `[L² M T⁻²]` — but they are distinct names reached through different chains, which is
 //! the distinction the parent's header explains.
 

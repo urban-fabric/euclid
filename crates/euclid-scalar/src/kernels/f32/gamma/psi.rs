@@ -1,7 +1,7 @@
 //! The polygamma pair `ψ` and `ψ₁`, at single precision.
 //!
 //! A child module so the parent stays inside the crate's 400-line budget; the `f64` peer at
-//! [`crate::kernels::gamma::psi`] splits the same way. Separated from `Γ` because the machinery
+//! `kernels::gamma::psi` splits the same way. Separated from `Γ` because the machinery
 //! does not overlap: these reduce by *recurrence* rather than by Lanczos and reflect with a
 //! cotangent rather than a sine.
 //!
@@ -59,7 +59,7 @@ const PSI_ZERO_LOW: f32 = 1.244_079_95e-8;
 /// and passes through zero at `x₀`, so the absolute error is set by `ulp(2)`, not by the result.
 /// Measured: the recurrence returned **exactly `0.0`** at two of the three representable
 /// arguments either side of `x₀`, where the true values are `−1.20e-8` and `+1.03e-7`. It is the
-/// same defect as the Lanczos log form in [`LN_GAMMA1P_FACTORED`], and it has the same fix.
+/// same defect as the Lanczos log form in [`super::LN_GAMMA1P_FACTORED`], and the same fix.
 ///
 /// `ψ` has a simple zero at `x₀`, so `ψ(1+a) = (a − a₀)·h(a)` with `h` smooth and `O(1)` —
 /// `1.2504` at `a = 0`, `0.7853` at `a = 1`. The zero is then reproduced by construction instead

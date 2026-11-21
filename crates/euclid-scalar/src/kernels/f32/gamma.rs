@@ -5,13 +5,13 @@
 //! has no `f64`, so a kernel that reaches for `f64` to be accurate has given up the only thing
 //! it was for. Both are now the `f64` peer's algorithm — reflect, recur, then an asymptotic
 //! series — with the recurrence threshold rederived at this format's resolution; see
-//! [`PSI_ASYMPTOTIC_MIN`], where inheriting the `f64` value turns out to be actively worse
+//! `psi::PSI_ASYMPTOTIC_MIN`, where inheriting the `f64` value turns out to be actively worse
 //! rather than merely wasteful.
 //!
 //! The old comment was right about where the difficulty is, and naming it is what made the port
 //! work. `ψ` has a zero at `1.4616` and the plain recurrence cannot resolve it — it returned
 //! **exactly `0.0`** at two of the three representable arguments either side — so `digamma`
-//! factors the zero out the way `ln_gamma` factors out its two; see [`DIGAMMA_UNIT_H`].
+//! factors the zero out the way `ln_gamma` factors out its two; see `psi::DIGAMMA_UNIT_H`.
 //! `trigamma` needs no such treatment, having no zero on the positive axis.
 //!
 //! The result is that going native made these *more* accurate than the kernels they used to
@@ -257,9 +257,9 @@ pub(crate) fn gamma(x: f32) -> f32 {
 /// This arm is the `f64` peer's and arrives for a different reason. There, Lanczos's *truncation*
 /// was the problem — `456` ulp by `x = 170`, reproduced exactly at 60 digits. In `f32` that same
 /// truncation is about `1e-15` relative and so is three orders *below* `ε`; what costs here is
-/// the product form's own arithmetic. [`lanczos_gamma`] takes a `powf`, an `exp`, a nine-term
-/// rational sum and three multiplications, and a dozen `f32` roundings at half an ulp each is
-/// several ulp of result.
+/// the product form's own arithmetic. [`lanczos_gamma`](crate::math::gamma::lanczos_gamma) takes
+/// a `powf`, an `exp`, a nine-term rational sum and three multiplications, and a dozen `f32`
+/// roundings at half an ulp each is several ulp of result.
 ///
 /// It shows up most clearly where the answer is an exactly representable integer, since there is
 /// then no reference to argue about. Measured against `Γ`'s exact values, in `f32` ulp:

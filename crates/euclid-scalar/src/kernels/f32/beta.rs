@@ -5,7 +5,7 @@
 //! last function in this tree to narrow the `f64` implementation, on the grounds that its error
 //! floor is set by the working precision — which is true of its continued fraction and not of
 //! the function, because the Edgeworth arm *improves* where the fraction degrades. See
-//! [`BETA_EDGEWORTH_MIN`].
+//! [`incomplete::BETA_EDGEWORTH_MIN`].
 
 #[cfg(test)]
 mod tests;

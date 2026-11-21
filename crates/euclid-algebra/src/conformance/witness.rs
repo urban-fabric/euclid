@@ -1,9 +1,9 @@
 //! The witness suites: laws checked against a carrier's own declared structure.
 //!
-//! A [`SemiringWitness`](crate::witness::SemiringWitness) is a carrier's claim about which
-//! identities and inverses it has. These suites take the claim and hold the carrier to it, which
-//! is a different question from the tier laws: those ask whether the algebra is sound, these ask
-//! whether the carrier described itself correctly.
+//! A [`SemiringWitness`] is a carrier's claim about which identities and inverses it has. These
+//! suites take the claim and hold the carrier to it, which is a different question from the tier
+//! laws: those ask whether the algebra is sound, these ask whether the carrier described itself
+//! correctly.
 
 use super::*;
 

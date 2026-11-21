@@ -1,10 +1,12 @@
 //! `ln(1+u) − u`, and the log prefactor `a·ln x − x − lnΓ(a)` that the incomplete gamma
 //! exponentiates.
 //!
-//! Split from the parent, which keeps the Lanczos approximation, the Stirling series and the
-//! reflection. What is here is one question: that prefactor is a sum of `lnΓ`-sized terms with
-//! an `O(ln a)` answer, and `exp` turns the surviving absolute error into relative error. The
-//! three arrangements below are the answers, and [`ScaledGammaForm`] is which one applies where.
+//! A child module so the parent stays inside the crate's 400-line budget; the parent keeps the
+//! Lanczos approximation, the Stirling series and the reflection. What is here is one question:
+//! that prefactor is a sum of `lnΓ`-sized terms with an `O(ln a)` answer, and `exp` turns the
+//! surviving absolute error into relative error. The three arrangements below are the answers —
+//! argued against each other rather than against anything in the Lanczos or Stirling machinery
+//! above — and [`ScaledGammaForm`] is which one applies where.
 
 use super::*;
 
@@ -64,8 +66,7 @@ pub(crate) fn ln_1p_minus_linear<T: HostReal>(u: T) -> T {
 /// through it is wrong without being obviously wrong.
 ///
 /// Split out, the choice is a value rather than a control-flow edge, and a test names `½` and
-/// `0.6` directly. This is the same move [`LanczosLogForm`](super::LanczosLogForm) was given for
-/// the same reason.
+/// `0.6` directly. This is the same move [`LanczosLogForm`] was given for the same reason.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LnOnePlusForm {
     /// `|u| ≤ `[`LN_1P_SERIES_MAX`]: the alternating series in `u`, which never forms `ln(1+u)`
